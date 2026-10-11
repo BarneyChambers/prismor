@@ -1881,9 +1881,31 @@ def _normalize_codex(payload: Dict[str, Any], session_id: str, workspace: Path) 
     return _unmapped_tool_event(base, payload)
 
 
+# Grok's own tool and event names (xai-org/grok-build docs/user-guide/10-hooks.md).
+_GROK_TOOL_ALIASES = {
+    "run_terminal_command": "Bash",
+    "read_file": "Read",
+    "search_replace": "Edit",
+    "web_search": "WebSearch",
+    "web_fetch": "WebFetch",
+}
+_GROK_EVENT_ALIASES = {
+    "pre_tool_use": "PreToolUse",
+    "post_tool_use": "PostToolUse",
+    "post_tool_use_failure": "PostToolUseFailure",
+    "user_prompt_submit": "UserPromptSubmit",
+    "session_start": "SessionStart",
+}
+
+
 def _normalize_grok(payload: Dict[str, Any], session_id: str, workspace: Path) -> Dict[str, Any]:
-    hook_event = payload.get("hookEventName") or payload.get("hook_event_name") or "unknown"
+    # Grok puts Claude's PascalCase event in `hook_event_name` and its own
+    # snake_case one (`pre_tool_use`) in `hookEventName`; prefer the former.
+    hook_event = payload.get("hook_event_name") or payload.get("hookEventName") or "unknown"
+    hook_event = _GROK_EVENT_ALIASES.get(hook_event, hook_event)
     tool_name = payload.get("toolName") or payload.get("tool_name") or ""
+    # Matchers alias Claude names, but the payload carries Grok's own names.
+    tool_name = _GROK_TOOL_ALIASES.get(tool_name, tool_name)
     tool_input = payload.get("toolInput") or payload.get("tool_input") or {}
     base = {
         "ts": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
@@ -1903,16 +1925,17 @@ def _normalize_grok(payload: Dict[str, Any], session_id: str, workspace: Path) -
             "stderr": payload.get("stderr", ""),
         }
     if tool_name == "Read":
-        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
+        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("target_file") or tool_input.get("path", "")}
     if tool_name in {"Edit", "MultiEdit", "Write"}:
         return {
             **base,
             "type": "file_write",
-            "path": tool_input.get("file_path") or tool_input.get("path", ""),
+            "path": tool_input.get("file_path") or tool_input.get("target_file") or tool_input.get("path", ""),
             "content": (
                 _join_edits(tool_input.get("edits", []))
                 or tool_input.get("content", "")
                 or tool_input.get("new_string", "")
+                or tool_input.get("replace", "")
             ),
         }
     if tool_name in {"WebFetch", "WebSearch"}:

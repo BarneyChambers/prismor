@@ -18,6 +18,7 @@ dormant until the installer starts registering it, never wrong.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from typing import Any, Dict, Mapping, Optional
 
 # Context output shapes.
@@ -143,8 +144,17 @@ def context_output(agent: str, canonical: str, text: str) -> Optional[Dict[str, 
     }}
 
 
+def _rewrite_mode(caps: "HookCaps") -> Optional[str]:
+    # REWRITE_ALLOW agents only take a rewrite next to permissionDecision
+    # "allow", which also skips the agent's own approval prompt for the call.
+    # Keep that opt-in; by default MODIFY fails closed to DENY on them.
+    if caps.input_rewrite == REWRITE_ALLOW and os.environ.get("PRISMOR_REWRITE_AUTO_APPROVE") != "1":
+        return None
+    return caps.input_rewrite
+
+
 def supports_rewrite(agent: str) -> bool:
-    return bool(caps_for(agent).input_rewrite)
+    return bool(_rewrite_mode(caps_for(agent)))
 
 
 def rewrite_output(agent: str, claude_update: Optional[Dict[str, Any]],
@@ -156,15 +166,16 @@ def rewrite_output(agent: str, claude_update: Optional[Dict[str, Any]],
     closed exactly as before.
     """
     caps = caps_for(agent)
-    if not caps.input_rewrite or not isinstance(claude_update, dict):
+    mode = _rewrite_mode(caps)
+    if not mode or not isinstance(claude_update, dict):
         return None
     hso = claude_update.get("hookSpecificOutput") or {}
     new_input = hso.get("updatedInput")
     if not isinstance(new_input, dict):
         return None
-    if caps.input_rewrite == REWRITE_CLAUDE:
+    if mode == REWRITE_CLAUDE:
         return claude_update
-    if caps.input_rewrite == REWRITE_GEMINI:
+    if mode == REWRITE_GEMINI:
         return {"hookSpecificOutput": {
             "hookEventName": caps.output_names.get("PreToolUse", "PreToolUse"),
             "tool_input": new_input,

@@ -1132,6 +1132,43 @@ class TestNormalizePayloadGrok(unittest.TestCase):
         self.assertEqual(event["type"], "file_write")
         self.assertIn("lodash", event["content"])
 
+    # Real Grok payloads (grok-build docs/user-guide/10-hooks.md) carry Grok's
+    # own tool names and a snake_case `hookEventName` next to the PascalCase
+    # `hook_event_name`.
+    def test_native_shell_tool_name(self):
+        payload = {
+            "hookEventName": "pre_tool_use",
+            "hook_event_name": "PreToolUse",
+            "sessionId": "grok-4",
+            "toolName": "run_terminal_command",
+            "toolInput": {"command": "rm -rf ~"},
+        }
+        event = normalize_payload(agent="grok", payload=payload, workspace=Path("/tmp"))["event"]
+        self.assertEqual(event["type"], "shell")
+        self.assertEqual(event["command"], "rm -rf ~")
+        self.assertEqual(event["agent_event"], "PreToolUse")
+
+    def test_native_read_and_edit_tool_names(self):
+        read = normalize_payload(agent="grok", payload={
+            "hook_event_name": "PreToolUse", "hookEventName": "pre_tool_use",
+            "toolName": "read_file", "toolInput": {"target_file": "/home/u/.ssh/id_rsa"},
+        }, workspace=Path("/tmp"))["event"]
+        self.assertEqual(read["type"], "file_read")
+        self.assertEqual(read["path"], "/home/u/.ssh/id_rsa")
+        edit = normalize_payload(agent="grok", payload={
+            "hook_event_name": "PreToolUse", "hookEventName": "pre_tool_use",
+            "toolName": "search_replace",
+            "toolInput": {"file_path": "/src/a.py", "old_string": "a", "new_string": "b = 1"},
+        }, workspace=Path("/tmp"))["event"]
+        self.assertEqual(edit["type"], "file_write")
+        self.assertEqual(edit["path"], "/src/a.py")
+
+    def test_snake_case_only_event_name(self):
+        event = normalize_payload(agent="grok", payload={
+            "hookEventName": "user_prompt_submit", "prompt": "hi",
+        }, workspace=Path("/tmp"))["event"]
+        self.assertEqual(event["type"], "prompt")
+
 
 class TestNormalizePayloadKiro(unittest.TestCase):
     """Test Kiro CLI payload normalization (lowerCamelCase event names, snake_case/alias tool names)."""

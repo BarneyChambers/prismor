@@ -42,10 +42,10 @@ rules:
 """
 
 
-def _dispatch(agent, ws, home, payload):
+def _dispatch(agent, ws, home, payload, extra_env=None):
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("PRISMOR_") and k not in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY")}
-    env.update(PRISMOR_HOME=str(home), PYTHONPATH=str(ROOT))
+    env.update(PRISMOR_HOME=str(home), PYTHONPATH=str(ROOT), **(extra_env or {}))
     proc = subprocess.run(
         [sys.executable, "-m", "prismor.runtime.cli", "hook-dispatch",
          "--agent", agent, "--workspace", str(ws), "--mode", "enforce"],
@@ -99,7 +99,8 @@ def test_canonical_event_names():
 _CLAUDE_UPDATE = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": {"command": "safe"}}}
 
 
-def test_rewrite_output_shapes():
+def test_rewrite_output_shapes(monkeypatch):
+    monkeypatch.setenv("PRISMOR_REWRITE_AUTO_APPROVE", "1")
     assert hook_caps.rewrite_output("claude", _CLAUDE_UPDATE) is _CLAUDE_UPDATE
     assert hook_caps.rewrite_output("grok", _CLAUDE_UPDATE) is _CLAUDE_UPDATE
     for agent in ("codex", "qwen"):
@@ -111,6 +112,14 @@ def test_rewrite_output_shapes():
     for agent in ("copilot", "kiro", "cursor", "windsurf"):
         assert hook_caps.rewrite_output(agent, _CLAUDE_UPDATE) is None
     assert hook_caps.rewrite_output("codex", None) is None
+
+
+def test_auto_approving_rewrite_is_opt_in(monkeypatch):
+    monkeypatch.delenv("PRISMOR_REWRITE_AUTO_APPROVE", raising=False)
+    for agent in ("codex", "qwen"):
+        assert not hook_caps.supports_rewrite(agent)
+        assert hook_caps.rewrite_output(agent, _CLAUDE_UPDATE) is None
+    assert hook_caps.supports_rewrite("claude") and hook_caps.supports_rewrite("gemini")
 
 
 def test_transform_payload_presents_shell_calls_as_bash():
@@ -197,7 +206,8 @@ def test_modify_verdict_per_agent(agent, tmp_path):
     ws = tmp_path / "ws"
     (ws / ".prismor").mkdir(parents=True)
     (ws / ".prismor" / "policy.yaml").write_text(_MODIFY_POLICY)
-    proc, out = _dispatch(agent, ws, tmp_path / "home", {"session_id": f"mod-{agent}", **_MODIFY_PAYLOADS[agent]})
+    proc, out = _dispatch(agent, ws, tmp_path / "home", {"session_id": f"mod-{agent}", **_MODIFY_PAYLOADS[agent]},
+                         extra_env={"PRISMOR_REWRITE_AUTO_APPROVE": "1"})
     if agent in ("copilot", "kiro"):
         assert proc.returncode == 2 and out is None  # cannot rewrite: fail closed to DENY
         return
@@ -212,3 +222,11 @@ def test_modify_verdict_per_agent(agent, tmp_path):
     if agent == "qwen":
         assert new_input["description"] == "keep me"  # Qwen replaces the whole input
     assert hso["hookEventName"] == ("BeforeTool" if agent == "gemini" else "PreToolUse")
+
+
+def test_modify_fails_closed_on_codex_without_opt_in(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / ".prismor").mkdir(parents=True)
+    (ws / ".prismor" / "policy.yaml").write_text(_MODIFY_POLICY)
+    proc, out = _dispatch("codex", ws, tmp_path / "home", {"session_id": "mod-codex-off", **_MODIFY_PAYLOADS["codex"]})
+    assert proc.returncode == 2 and out is None
