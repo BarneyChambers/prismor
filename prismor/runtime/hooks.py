@@ -3346,5 +3346,7 @@ def _is_pre_action(agent_event: str) -> bool:
     return (
         lower.startswith("pre")
         or lower.startswith("before")
+        # OpenCode's plugin hook is `tool.execute.before`.
+        or lower.endswith(".before")
         or agent_event in {"PreToolUse", "UserPromptSubmit", "PermissionRequest"}
     )

@@ -281,3 +281,48 @@ class TestOpenCodeInstallUninstallRoundtrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --- blocking: the plugin's `tool.execute.before` must be a pre-action event --
+
+class TestOpenCodeBeforeEventBlocks(unittest.TestCase):
+    """Live OpenCode 1.19 run: the plugin loaded but nothing was blocked, because
+    `tool.execute.before` didn't count as pre-action and every call was treated
+    as already executed (logged, never denied)."""
+
+    def test_before_and_after_classification(self):
+        from prismor.runtime.hooks import _is_pre_action
+        from prismor.runtime.policy_engine import _is_pre_action_event
+        self.assertTrue(_is_pre_action("tool.execute.before"))
+        self.assertFalse(_is_pre_action("tool.execute.after"))
+        self.assertTrue(_is_pre_action_event({"agent_event": "tool.execute.before"}))
+        self.assertFalse(_is_pre_action_event({"agent_event": "tool.execute.after"}))
+
+    def _dispatch(self, payload):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp) / "ws"
+            ws.mkdir()
+            env = {k: v for k, v in os.environ.items() if not k.startswith("PRISMOR_")}
+            env.update(HOME=tmp, PRISMOR_HOME=str(Path(tmp) / ".prismor"),
+                       PYTHONPATH=str(Path(__file__).resolve().parents[1]))
+            return subprocess.run(
+                [sys.executable, "-m", "prismor.runtime.cli", "hook-dispatch",
+                 "--agent", "opencode", "--workspace", str(ws), "--mode", "enforce"],
+                input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=120,
+            )
+
+    def test_lockfile_deletion_is_blocked(self):
+        proc = self._dispatch({"hookEvent": "tool.execute.before", "toolName": "bash",
+                               "toolInput": {"command": "rm package-lock.json"}, "sessionId": "oc-1"})
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_secret_read_is_blocked(self):
+        proc = self._dispatch({"hookEvent": "tool.execute.before", "toolName": "read",
+                               "toolInput": {"filePath": "/home/u/.ssh/id_rsa"}, "sessionId": "oc-2"})
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+
+    def test_ls_is_allowed(self):
+        proc = self._dispatch({"hookEvent": "tool.execute.before", "toolName": "bash",
+                               "toolInput": {"command": "ls"}, "sessionId": "oc-3"})
+        self.assertEqual(proc.returncode, 0, proc.stderr)
