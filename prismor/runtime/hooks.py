@@ -512,6 +512,9 @@ def normalize_payload(*, agent: str, payload: Dict[str, Any], workspace: Path) -
         or payload.get("execution_id")
         or payload.get("executionId")
         or payload.get("conversationId")
+        # Cursor: stable across every hook of a conversation (session_id is
+        # only on sessionStart).
+        or payload.get("conversation_id")
         or _ephemeral_session_id(agent, workspace)
     )
 
@@ -548,7 +551,7 @@ def normalize_payload(*, agent: str, payload: Dict[str, Any], workspace: Path) -
     elif agent == "antigravity":
         event = _normalize_antigravity(payload, session_id, workspace)
     else:
-        event = _normalize_cursor(payload, session_id)
+        event = _normalize_cursor(payload, session_id, workspace)
     if isinstance(event, dict) and event.get("type") == "shell" and event.get("command"):
         event["command"] = _strip_prismor_scrub_wrapper(event["command"])
     if isinstance(event, dict):
@@ -595,7 +598,7 @@ def _own_prompt_injection(finding: Dict[str, Any], event: Dict[str, Any]) -> boo
     have seen what they pasted.
     """
     return (
-        str(event.get("agent_event", "")) == "UserPromptSubmit"
+        str(event.get("agent_event", "")) in ("UserPromptSubmit", "beforeSubmitPrompt")
         and finding.get("category") == "prompt_injection"
         and finding.get("ruleId") != "prompt-injection-hidden"
     )
@@ -879,15 +882,38 @@ def _merge_claude(config: Dict[str, Any], command: str, workspace: Path, pin_wor
     return cfg
 
 
+# Cursor hook events Prismor registers (https://cursor.com/docs/agent/hooks).
+# The before* events are Cursor's permission hooks: exit 2 or
+# {"permission": "deny"} stops the action (beforeSubmitPrompt uses
+# {"continue": false}). after* events are reported, never blocked. sessionStart
+# is fire-and-forget; it carries the project-memory scan, as on Claude.
+# preToolUse is deliberately absent: it fires for the same shell/MCP/read calls
+# as the dedicated events below, so registering it would screen each twice.
+_CURSOR_EVENTS = (
+    "sessionStart",
+    "beforeSubmitPrompt",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "beforeMCPExecution",
+    "afterMCPExecution",
+    "beforeReadFile",
+    "afterFileEdit",
+)
+
+# Event names older Prismor releases registered. Cursor never had them, so those
+# entries never fired; _strip_cursor drops the keys once Prismor's entry is
+# removed, so a reinstall migrates the config instead of leaving dead keys.
+_CURSOR_LEGACY_EVENTS = frozenset({
+    "beforeShellCommand",
+    "afterShellCommand",
+    "beforeFileWrite",
+    "afterFileWrite",
+})
+
+
 def _merge_cursor(config: Dict[str, Any], command: str) -> Dict[str, Any]:
     hooks = dict(config.get("hooks", {}))
-    for event_name in [
-        "beforeSubmitPrompt",
-        "beforeShellCommand",
-        "afterShellCommand",
-        "beforeFileWrite",
-        "afterFileWrite",
-    ]:
+    for event_name in _CURSOR_EVENTS:
         hooks[event_name] = _merge_simple_command_entries(hooks.get(event_name, []), command)
     return {**config, "version": config.get("version", 1), "hooks": hooks}
 
@@ -940,9 +966,13 @@ def _strip_cursor(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any], 
         entries = hooks[event_name]
         if not isinstance(entries, list):
             continue
-        filtered = [e for e in entries if marker not in e.get("command", "")]
+        filtered = [e for e in entries if not (isinstance(e, dict) and marker in e.get("command", ""))]
         if len(filtered) < len(entries):
             removed = True
+            if not filtered and event_name in _CURSOR_LEGACY_EVENTS:
+                # A legacy key that only held Prismor's (never-fired) entry.
+                del hooks[event_name]
+                continue
         hooks[event_name] = filtered
     return {**config, "hooks": hooks}, removed
 
@@ -2696,8 +2726,21 @@ def _normalize_windsurf(payload: Dict[str, Any], session_id: str, workspace: Pat
     return _unmapped_tool_event(base, payload)
 
 
-def _normalize_cursor(payload: Dict[str, Any], session_id: str) -> Dict[str, Any]:
-    hook_event = (
+def _cursor_path(payload: Dict[str, Any]) -> str:
+    return str(payload.get("file_path") or payload.get("path") or payload.get("filePath") or "")
+
+
+def _normalize_cursor(payload: Dict[str, Any], session_id: str, workspace: Path) -> Dict[str, Any]:
+    """Map a Cursor hook payload (https://cursor.com/docs/agent/hooks) to an event.
+
+    Cursor names the operation in ``hook_event_name`` and puts its arguments at
+    the top level: ``command``/``cwd``/``output`` (shell), ``tool_name``/
+    ``tool_input`` (a JSON string)/``mcp_server_name``/``result_json`` (MCP),
+    ``file_path`` (beforeReadFile), ``file_path``/``edits`` (afterFileEdit),
+    ``prompt`` (beforeSubmitPrompt). An unknown event name falls back to a
+    keyword match so it still lands on the closest canonical type.
+    """
+    hook_event = str(
         payload.get("hook_event_name")
         or payload.get("hookEventName")
         or payload.get("event_name")
@@ -2705,21 +2748,79 @@ def _normalize_cursor(payload: Dict[str, Any], session_id: str) -> Dict[str, Any
         or payload.get("event")
         or "unknown"
     )
+    roots = payload.get("workspace_roots")
+    cwd = payload.get("cwd") or (roots[0] if isinstance(roots, list) and roots else None)
     base = {
         "ts": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         "session_id": session_id,
         "agent": "cursor",
         "agent_event": hook_event,
-        "metadata": {"raw": payload},
+        "metadata": {
+            "cwd": cwd,
+            "tool_name": payload.get("tool_name") or "",
+            "transcript_path": payload.get("transcript_path"),
+            "raw": payload,
+        },
     }
-    if "prompt" in hook_event.lower():
+    lower = hook_event.lower()
+    if hook_event == "sessionStart":
+        # Same project-memory scan as Claude's SessionStart (#155). Cursor's
+        # sessionStart is fire-and-forget, so its findings are reported only.
+        memory_root = Path(cwd) if isinstance(cwd, str) and cwd else workspace
+        memory = _read_project_memory(memory_root)
+        base["metadata"]["memory_files"] = memory["files"]
+        base["metadata"]["truncated"] = memory["truncated"]
+        base["metadata"]["has_invisible_controls"] = memory["has_invisible_controls"]
+        base["metadata"]["memory_digests"] = memory["digests"]
+        return {**base, "type": "memory", "content": memory["content"]}
+    if "prompt" in lower:
         return {**base, "type": "prompt", "prompt": payload.get("prompt") or payload.get("message", "")}
-    if "shell" in hook_event.lower():
-        return {**base, "type": "shell", "command": payload.get("command") or payload.get("commandLine") or ""}
-    if "write" in hook_event.lower():
-        return {**base, "type": "file_write", "path": payload.get("path") or payload.get("filePath") or "", "content": payload.get("content", "")}
-    if "read" in hook_event.lower():
-        return {**base, "type": "file_read", "path": payload.get("path") or payload.get("filePath") or ""}
+    if "mcp" in lower:
+        server = str(payload.get("mcp_server_name") or payload.get("server") or "")
+        tool = str(payload.get("tool_name") or "")
+        tool_input: Any = payload.get("tool_input")
+        if isinstance(tool_input, str):
+            try:
+                tool_input = json.loads(tool_input)
+            except ValueError:
+                pass  # keep the raw string; it is still scanned as text
+        synthetic = f"mcp__{server}__{tool}" if server else f"mcp__{tool}__{tool}"
+        mcp_event = _classify_mcp_event(
+            base=base,
+            tool_name=synthetic,
+            tool_input=tool_input if tool_input is not None else {},
+            response=payload.get("result_json") or payload.get("result"),
+            is_post=lower.startswith(("after", "post")),
+            workspace=workspace,
+        )
+        # HTTP/SSE servers carry their endpoint on the call itself, so a remote
+        # server takes the network path (egress allowlist, secret-in-args)
+        # even when it is not in any MCP config Prismor can read.
+        inline_url = str(payload.get("mcp_server_url") or payload.get("url") or "")
+        if mcp_event is not None and inline_url and not lower.startswith(("after", "post")):
+            if mcp_event.get("type") != "network":
+                mcp_event = {**base, "type": "network", "url": inline_url,
+                             "outbound_payload": mcp_event.get("response", ""),
+                             "mcp_server": mcp_event.get("mcp_server"),
+                             "mcp_tool": mcp_event.get("mcp_tool")}
+            elif not mcp_event.get("url"):
+                mcp_event["url"] = inline_url
+        if mcp_event is not None:
+            return mcp_event
+    if "shell" in lower:
+        return {
+            **base,
+            "type": "shell",
+            "command": payload.get("command") or payload.get("commandLine") or "",
+            "stdout": payload.get("output", ""),
+        }
+    if "edit" in lower or "write" in lower:
+        edits = payload.get("edits")
+        content = _join_edits(edits) if isinstance(edits, list) else ""
+        return {**base, "type": "file_write", "path": _cursor_path(payload),
+                "content": content or payload.get("content", "")}
+    if "read" in lower:
+        return {**base, "type": "file_read", "path": _cursor_path(payload)}
     return _unmapped_tool_event(base, payload)
 
 

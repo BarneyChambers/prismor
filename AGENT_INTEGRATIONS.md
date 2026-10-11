@@ -100,7 +100,8 @@ Legend: ✅ shipped · 🟡 roadmap · — sweep-only / not applicable. Surfaces
 ### Cursor
 
 - **Config:** `.cursor/hooks.json` (schema-validated).
-- **Events hooked:** `beforeSubmitPrompt`, `beforeShellCommand`, `afterShellCommand`, `beforeFileWrite`, `afterFileWrite`.
+- **Events hooked:** `sessionStart`, `beforeSubmitPrompt`, `beforeShellExecution`, `afterShellExecution`, `beforeMCPExecution`, `afterMCPExecution`, `beforeReadFile`, `afterFileEdit` ([Cursor hooks](https://cursor.com/docs/agent/hooks)). `preToolUse` is not registered: it fires for the same shell/MCP/read calls as the dedicated events, so each call would be screened twice. Reinstalling removes the `beforeShellCommand`/`afterShellCommand`/`beforeFileWrite`/`afterFileWrite` entries older releases wrote (Cursor has no such events, so they never fired).
+- **Blocking:** on a deny, stdout `{"permission": "deny", "user_message", "agent_message"}` plus exit 2 (`beforeSubmitPrompt`: `{"continue": false, "user_message"}`). Step-up is `{"permission": "ask"}` on `beforeShellExecution` / `beforeMCPExecution`; on `beforeReadFile` and `beforeSubmitPrompt`, which have no "ask", it fails closed to deny. `after*` and `sessionStart` are reported, never blocked.
 - **Sweep target:** `~/.config/Cursor/`.
 - **Code:** `prismor/runtime/hooks.py` `_merge_cursor()`, `_normalize_cursor()`.
 

@@ -7,7 +7,7 @@ Local runtime security monitor for AI coding agents. Intercepts agent actions vi
 | Agent | Hook Events | Enforce Mode |
 |-------|------------|--------------|
 | Claude Code | PreToolUse, PostToolUse, UserPromptSubmit, Stop | Yes |
-| Cursor | before/afterShellCommand, before/afterFileWrite, beforeSubmitPrompt | Yes |
+| Cursor | before/afterShellExecution, before/afterMCPExecution, beforeReadFile, afterFileEdit, beforeSubmitPrompt, sessionStart | Yes |
 | Windsurf | pre/post_run_command, pre/post_write_code, pre/post_read_code, pre_user_prompt, pre/post_mcp_tool_use, post_cascade_response | Yes |
 
 ## Quick Start
