@@ -1163,6 +1163,18 @@ class TestNormalizePayloadGrok(unittest.TestCase):
         self.assertEqual(edit["type"], "file_write")
         self.assertEqual(edit["path"], "/src/a.py")
 
+    def test_native_write_tool_name(self):
+        # Grok adds a `write` tool by default (grok-build builder.rs); Prismor's
+        # `Write` matcher fires for it, so the normalizer must map it too.
+        event = normalize_payload(agent="grok", payload={
+            "hook_event_name": "PreToolUse", "hookEventName": "pre_tool_use",
+            "toolName": "write",
+            "toolInput": {"file_path": "/home/u/.ssh/authorized_keys", "content": "ssh-ed25519 AAAA x"},
+        }, workspace=Path("/tmp"))["event"]
+        self.assertEqual(event["type"], "file_write")
+        self.assertEqual(event["path"], "/home/u/.ssh/authorized_keys")
+        self.assertIn("ssh-ed25519", event["content"])
+
     def test_snake_case_only_event_name(self):
         event = normalize_payload(agent="grok", payload={
             "hookEventName": "user_prompt_submit", "prompt": "hi",

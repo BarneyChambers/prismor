@@ -1886,6 +1886,9 @@ _GROK_TOOL_ALIASES = {
     "run_terminal_command": "Bash",
     "read_file": "Read",
     "search_replace": "Edit",
+    "hashline_edit": "Edit",
+    "write": "Write",
+    "hashline_read": "Read",
     "web_search": "WebSearch",
     "web_fetch": "WebFetch",
 }

@@ -165,6 +165,20 @@ def _cursor_decision(agent_event: str, decision: str, user_message: str, agent_m
     return {"permission": decision, "user_message": user_message, "agent_message": agent_message}
 
 
+def _cursor_deny_text(user_message: str, agent_message: str) -> str:
+    """Cursor's block message for an exit-2 deny.
+
+    On exit 2 Cursor does not parse stdout as JSON: it denies and shows the
+    trimmed stdout verbatim (cursor-agent hook executor), so a deny is plain
+    text, not ``_cursor_decision`` JSON. Exit 2 keeps the block fail-closed.
+    """
+    user_message = user_message.strip()
+    agent_message = agent_message.strip()
+    if agent_message and agent_message not in user_message:
+        return f"{user_message}\n\n{agent_message}\n"
+    return user_message + "\n"
+
+
 def _offer_post_enroll_install(workspace: Path) -> None:
     """After a successful enroll, offer to guard the WHOLE MACHINE — not just the
     current project. Enrollment means the device is managed, so the hooks go in
@@ -2075,12 +2089,11 @@ def main(argv: Optional[List[str]] = None) -> None:
                         )) + "\n")
                         return
                     # beforeReadFile / beforeSubmitPrompt have no "ask": fail closed.
-                    sys.stdout.write(json.dumps(_cursor_decision(
-                        _agent_event, "deny",
+                    sys.stdout.write(_cursor_deny_text(
                         "Prismor requires approval for this action (no approval surface, blocked): "
                         + _block_header(blocking).strip(),
                         reason,
-                    )) + "\n")
+                    ))
                 # No inline-approval surface (windsurf/codex/grok/kiro/crush/
                 # openhands/continue/goose, and the cursor events above without
                 # "ask"): fail closed.
@@ -2129,12 +2142,11 @@ def main(argv: Optional[List[str]] = None) -> None:
                     return
                 # Transform unavailable / declined on this surface: fail closed.
                 if args.agent == "cursor":
-                    sys.stdout.write(json.dumps(_cursor_decision(
-                        _agent_event, "deny",
+                    sys.stdout.write(_cursor_deny_text(
                         "Prismor could not safely modify this action (blocked): "
                         + _block_header(blocking).strip(),
                         reason,
-                    )) + "\n")
+                    ))
                 sys.stderr.write(f"Prismor could not safely modify this action (blocked): {reason}\n")
                 raise SystemExit(2)
 
@@ -2177,14 +2189,9 @@ def main(argv: Optional[List[str]] = None) -> None:
                     raise SystemExit(2)
                 else:
                     if args.agent == "cursor":
-                        # Cursor reads {"permission": "deny"} ({"continue": false}
-                        # on beforeSubmitPrompt) from stdout and shows
-                        # user_message/agent_message; exit 2 below is its
-                        # equivalent deny signal, kept so the block holds even
-                        # if stdout is not parsed.
-                        sys.stdout.write(json.dumps(_cursor_decision(
-                            _agent_event, "deny", _block_header(blocking).strip(), reason,
-                        )) + "\n")
+                        # Exit 2 below is Cursor's deny; it shows stdout as the
+                        # block message verbatim (no JSON parsing on exit 2).
+                        sys.stdout.write(_cursor_deny_text(_block_header(blocking).strip(), reason))
                     sys.stderr.write(_block_header(blocking))
                     if blocking.get("evidence"):
                         sys.stderr.write(f"{blocking['evidence']}\n")

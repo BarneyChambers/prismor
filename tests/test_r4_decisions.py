@@ -144,18 +144,20 @@ class R4Decisions(unittest.TestCase):
         self.assertEqual(out["permission"], "ask")
         self.assertIn("r4-stepup", out["agent_message"] + out["user_message"])
 
-    def test_deny_cursor_emits_permission_deny_and_exits_2(self):
-        proc = _dispatch("cursor", "echo R4_DENY_MARKER", self.ws, self.home)
+    # On exit 2 Cursor shows stdout verbatim and never parses it as JSON, so a
+    # deny prints a plain-text message rather than {"permission": "deny"}.
+    def _assert_plain_deny(self, proc, marker):
         self.assertEqual(proc.returncode, 2, proc.stderr)
-        out = self._stdout_json(proc)
-        self.assertEqual(out["permission"], "deny")
-        self.assertIn("r4-deny", out["user_message"])
-        self.assertIn("r4-deny", out["agent_message"])
+        self.assertIn(marker, proc.stdout)
+        self.assertFalse(proc.stdout.lstrip().startswith("{"), proc.stdout)
 
-    def test_modify_cursor_fails_closed_with_deny_json(self):
+    def test_deny_cursor_prints_plain_message_and_exits_2(self):
+        proc = _dispatch("cursor", "echo R4_DENY_MARKER", self.ws, self.home)
+        self._assert_plain_deny(proc, "r4-deny")
+
+    def test_modify_cursor_fails_closed_with_plain_deny(self):
         proc = _dispatch("cursor", "echo R4_MODIFY_MARKER", self.ws, self.home)
-        self.assertEqual(proc.returncode, 2, proc.stderr)
-        self.assertEqual(self._stdout_json(proc)["permission"], "deny")
+        self._assert_plain_deny(proc, "Prismor could not safely modify")
 
     def _dispatch_cursor(self, payload):
         env = dict(os.environ)
@@ -186,10 +188,9 @@ class R4Decisions(unittest.TestCase):
             "hook_event_name": "beforeReadFile", "conversation_id": "r4-c",
             "file_path": str(self.ws / "R4_READ_MARKER.txt"), "content": "", "attachments": [],
         })
-        self.assertEqual(proc.returncode, 2, proc.stderr)
-        self.assertEqual(self._stdout_json(proc)["permission"], "deny")
+        self._assert_plain_deny(proc, "no approval surface")
 
-    def test_deny_cursor_prompt_emits_continue_false(self):
+    def test_deny_cursor_prompt_prints_plain_message(self):
         (self.ws / ".prismor" / "policy.yaml").write_text(_POLICY + """
   - id: r4-prompt-deny
     severity: HIGH
@@ -206,11 +207,7 @@ class R4Decisions(unittest.TestCase):
             "hook_event_name": "beforeSubmitPrompt", "conversation_id": "r4-c",
             "prompt": "please R4_PROMPT_MARKER", "attachments": [],
         })
-        self.assertEqual(proc.returncode, 2, proc.stderr)
-        out = self._stdout_json(proc)
-        self.assertIs(out["continue"], False)
-        self.assertIn("r4-prompt-deny", out["user_message"])
-        self.assertNotIn("permission", out)
+        self._assert_plain_deny(proc, "r4-prompt-deny")
 
     def test_allow_cursor_prints_nothing(self):
         # Cursor parses stdout of permission hooks; an allow must not emit stray text.
