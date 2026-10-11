@@ -298,6 +298,12 @@ def _detect_agents(target: Path) -> dict:
         "continue": shutil.which("cn") is not None or (target / ".continue").exists() or (home / ".continue").exists(),
         "goose":    shutil.which("goose") is not None or (home / ".config" / "goose").exists(),
         "antigravity": shutil.which("agy") is not None or (home / ".antigravity").exists() or (home / ".gemini" / "antigravity").exists(),
+        # A bare .github is in most repos, so only Copilot's own hooks dir counts.
+        "copilot":  shutil.which("copilot") is not None or (target / ".github" / "hooks").exists() or (home / ".copilot").exists(),
+        # ~/.gemini is shared with Antigravity (~/.gemini/antigravity), so look
+        # for Gemini CLI's own settings file rather than the bare directory.
+        "gemini":   shutil.which("gemini") is not None or (target / ".gemini").exists() or (home / ".gemini" / "settings.json").exists(),
+        "opencode": shutil.which("opencode") is not None or (target / ".opencode").exists() or (target / "opencode.json").exists() or (home / ".config" / "opencode").exists(),
     }
 
 
@@ -607,6 +613,8 @@ def _step_agents(target: Path, step: int = 2, total: int = 4) -> list:
         {"name": "continue",  "label": "Continue CLI", "on": detected.get("continue", False)},
         {"name": "goose",     "label": "Goose",       "on": detected.get("goose", False)},
         {"name": "antigravity", "label": "Antigravity", "on": detected.get("antigravity", False)},
+        {"name": "copilot",   "label": "GitHub Copilot", "on": detected.get("copilot", False)},
+        {"name": "gemini",    "label": "Gemini CLI",  "on": detected.get("gemini", False)},
     ]
     if not any(a["on"] for a in agents):
         agents[0]["on"] = True
@@ -632,7 +640,7 @@ def _step_agents(target: Path, step: int = 2, total: int = 4) -> list:
             arrow = _w("▸ ", CYAN) if i == sel else "  "
             dot   = _w("●", GRN) if ag["on"] else _w("○", DIM)
             name  = _pad(_w(ag["label"], BOLD) if i == sel else ag["label"], 18)
-            tag   = _pad(_w("detected", GRN) if detected[ag["name"]] else _w("not found", DIM), 11)
+            tag   = _pad(_w("detected", GRN) if detected.get(ag["name"]) else _w("not found", DIM), 11)
             g = gov.get(ag["name"], {})
             surface = g.get("surfaces", "")
             if ag.get("mirror"):

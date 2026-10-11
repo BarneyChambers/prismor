@@ -559,20 +559,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         # so the confirmation box reflects what's actually installed on this machine.
         agents_with_hooks: List[str] = []
         mode: Optional[str] = None
-        for agent_name in ("claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok"):
-            hook_path = _find_hook_config(agent_name, workspace)
-            if hook_path and hook_path.exists():
-                try:
-                    content = hook_path.read_text(encoding="utf-8")
-                    if "prismor" in content.lower():
-                        agents_with_hooks.append(agent_name)
-                        if mode is None:
-                            if "--mode enforce" in content:
-                                mode = "enforce"
-                            elif "--mode observe" in content:
-                                mode = "observe"
-                except Exception:
-                    pass
+        for _scope_modes in _hooks_by_scope(workspace).values():
+            for agent_name, agent_mode in _scope_modes.items():
+                if agent_name not in agents_with_hooks:
+                    agents_with_hooks.append(agent_name)
+                if mode is None:
+                    mode = agent_mode
 
         cloak_installed = False
         cloak_secret_count = 0
@@ -3892,7 +3884,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ── install-hooks ──────────────────────────────────────────────────
     install_parser = subparsers.add_parser("install-hooks", help="Install IDE hooks for real-time monitoring")
     install_parser.add_argument("--workspace", help="Workspace path")
-    install_parser.add_argument("--agent", choices=["claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok", "kiro", "crush", "openhands", "qwen", "continue", "goose", "antigravity", "all"], required=True, help="Which agent/IDE")
+    install_parser.add_argument("--agent", choices=[*_SUPPORTED_AGENTS, "all"], required=True, help="Which agent/IDE")
     install_parser.add_argument("--scope", choices=["project", "user", "global"], default="project", help="Hook scope (default: project)")
     install_parser.add_argument("--mode", choices=["observe", "enforce"], default="observe", help="observe=log only, enforce=block dangerous actions")
     install_parser.add_argument("--portable", action="store_true", help="Write a hook command with no machine-specific paths, for a config file committed to the repo and cloned onto a hosted agent's VM (needs sh)")
@@ -3907,7 +3899,7 @@ def build_parser() -> argparse.ArgumentParser:
         "`prismor cloak install`.",
     )
     uninstall_parser.add_argument("--workspace", help="Workspace path")
-    uninstall_parser.add_argument("--agent", choices=["claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok", "kiro", "crush", "openhands", "qwen", "continue", "goose", "antigravity", "all"], required=True, help="Which agent/IDE")
+    uninstall_parser.add_argument("--agent", choices=[*_SUPPORTED_AGENTS, "all"], required=True, help="Which agent/IDE")
     uninstall_parser.add_argument("--scope", choices=["project", "user", "global"], default="project", help="Hook scope")
 
     # ── mcp-gateway ────────────────────────────────────────────────────
@@ -4811,18 +4803,19 @@ def _warn_other_scope_hooks(workspace: Path, scope: str, agents: List[str], *, i
 def _hooks_by_scope(workspace: Path) -> Dict[str, Dict[str, Optional[str]]]:
     """{scope: {agent: mode}} for every agent hooked at project or global scope."""
     from prismor.runtime.hooks import _config_path as _hook_cfg_path
+    from prismor.runtime.hooks import hook_installed as _hook_installed
     out: Dict[str, Dict[str, Optional[str]]] = {"project": {}, "global": {}}
     for scope_name in ("project", "global"):
-        for agent_name in ("claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok", "kiro"):
+        for agent_name in _SUPPORTED_AGENTS:
+            # hook_installed also recognises the plugin-registered agents
+            # (openclaw / hermes), whose config never carries the
+            # hook-dispatch marker itself.
+            if not _hook_installed(agent_name, scope_name, workspace):
+                continue
             try:
-                hook_path = _hook_cfg_path(agent_name, scope_name, workspace)
-                if not hook_path.exists():
-                    continue
-                content = hook_path.read_text(encoding="utf-8")
+                content = _hook_cfg_path(agent_name, scope_name, workspace).read_text(encoding="utf-8")
             except Exception:
-                continue
-            if "hook-dispatch" not in content:
-                continue
+                content = ""
             out[scope_name][agent_name] = ("enforce" if "--mode enforce" in content
                                            else "observe" if "--mode observe" in content else None)
     return out
@@ -4838,27 +4831,6 @@ def _git_root_or_self(path: Path) -> Path:
         if (cand / ".git").exists():
             return cand
     return p
-
-
-def _find_hook_config(agent: str, workspace: Path) -> Path:
-    """Find the hook config file for an agent."""
-    if agent == "claude":
-        return workspace / ".claude" / "settings.json"
-    if agent == "cursor":
-        return workspace / ".cursor" / "hooks.json"
-    if agent == "openclaw":
-        return workspace / ".openclaw" / "plugins.json"
-    if agent == "hermes":
-        return workspace / ".hermes" / "plugins.json"
-    if agent == "codex":
-        return workspace / ".codex" / "hooks.json"
-    if agent == "copilot":
-        return workspace / ".github" / "hooks" / "prismor.json"
-    if agent == "grok":
-        return workspace / ".grok" / "hooks" / "prismor.json"
-    if agent == "kiro":
-        return workspace / ".kiro" / "agents" / "kiro_default.json"
-    return workspace / ".windsurf" / "hooks.json"
 
 
 def _dashboard_sparkline(day_counts: List[int]) -> str:
@@ -5307,7 +5279,7 @@ def _run_doctor(workspace: Path, as_json: bool = False) -> None:
     from prismor.runtime.hooks import hook_installed as _hook_installed
     _hooked: Dict[str, List[str]] = {"project": [], "global": []}
     for scope_name in ("project", "global"):
-        for agent_name in ("claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok", "kiro"):
+        for agent_name in _SUPPORTED_AGENTS:
             if _hook_installed(agent_name, scope_name, workspace):
                 _hooked[scope_name].append(agent_name)
     agents_with_hooks = sorted(set(_hooked["project"]) | set(_hooked["global"]))
@@ -5549,26 +5521,13 @@ def _print_status_overview(workspace: Path) -> None:
     # workspace just as much as a project one; reporting "not installed" when
     # only the global hook exists sent people to install a second, project
     # hook on top and every tool call was then evaluated twice.
-    from prismor.runtime.hooks import _config_path as _hook_cfg_path
     hooks_by_scope: Dict[str, List[str]] = {"project": [], "global": []}
     modes_by_scope: Dict[str, Optional[str]] = {"project": None, "global": None}
-    for scope_name in ("project", "global"):
-        for agent_name in ("claude", "cursor", "windsurf", "openclaw", "hermes", "codex", "copilot", "grok", "kiro"):
-            try:
-                hook_path = _hook_cfg_path(agent_name, scope_name, workspace)
-                if not hook_path.exists():
-                    continue
-                content = hook_path.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            if "hook-dispatch" not in content:
-                continue
+    for scope_name, agent_modes in _hooks_by_scope(workspace).items():
+        for agent_name, agent_mode in agent_modes.items():
             hooks_by_scope[scope_name].append(agent_name)
             if modes_by_scope[scope_name] is None:
-                if "--mode enforce" in content:
-                    modes_by_scope[scope_name] = "enforce"
-                elif "--mode observe" in content:
-                    modes_by_scope[scope_name] = "observe"
+                modes_by_scope[scope_name] = agent_mode
 
     agents_with_hooks = sorted(set(hooks_by_scope["project"]) | set(hooks_by_scope["global"]))
     # Effective mode: enforce wins if either scope enforces (both hooks run).

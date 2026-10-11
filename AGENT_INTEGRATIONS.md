@@ -35,7 +35,7 @@ _Generated from `prismor/runtime/integrations/registry.yaml` — do not edit by 
 | Qwen Code (Alibaba) | coding-agent | hook-config | ✅ | `json-permission` |
 | Continue CLI | coding-agent | hook-config | ✅ | `exit-2` |
 | Goose (Agentic AI Foundation) | coding-agent | hook-config | ✅ | `exit-2` |
-| Gemini CLI (Google) | coding-agent | hook-config | 🟡 | `exit-2` |
+| Gemini CLI (Google) | coding-agent | hook-config | ✅ | `exit-2` |
 | OpenCode | coding-agent | sdk | ✅ | `throw` |
 | Factory Droid | coding-agent | hook-config | 🟡 | `json-permission` |
 | Pi Coding Agent | coding-agent | hook-config | 🟡 | `exit-2` |
@@ -91,7 +91,7 @@ Legend: ✅ shipped · 🟡 roadmap · — sweep-only / not applicable. Surfaces
 ### Claude Code (Anthropic)
 
 - **Config:** `.claude/settings.json` (project) or `~/.claude/settings.json` (user).
-- **Events hooked:** `UserPromptSubmit`, `PreToolUse`, `PostToolUse` with matcher `Bash|Read|Edit|MultiEdit|Write|WebFetch|WebSearch`.
+- **Events hooked:** `UserPromptSubmit` (matcher `*`); `PreToolUse`, `PostToolUse` and `PostToolUseFailure` with matcher `Task|Agent|Skill|Bash|Read|Edit|MultiEdit|Write|WebFetch|WebSearch|mcp__.*` (`_CLAUDE_TOOL_MATCHER` — `Task`/`Agent` cover subagent spawns, `mcp__.*` every MCP tool); `SessionStart` (matcher `startup|resume|clear|compact`) to scan project-memory files. `Stop` is deliberately not hooked.
 - **Blocking:** exit 2 from hook → block; stderr → rejection reason.
 - **Sweep target:** `~/.claude/`.
 - **Cloaking:** `prismor/runtime/cloaking/` installs `PreToolUse:Bash` + `PostToolUse:mcp__.*` + `UserPromptSubmit` hooks for `@@SECRET:<name>@@` substitution and scrub-on-output.
@@ -236,6 +236,23 @@ Prismor integrates with Hermes at two complementary layers:
 - **Blocking:** exit 2 blocks (stderr reason), OR a `{"decision":"block","reason":"..."}` stdout envelope — both confirmed live. This fits the generic fail-closed `else` branch; no special-case needed in `cli.py`.
 - **Sweep target:** `~/.config/goose/`.
 - **Code:** `prismor/runtime/hooks.py` `_merge_goose()`, `_strip_goose()`, `_normalize_goose()`.
+
+### Gemini CLI (Google)
+
+- **Config:** `.gemini/settings.json` (project) or `~/.gemini/settings.json` (user). Gemini also layers `/etc/gemini-cli/settings.json` (system), which Prismor does not write. Same nested Claude-shape `hooks.<Event>[].matcher` + `.hooks[]` entries, each `{type: "command", name: "prismor", command}`.
+- **Events hooked:** `BeforeTool`, `AfterTool` with matcher `run_shell_command|read_file|write_file|replace_in_file|web_fetch|web_search|mcp__.*`; `SessionStart` (matcher `*`) to scan `GEMINI.md` / `AGENTS.md`. Gemini's other events (`BeforeAgent`, `AfterAgent`, `BeforeModel`, `BeforeToolSelection`, `AfterModel`, `SessionEnd`, `Notification`, `PreCompress`) are not hooked.
+- **Payload:** JSON on stdin with `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `timestamp`, `tool_name`, `tool_input`.
+- **Blocking:** exit 2 from `BeforeTool` blocks the call; stderr is the rejection reason.
+- **Not yet verified against a live `gemini` binary.** Built from the [hooks reference](https://geminicli.com/docs/hooks/reference/).
+- **Code:** `prismor/runtime/hooks.py` `_merge_gemini()`, `_strip_gemini()`, `_normalize_gemini()`.
+
+### OpenCode
+
+- **Config:** a plugin module Prismor writes to `.opencode/plugins/prismor.js` (project) or `~/.config/opencode/plugins/prismor.js` (user). OpenCode auto-loads every JS/TS file in those directories, so nothing is registered in `opencode.json`. Builds before this one wrote a `"plugins"` list to `.opencode/plugins.json`, which OpenCode never reads; install and uninstall remove that legacy entry (and the file, if nothing else is in it).
+- **Hooks:** `tool.execute.before`, `tool.execute.after`. The module exports a single plugin, `export const PrismorPlugin = async () => ({ ... })`; the tool name is `input.tool` and its arguments are `output.args`.
+- **Blocking:** the plugin pipes the event to the Prismor dispatcher; on exit 2 it does `throw new Error(reason)` inside `tool.execute.before`, which is how OpenCode blocks a call.
+- **Not yet verified against a live `opencode` binary.** Built from [opencode.ai/docs/plugins](https://opencode.ai/docs/plugins/). Prismor's governance model still recommends the [MCP mirror](docs/mcp-gateway.md) for OpenCode.
+- **Code:** `prismor/runtime/hooks.py` `_write_opencode_plugin()`, `_normalize_opencode()`.
 
 ---
 
@@ -495,30 +512,6 @@ and evaluates it, covering any MCP-speaking agent with no per-framework code.
 ## Roadmap — hook adapters planned
 
 Each agent below exposes a blocking pre-tool hook. An adapter requires (1) config-merge in `prismor/runtime/hooks.py`, (2) `_normalize_*` function, (3) registration in `_SUPPORTED_AGENTS` and `prismor/runtime/store.py`, (4) sweep target in `prismor/runtime/sweep.py` if applicable.
-
-### Gemini CLI (Google)
-
-- **Status:** stable — launched as a core feature on the [Google Developers Blog](https://developers.googleblog.com/tailor-gemini-cli-to-your-workflow-with-hooks/). Cleanest drop-in of the roadmap set.
-- **Config:** `.gemini/settings.json` (project) → `~/.gemini/settings.json` (user) → `/etc/gemini-cli/settings.json` (system), layered. `hooks.<Event>[].matcher` + `.hooks[]` with `{name, type: "command", command, timeout}`.
-- **Events:** `BeforeTool`, `AfterTool`, `BeforeAgent`, `AfterAgent`, `BeforeModel`, `BeforeToolSelection`, `AfterModel`, `SessionStart`, `SessionEnd`, `Notification`, `PreCompress`.
-- **Payload:** JSON on stdin — shared `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `timestamp`, plus event-specific fields (`tool_name`, `prompt`, etc.).
-- **Blocking:** exit 2 → "System Block" (stderr → rejection reason; for tool events blocks the call but agent continues; for agent/model events aborts the turn). Other non-zero exits → non-fatal warning.
-- **Adapter work:** write hooks block into `~/.gemini/settings.json`, map `BeforeTool`→pre, `AfterTool`→post, `SessionStart`. Reuse Claude-shape normalizer.
-
-### OpenCode
-
-- **Config:** `.opencode/plugins/*.js` (project) or `~/.config/opencode/plugins/*.js` (global); npm-package plugins declared in `opencode.json` under `"plugin": [...]`.
-- **Hooks:** `tool.execute.before`, `tool.execute.after`, plus `file.edited`, `file.watcher.updated`, `session.created|compacted|updated`, `message.updated|removed`, `shell.env`, `permission.asked|replied`.
-- **Handler signature:** `export const name = async ({ project, client, $, directory, worktree }) => ({ "tool.execute.before": async (input, output) => { ... } })`. `input.tool` = tool name; `output.args` is mutable — supports input rewriting as well as blocking.
-- **Blocking:** `throw new Error(reason)` inside `tool.execute.before`.
-- **Adapter work:** ship `@prismor/opencode-plugin` (or a drop-in `prismor-plugin.js`) that translates the hook payload to Prismor's canonical event, calls the dispatcher, and `throw`s on deny. Different shape than OpenClaw/Hermes: in-process JS, not subprocess-per-call — the shim is the only agent-side code.
-
-### Kiro (AWS)
-
-- **Config:** `~/.kiro/` (global), `.kiro/` (workspace) with `hooks/`, `steering/`, `agents/`, `settings/mcp.json`.
-- **Hooks:** `preToolUse`, `postToolUse` with a `matcher` field.
-- **Blocking:** exit 2 → block execution, stderr returned to the LLM.
-- **Adapter work:** shape is close to Claude Code — reuse dispatcher and normalizer. Scaffold the `.kiro/hooks/` entry.
 
 ### Factory Droid
 

@@ -71,6 +71,17 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
     results = []
     for current_agent in agents:
         config_path = _config_path(current_agent, scope, workspace)
+        if current_agent == "opencode":
+            # Not a JSON config: the hook IS a plugin module OpenCode loads
+            # from its plugins directory, with the dispatcher command baked in.
+            command = _dispatcher_command(
+                repo_root=repo_root, workspace=workspace, agent=current_agent, mode=mode,
+                pin_workspace=(scope == "project" and not portable), portable=portable,
+            )
+            _write_opencode_plugin(config_path, command)
+            _remove_legacy_opencode_registration(scope, workspace)
+            results.append({"agent": current_agent, "configPath": str(config_path)})
+            continue
         config = _read_json(config_path)
         # Idempotent + auto-migrating: drop any prior hook-dispatch hook (this
         # version's, or an older one that used a prismor/runtime/cli.py path) before adding
@@ -114,8 +125,6 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
             # containing hooks/hooks.json — the plugin dir is config_path's
             # grandparent (.../plugins/prismor/hooks/hooks.json -> .../plugins/prismor/).
             config = _merge_goose(config, command, config_path.parent.parent)
-        elif current_agent == "opencode":
-            config = _merge_opencode(config, command, repo_root)
         elif current_agent == "gemini":
             config = _merge_gemini(config, command)
         elif current_agent == "antigravity":
@@ -139,9 +148,10 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
 
 
 # Agents whose hook is registered as a plugin path rather than an inline
-# command. _strip_openclaw / _strip_hermes / _strip_opencode use the same
-# "is this one of ours" test when uninstalling.
-_PLUGIN_REGISTERED_AGENTS = ("openclaw", "hermes", "opencode")
+# command. _strip_openclaw / _strip_hermes use the same "is this one of ours"
+# test when uninstalling. (OpenCode's plugin file embeds the dispatcher
+# command, so the plain hook-dispatch text check covers it.)
+_PLUGIN_REGISTERED_AGENTS = ("openclaw", "hermes")
 
 
 def _prismor_plugin_registered(config_text: str) -> bool:
@@ -218,7 +228,7 @@ def hook_installed(agent: str, scope: str, workspace: Path) -> bool:
         text = path.read_text(encoding="utf-8")
         if "hook-dispatch" in text:
             return True
-        # openclaw / hermes / opencode do not take an inline command: install
+        # openclaw / hermes do not take an inline command: install
         # registers a *plugin path* in config["plugins"] and writes the
         # dispatcher into the scaffolded plugin. The marker is therefore never
         # in the config file, so the text search above reported these agents as
@@ -351,7 +361,16 @@ def uninstall_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str)
     for current_agent in agents:
         config_path = _config_path(current_agent, scope, workspace)
         removed = False
-        if config_path.exists():
+        if current_agent == "opencode":
+            try:
+                if config_path.exists() and "hook-dispatch" in config_path.read_text(encoding="utf-8"):
+                    config_path.unlink()
+                    removed = True
+            except OSError:
+                pass
+            if _remove_legacy_opencode_registration(scope, workspace):
+                removed = True
+        elif config_path.exists():
             config = _read_json(config_path)
             # Match the stable hook-dispatch token rather than a specific script
             # path, so uninstall removes BOTH the current immunity-routed hooks
@@ -709,7 +728,8 @@ def _config_path(agent: str, scope: str, workspace: Path) -> Path:
         if agent == "goose":
             return workspace / ".agents" / "plugins" / "prismor" / "hooks" / "hooks.json"
         if agent == "opencode":
-            return workspace / ".opencode" / "plugins.json"
+            # OpenCode auto-loads every JS/TS module in .opencode/plugins/.
+            return workspace / ".opencode" / "plugins" / _OPENCODE_PLUGIN_FILE
         if agent == "gemini":
             return workspace / ".gemini" / "settings.json"
         if agent == "antigravity":
@@ -748,7 +768,7 @@ def _config_path(agent: str, scope: str, workspace: Path) -> Path:
     if agent == "goose":
         return home / ".agents" / "plugins" / "prismor" / "hooks" / "hooks.json"
     if agent == "opencode":
-        return home / ".config" / "opencode" / "plugins.json"
+        return home / ".config" / "opencode" / "plugins" / _OPENCODE_PLUGIN_FILE
     if agent == "gemini":
         return home / ".gemini" / "settings.json"
     if agent == "antigravity":
@@ -986,33 +1006,65 @@ def _strip_openclaw(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any]
     return {**config, "plugins": filtered}, removed
 
 
-def _merge_opencode(config: Dict[str, Any], command: str, repo_root: Path) -> Dict[str, Any]:
-    # 1. Scaffold the opencode plugin
-    plugin_dir = repo_root / "prismor" / "runtime" / "opencode-plugin"
-    _scaffold_opencode_plugin(plugin_dir, command)
+# ── OpenCode adapter ──────────────────────────────────────────────────────────
+#
+# OpenCode (https://opencode.ai/docs/plugins/) loads plugins two ways: npm
+# packages named in opencode.json's "plugin" array, and any JS/TS module placed
+# in .opencode/plugins/ (project) or ~/.config/opencode/plugins/ (global). Each
+# exported function is a plugin: it receives {project, client, $, directory,
+# worktree} and returns a hooks object. Throwing from "tool.execute.before"
+# blocks the call; the tool's arguments are on output.args.
+#
+# Earlier builds registered a plugin directory in a "plugins" list inside
+# .opencode/plugins.json / ~/.config/opencode/plugins.json, a file OpenCode
+# never reads, so the hook never loaded. Install and uninstall now drop that
+# legacy registration.
 
-    # 2. Register plugin path in opencode.json config
-    plugins = list(config.get("plugins", []))
-    plugin_path = str(plugin_dir)
-    if plugin_path not in plugins:
-        plugins.append(plugin_path)
+_OPENCODE_PLUGIN_FILE = "prismor.js"
 
-    return {**config, "plugins": plugins}
+
+def _legacy_opencode_config_path(scope: str, workspace: Path) -> Path:
+    if scope == "project":
+        return workspace / ".opencode" / "plugins.json"
+    return Path.home() / ".config" / "opencode" / "plugins.json"
+
+
+def _remove_legacy_opencode_registration(scope: str, workspace: Path) -> bool:
+    """Strip Prismor from a legacy plugins.json; delete the file if nothing else
+    is left in it. Returns True when something was removed."""
+    path = _legacy_opencode_config_path(scope, workspace)
+    if not path.exists():
+        return False
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(config, dict):
+        return False
+    config, removed = _strip_opencode(config, "hook-dispatch")
+    if not removed:
+        return False
+    if not config.get("plugins") and set(config) <= {"plugins"}:
+        path.unlink()
+    else:
+        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _strip_opencode(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any], bool]:
+    """Remove Prismor entries from a legacy plugins.json ``plugins`` list."""
     plugins = list(config.get("plugins", []))
-    filtered = [p for p in plugins if "prismor" not in p.lower() and "warden" not in p.lower()]
+    filtered = [p for p in plugins if "prismor" not in str(p).lower() and "warden" not in str(p).lower()]
     removed = len(filtered) < len(plugins)
     return {**config, "plugins": filtered}, removed
 
 
 _OPENCODE_PLUGIN_JS = """\
-"use strict";
+// Prismor runtime protection for OpenCode -- generated by `prismor install-hooks`.
+// Do not edit: re-running install overwrites this file; uninstall deletes it.
+import { execSync } from "node:child_process";
 
-const { execSync } = require("child_process");
-
-const PRISMOR_COMMAND = "__PRISMOR_COMMAND__";
+const PRISMOR_COMMAND = __PRISMOR_COMMAND_JSON__;
 
 function dispatch(payload) {
   try {
@@ -1022,50 +1074,42 @@ function dispatch(payload) {
       timeout: 10000,
     });
   } catch (err) {
-    if (err.status === 2) {
+    if (err && err.status === 2) {
       const stderr = (err.stderr || "").toString().trim();
       throw new Error(stderr || "Blocked by Prismor");
     }
   }
 }
 
-module.exports = function ({ project, client, $, directory, worktree }) {
+function payload(hookEvent, input, output) {
   return {
-    "tool.execute.before": async function (input, output) {
-      dispatch({
-        hookEvent: "tool.execute.before",
-        toolName: (input && input.tool) || "",
-        toolInput: (input && (input.args || input.input)) || {},
-        sessionId: (input && input.sessionId) || "",
-        timestamp: Date.now(),
-      });
+    hookEvent,
+    toolName: (input && input.tool) || "",
+    toolInput: (output && output.args) || (input && input.args) || {},
+    sessionId: (input && (input.sessionID || input.sessionId)) || "",
+    callId: (input && (input.callID || input.callId)) || "",
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// OpenCode calls every exported function as a plugin, so export exactly one.
+export const PrismorPlugin = async () => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      dispatch(payload("tool.execute.before", input, output));
     },
-    "tool.execute.after": async function (input, output) {
-      dispatch({
-        hookEvent: "tool.execute.after",
-        toolName: (input && input.tool) || "",
-        toolInput: (input && (input.args || input.input)) || {},
-        sessionId: (input && input.sessionId) || "",
-        timestamp: Date.now(),
-      });
+    "tool.execute.after": async (input, output) => {
+      dispatch(payload("tool.execute.after", input, output));
     },
   };
 };
 """
 
 
-def _scaffold_opencode_plugin(plugin_dir: Path, command: str) -> None:
-    plugin_dir.mkdir(parents=True, exist_ok=True)
-    pkg = {
-        "name": "@prismor/opencode-prismor",
-        "version": "0.1.0",
-        "description": "Prismor security hooks for OpenCode",
-        "main": "index.js",
-    }
-    (plugin_dir / "package.json").write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
-    js = _OPENCODE_PLUGIN_JS.replace("__PRISMOR_COMMAND__", command)
-    (plugin_dir / "index.js").write_text(js, encoding="utf-8")
-
+def _write_opencode_plugin(path: Path, command: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    js = _OPENCODE_PLUGIN_JS.replace("__PRISMOR_COMMAND_JSON__", json.dumps(command))
+    path.write_text(js, encoding="utf-8")
 
 
 _OPENCLAW_PLUGIN_JS = """\
@@ -2801,11 +2845,16 @@ def _normalize_opencode(payload: Dict[str, Any], session_id: str) -> Dict[str, A
     }
     if tool_name in {"bash", "shell", "exec", "terminal", "Bash"}:
         return {**base, "type": "shell", "command": tool_input.get("command", "")}
+    # OpenCode's own tools take camelCase args (filePath, newString).
+    path = tool_input.get("filePath") or tool_input.get("file_path") or tool_input.get("path", "")
     if tool_name in {"read", "file_read", "FileRead", "Read"}:
-        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
+        return {**base, "type": "file_read", "path": path}
     if tool_name in {"write", "edit", "file_write", "FileWrite", "Write", "Edit"}:
-        return {**base, "type": "file_write", "path": tool_input.get("file_path") or tool_input.get("path", ""), "content": tool_input.get("content", "")}
-    if tool_name in {"fetch", "search", "web_fetch", "web_search", "browser"}:
+        content = tool_input.get("content")
+        if content is None:
+            content = tool_input.get("newString", "")
+        return {**base, "type": "file_write", "path": path, "content": content}
+    if tool_name in {"webfetch", "websearch", "fetch", "search", "web_fetch", "web_search", "browser"}:
         return {**base, "type": "network", "url": tool_input.get("url", "")}
     return {**base, "type": "tool_result", "response": json.dumps(payload)}
 

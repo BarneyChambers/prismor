@@ -250,11 +250,12 @@ agents:
     name: Gemini CLI (Google)
     kind: coding-agent
     surface: hook-config
-    status: roadmap
+    status: shipped
     config_paths: { project: ".gemini/settings.json", user: "~/.gemini/settings.json", system: "/etc/gemini-cli/settings.json" }
-    events: [BeforeTool, AfterTool, BeforeAgent, AfterAgent, BeforeModel, BeforeToolSelection, AfterModel, SessionStart, SessionEnd]
+    events: [BeforeTool, AfterTool, SessionStart]
     blocking: exit-2
-    normalizer: null
+    normalizer: _normalize_gemini
+    notes: "Built from the public hooks reference; not yet verified against a live gemini binary. Gemini CLI also exposes BeforeAgent, AfterAgent, BeforeModel, BeforeToolSelection, AfterModel and SessionEnd, which Prismor does not hook."
     sources: ["https://geminicli.com/docs/hooks/reference/"]
     mirror:
       status: possible

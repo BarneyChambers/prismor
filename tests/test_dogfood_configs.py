@@ -329,8 +329,14 @@ def test_installed_command_is_executable_as_written(agent, tmp_path, fake_home):
     ws.mkdir()
     for scope in ("project", "global"):
         [result] = hooks.install_hooks(repo_root=ROOT, workspace=ws, agent=agent, scope=scope, mode="observe")
-        config = json.loads(Path(result["configPath"]).read_text(encoding="utf-8"))
-        cmds = [c for _, _, c in _commands(config) if "hook-dispatch" in c]
+        text = Path(result["configPath"]).read_text(encoding="utf-8")
+        if agent == "opencode":
+            # A JS plugin module, not a JSON config: the command is a JSON
+            # string literal assigned to PRISMOR_COMMAND.
+            literal = text.split("const PRISMOR_COMMAND = ", 1)[1].split(";\n", 1)[0]
+            cmds = [json.loads(literal)]
+        else:
+            cmds = [c for _, _, c in _commands(json.loads(text)) if "hook-dispatch" in c]
         assert cmds, f"{agent}/{scope}: no hook-dispatch command in {result['configPath']}"
         for cmd in cmds:
             argv = shlex.split(cmd, posix=not WINDOWS)

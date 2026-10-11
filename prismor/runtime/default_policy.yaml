@@ -274,13 +274,14 @@ settings:
   supply_chain_transitive_scan: true
 
   # ── Hybrid semantic prompt-injection layer ──────────────────────────────
-  # Opt-in companion to the deterministic regex rules. The heuristic pass
-  # runs a weighted signal scoring (<1ms, no network). If the score lands
-  # in the uncertain zone [low_threshold, high_threshold), the layer
-  # escalates to a local LLM subagent (Claude Code CLI, no API key) for
-  # intent disambiguation. Disabled by default — enable per-project in
-  # .prismor/policy.yaml to defend against social-engineered and
-  # paraphrased prompt-injection attempts that regex cannot catch.
+  # Companion to the deterministic regex rules, defending against
+  # social-engineered and paraphrased prompt-injection attempts that regex
+  # cannot catch. The heuristic pass runs a weighted signal scoring (<1ms,
+  # no network). If the score lands in the uncertain zone
+  # [low_threshold, high_threshold), the layer escalates to an LLM judge
+  # for intent disambiguation (see `mode` / `provider` below). Enabled by
+  # default (heuristic pre-screen); turn it off per-project with
+  # `semantic_guard: {enabled: false}` in .prismor/policy.yaml.
   #
   # Benchmarked on 826 cases (OWASP LLM01-LLM10, Agentic T02-T04,
   # MITRE-ATLAS, nested-file injection): F1 0.697 -> 0.822, semantic-attack
