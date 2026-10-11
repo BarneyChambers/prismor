@@ -136,10 +136,87 @@ class R4Decisions(unittest.TestCase):
         out = self._stdout_json(proc)
         self.assertEqual(out["permissionDecision"], "ask")
 
-    def test_step_up_cursor_fails_closed(self):
-        # No inline-approval surface → must DENY, never allow.
+    def test_step_up_cursor_shell_emits_ask(self):
+        # beforeShellExecution accepts {"permission": "ask"} (cursor.com/docs/agent/hooks).
         proc = _dispatch("cursor", "echo R4_STEPUP_MARKER", self.ws, self.home)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        out = self._stdout_json(proc)
+        self.assertEqual(out["permission"], "ask")
+        self.assertIn("r4-stepup", out["agent_message"] + out["user_message"])
+
+    # On exit 2 Cursor shows stdout verbatim and never parses it as JSON, so a
+    # deny prints a plain-text message rather than {"permission": "deny"}.
+    def _assert_plain_deny(self, proc, marker):
         self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(marker, proc.stdout)
+        self.assertFalse(proc.stdout.lstrip().startswith("{"), proc.stdout)
+
+    def test_deny_cursor_prints_plain_message_and_exits_2(self):
+        proc = _dispatch("cursor", "echo R4_DENY_MARKER", self.ws, self.home)
+        self._assert_plain_deny(proc, "r4-deny")
+
+    def test_modify_cursor_fails_closed_with_plain_deny(self):
+        proc = _dispatch("cursor", "echo R4_MODIFY_MARKER", self.ws, self.home)
+        self._assert_plain_deny(proc, "Prismor could not safely modify")
+
+    def _dispatch_cursor(self, payload):
+        env = dict(os.environ)
+        env["PRISMOR_HOME"] = str(self.home)
+        env["PRISMOR_SECRETS_DIR"] = str(self.home / "secrets")
+        env["PYTHONPATH"] = str(_REPO)
+        return subprocess.run(
+            [sys.executable, "-m", "prismor.runtime.immunity_cli", "hook-dispatch",
+             "--agent", "cursor", "--workspace", str(self.ws), "--mode", "enforce"],
+            input=json.dumps(payload), capture_output=True, text=True, env=env,
+        )
+
+    def test_step_up_cursor_read_fails_closed(self):
+        # beforeReadFile has no "ask": step-up must DENY, never allow.
+        (self.ws / ".prismor" / "policy.yaml").write_text(_POLICY + """
+  - id: r4-read-stepup
+    severity: HIGH
+    category: secret_access  # reads only govern for secret_access / iam
+    title: Step-up on reading the marker file
+    event_types: [file_read]
+    fields: [path]
+    mode: enforce
+    action: step_up
+    patterns:
+      - "R4_READ_MARKER"
+""")
+        proc = self._dispatch_cursor({
+            "hook_event_name": "beforeReadFile", "conversation_id": "r4-c",
+            "file_path": str(self.ws / "R4_READ_MARKER.txt"), "content": "", "attachments": [],
+        })
+        self._assert_plain_deny(proc, "no approval surface")
+
+    def test_deny_cursor_prompt_prints_plain_message(self):
+        (self.ws / ".prismor" / "policy.yaml").write_text(_POLICY + """
+  - id: r4-prompt-deny
+    severity: HIGH
+    category: test_r4
+    title: Deny the prompt marker
+    event_types: [prompt]
+    fields: [prompt]
+    mode: enforce
+    action: block
+    patterns:
+      - "R4_PROMPT_MARKER"
+""")
+        proc = self._dispatch_cursor({
+            "hook_event_name": "beforeSubmitPrompt", "conversation_id": "r4-c",
+            "prompt": "please R4_PROMPT_MARKER", "attachments": [],
+        })
+        self._assert_plain_deny(proc, "r4-prompt-deny")
+
+    def test_allow_cursor_prints_nothing(self):
+        # Cursor parses stdout of permission hooks; an allow must not emit stray text.
+        proc = self._dispatch_cursor({
+            "hook_event_name": "beforeShellExecution", "conversation_id": "r4-c",
+            "command": "echo hello", "cwd": str(self.ws), "sandbox": False,
+        })
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip(), "")
 
     def test_modify_claude_rewrites_input(self):
         proc = _dispatch("claude", "echo R4_MODIFY_MARKER", self.ws, self.home)

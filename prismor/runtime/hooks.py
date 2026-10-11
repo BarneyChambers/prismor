@@ -71,6 +71,17 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
     results = []
     for current_agent in agents:
         config_path = _config_path(current_agent, scope, workspace)
+        if current_agent == "opencode":
+            # Not a JSON config: the hook IS a plugin module OpenCode loads
+            # from its plugins directory, with the dispatcher command baked in.
+            command = _dispatcher_command(
+                repo_root=repo_root, workspace=workspace, agent=current_agent, mode=mode,
+                pin_workspace=(scope == "project" and not portable), portable=portable,
+            )
+            _write_opencode_plugin(config_path, command)
+            _remove_legacy_opencode_registration(scope, workspace)
+            results.append({"agent": current_agent, "configPath": str(config_path)})
+            continue
         config = _read_json(config_path)
         # Idempotent + auto-migrating: drop any prior hook-dispatch hook (this
         # version's, or an older one that used a prismor/runtime/cli.py path) before adding
@@ -114,8 +125,6 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
             # containing hooks/hooks.json — the plugin dir is config_path's
             # grandparent (.../plugins/prismor/hooks/hooks.json -> .../plugins/prismor/).
             config = _merge_goose(config, command, config_path.parent.parent)
-        elif current_agent == "opencode":
-            config = _merge_opencode(config, command, repo_root)
         elif current_agent == "gemini":
             config = _merge_gemini(config, command)
         elif current_agent == "antigravity":
@@ -139,9 +148,10 @@ def install_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str, m
 
 
 # Agents whose hook is registered as a plugin path rather than an inline
-# command. _strip_openclaw / _strip_hermes / _strip_opencode use the same
-# "is this one of ours" test when uninstalling.
-_PLUGIN_REGISTERED_AGENTS = ("openclaw", "hermes", "opencode")
+# command. _strip_openclaw / _strip_hermes use the same "is this one of ours"
+# test when uninstalling. (OpenCode's plugin file embeds the dispatcher
+# command, so the plain hook-dispatch text check covers it.)
+_PLUGIN_REGISTERED_AGENTS = ("openclaw", "hermes")
 
 
 def _prismor_plugin_registered(config_text: str) -> bool:
@@ -218,7 +228,7 @@ def hook_installed(agent: str, scope: str, workspace: Path) -> bool:
         text = path.read_text(encoding="utf-8")
         if "hook-dispatch" in text:
             return True
-        # openclaw / hermes / opencode do not take an inline command: install
+        # openclaw / hermes do not take an inline command: install
         # registers a *plugin path* in config["plugins"] and writes the
         # dispatcher into the scaffolded plugin. The marker is therefore never
         # in the config file, so the text search above reported these agents as
@@ -351,7 +361,16 @@ def uninstall_hooks(*, repo_root: Path, workspace: Path, agent: str, scope: str)
     for current_agent in agents:
         config_path = _config_path(current_agent, scope, workspace)
         removed = False
-        if config_path.exists():
+        if current_agent == "opencode":
+            try:
+                if config_path.exists() and "hook-dispatch" in config_path.read_text(encoding="utf-8"):
+                    config_path.unlink()
+                    removed = True
+            except OSError:
+                pass
+            if _remove_legacy_opencode_registration(scope, workspace):
+                removed = True
+        elif config_path.exists():
             config = _read_json(config_path)
             # Match the stable hook-dispatch token rather than a specific script
             # path, so uninstall removes BOTH the current immunity-routed hooks
@@ -512,6 +531,9 @@ def normalize_payload(*, agent: str, payload: Dict[str, Any], workspace: Path) -
         or payload.get("execution_id")
         or payload.get("executionId")
         or payload.get("conversationId")
+        # Cursor: stable across every hook of a conversation (session_id is
+        # only on sessionStart).
+        or payload.get("conversation_id")
         or _ephemeral_session_id(agent, workspace)
     )
 
@@ -548,7 +570,7 @@ def normalize_payload(*, agent: str, payload: Dict[str, Any], workspace: Path) -
     elif agent == "antigravity":
         event = _normalize_antigravity(payload, session_id, workspace)
     else:
-        event = _normalize_cursor(payload, session_id)
+        event = _normalize_cursor(payload, session_id, workspace)
     if isinstance(event, dict) and event.get("type") == "shell" and event.get("command"):
         event["command"] = _strip_prismor_scrub_wrapper(event["command"])
     if isinstance(event, dict):
@@ -595,7 +617,7 @@ def _own_prompt_injection(finding: Dict[str, Any], event: Dict[str, Any]) -> boo
     have seen what they pasted.
     """
     return (
-        str(event.get("agent_event", "")) == "UserPromptSubmit"
+        str(event.get("agent_event", "")) in ("UserPromptSubmit", "beforeSubmitPrompt")
         and finding.get("category") == "prompt_injection"
         and finding.get("ruleId") != "prompt-injection-hidden"
     )
@@ -709,7 +731,8 @@ def _config_path(agent: str, scope: str, workspace: Path) -> Path:
         if agent == "goose":
             return workspace / ".agents" / "plugins" / "prismor" / "hooks" / "hooks.json"
         if agent == "opencode":
-            return workspace / ".opencode" / "plugins.json"
+            # OpenCode auto-loads every JS/TS module in .opencode/plugins/.
+            return workspace / ".opencode" / "plugins" / _OPENCODE_PLUGIN_FILE
         if agent == "gemini":
             return workspace / ".gemini" / "settings.json"
         if agent == "antigravity":
@@ -748,7 +771,7 @@ def _config_path(agent: str, scope: str, workspace: Path) -> Path:
     if agent == "goose":
         return home / ".agents" / "plugins" / "prismor" / "hooks" / "hooks.json"
     if agent == "opencode":
-        return home / ".config" / "opencode" / "plugins.json"
+        return home / ".config" / "opencode" / "plugins" / _OPENCODE_PLUGIN_FILE
     if agent == "gemini":
         return home / ".gemini" / "settings.json"
     if agent == "antigravity":
@@ -879,15 +902,38 @@ def _merge_claude(config: Dict[str, Any], command: str, workspace: Path, pin_wor
     return cfg
 
 
+# Cursor hook events Prismor registers (https://cursor.com/docs/agent/hooks).
+# The before* events are Cursor's permission hooks: exit 2 or
+# {"permission": "deny"} stops the action (beforeSubmitPrompt uses
+# {"continue": false}). after* events are reported, never blocked. sessionStart
+# is fire-and-forget; it carries the project-memory scan, as on Claude.
+# preToolUse is deliberately absent: it fires for the same shell/MCP/read calls
+# as the dedicated events below, so registering it would screen each twice.
+_CURSOR_EVENTS = (
+    "sessionStart",
+    "beforeSubmitPrompt",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "beforeMCPExecution",
+    "afterMCPExecution",
+    "beforeReadFile",
+    "afterFileEdit",
+)
+
+# Event names older Prismor releases registered. Cursor never had them, so those
+# entries never fired; _strip_cursor drops the keys once Prismor's entry is
+# removed, so a reinstall migrates the config instead of leaving dead keys.
+_CURSOR_LEGACY_EVENTS = frozenset({
+    "beforeShellCommand",
+    "afterShellCommand",
+    "beforeFileWrite",
+    "afterFileWrite",
+})
+
+
 def _merge_cursor(config: Dict[str, Any], command: str) -> Dict[str, Any]:
     hooks = dict(config.get("hooks", {}))
-    for event_name in [
-        "beforeSubmitPrompt",
-        "beforeShellCommand",
-        "afterShellCommand",
-        "beforeFileWrite",
-        "afterFileWrite",
-    ]:
+    for event_name in _CURSOR_EVENTS:
         hooks[event_name] = _merge_simple_command_entries(hooks.get(event_name, []), command)
     return {**config, "version": config.get("version", 1), "hooks": hooks}
 
@@ -940,9 +986,13 @@ def _strip_cursor(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any], 
         entries = hooks[event_name]
         if not isinstance(entries, list):
             continue
-        filtered = [e for e in entries if marker not in e.get("command", "")]
+        filtered = [e for e in entries if not (isinstance(e, dict) and marker in e.get("command", ""))]
         if len(filtered) < len(entries):
             removed = True
+            if not filtered and event_name in _CURSOR_LEGACY_EVENTS:
+                # A legacy key that only held Prismor's (never-fired) entry.
+                del hooks[event_name]
+                continue
         hooks[event_name] = filtered
     return {**config, "hooks": hooks}, removed
 
@@ -986,33 +1036,65 @@ def _strip_openclaw(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any]
     return {**config, "plugins": filtered}, removed
 
 
-def _merge_opencode(config: Dict[str, Any], command: str, repo_root: Path) -> Dict[str, Any]:
-    # 1. Scaffold the opencode plugin
-    plugin_dir = repo_root / "prismor" / "runtime" / "opencode-plugin"
-    _scaffold_opencode_plugin(plugin_dir, command)
+# ── OpenCode adapter ──────────────────────────────────────────────────────────
+#
+# OpenCode (https://opencode.ai/docs/plugins/) loads plugins two ways: npm
+# packages named in opencode.json's "plugin" array, and any JS/TS module placed
+# in .opencode/plugins/ (project) or ~/.config/opencode/plugins/ (global). Each
+# exported function is a plugin: it receives {project, client, $, directory,
+# worktree} and returns a hooks object. Throwing from "tool.execute.before"
+# blocks the call; the tool's arguments are on output.args.
+#
+# Earlier builds registered a plugin directory in a "plugins" list inside
+# .opencode/plugins.json / ~/.config/opencode/plugins.json, a file OpenCode
+# never reads, so the hook never loaded. Install and uninstall now drop that
+# legacy registration.
 
-    # 2. Register plugin path in opencode.json config
-    plugins = list(config.get("plugins", []))
-    plugin_path = str(plugin_dir)
-    if plugin_path not in plugins:
-        plugins.append(plugin_path)
+_OPENCODE_PLUGIN_FILE = "prismor.js"
 
-    return {**config, "plugins": plugins}
+
+def _legacy_opencode_config_path(scope: str, workspace: Path) -> Path:
+    if scope == "project":
+        return workspace / ".opencode" / "plugins.json"
+    return Path.home() / ".config" / "opencode" / "plugins.json"
+
+
+def _remove_legacy_opencode_registration(scope: str, workspace: Path) -> bool:
+    """Strip Prismor from a legacy plugins.json; delete the file if nothing else
+    is left in it. Returns True when something was removed."""
+    path = _legacy_opencode_config_path(scope, workspace)
+    if not path.exists():
+        return False
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(config, dict):
+        return False
+    config, removed = _strip_opencode(config, "hook-dispatch")
+    if not removed:
+        return False
+    if not config.get("plugins") and set(config) <= {"plugins"}:
+        path.unlink()
+    else:
+        path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _strip_opencode(config: Dict[str, Any], marker: str) -> tuple[Dict[str, Any], bool]:
+    """Remove Prismor entries from a legacy plugins.json ``plugins`` list."""
     plugins = list(config.get("plugins", []))
-    filtered = [p for p in plugins if "prismor" not in p.lower() and "warden" not in p.lower()]
+    filtered = [p for p in plugins if "prismor" not in str(p).lower() and "warden" not in str(p).lower()]
     removed = len(filtered) < len(plugins)
     return {**config, "plugins": filtered}, removed
 
 
 _OPENCODE_PLUGIN_JS = """\
-"use strict";
+// Prismor runtime protection for OpenCode -- generated by `prismor install-hooks`.
+// Do not edit: re-running install overwrites this file; uninstall deletes it.
+import { execSync } from "node:child_process";
 
-const { execSync } = require("child_process");
-
-const PRISMOR_COMMAND = "__PRISMOR_COMMAND__";
+const PRISMOR_COMMAND = __PRISMOR_COMMAND_JSON__;
 
 function dispatch(payload) {
   try {
@@ -1022,50 +1104,42 @@ function dispatch(payload) {
       timeout: 10000,
     });
   } catch (err) {
-    if (err.status === 2) {
+    if (err && err.status === 2) {
       const stderr = (err.stderr || "").toString().trim();
       throw new Error(stderr || "Blocked by Prismor");
     }
   }
 }
 
-module.exports = function ({ project, client, $, directory, worktree }) {
+function payload(hookEvent, input, output) {
   return {
-    "tool.execute.before": async function (input, output) {
-      dispatch({
-        hookEvent: "tool.execute.before",
-        toolName: (input && input.tool) || "",
-        toolInput: (input && (input.args || input.input)) || {},
-        sessionId: (input && input.sessionId) || "",
-        timestamp: Date.now(),
-      });
+    hookEvent,
+    toolName: (input && input.tool) || "",
+    toolInput: (output && output.args) || (input && input.args) || {},
+    sessionId: (input && (input.sessionID || input.sessionId)) || "",
+    callId: (input && (input.callID || input.callId)) || "",
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// OpenCode calls every exported function as a plugin, so export exactly one.
+export const PrismorPlugin = async () => {
+  return {
+    "tool.execute.before": async (input, output) => {
+      dispatch(payload("tool.execute.before", input, output));
     },
-    "tool.execute.after": async function (input, output) {
-      dispatch({
-        hookEvent: "tool.execute.after",
-        toolName: (input && input.tool) || "",
-        toolInput: (input && (input.args || input.input)) || {},
-        sessionId: (input && input.sessionId) || "",
-        timestamp: Date.now(),
-      });
+    "tool.execute.after": async (input, output) => {
+      dispatch(payload("tool.execute.after", input, output));
     },
   };
 };
 """
 
 
-def _scaffold_opencode_plugin(plugin_dir: Path, command: str) -> None:
-    plugin_dir.mkdir(parents=True, exist_ok=True)
-    pkg = {
-        "name": "@prismor/opencode-prismor",
-        "version": "0.1.0",
-        "description": "Prismor security hooks for OpenCode",
-        "main": "index.js",
-    }
-    (plugin_dir / "package.json").write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
-    js = _OPENCODE_PLUGIN_JS.replace("__PRISMOR_COMMAND__", command)
-    (plugin_dir / "index.js").write_text(js, encoding="utf-8")
-
+def _write_opencode_plugin(path: Path, command: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    js = _OPENCODE_PLUGIN_JS.replace("__PRISMOR_COMMAND_JSON__", json.dumps(command))
+    path.write_text(js, encoding="utf-8")
 
 
 _OPENCLAW_PLUGIN_JS = """\
@@ -1807,9 +1881,34 @@ def _normalize_codex(payload: Dict[str, Any], session_id: str, workspace: Path) 
     return _unmapped_tool_event(base, payload)
 
 
+# Grok's own tool and event names (xai-org/grok-build docs/user-guide/10-hooks.md).
+_GROK_TOOL_ALIASES = {
+    "run_terminal_command": "Bash",
+    "read_file": "Read",
+    "search_replace": "Edit",
+    "hashline_edit": "Edit",
+    "write": "Write",
+    "hashline_read": "Read",
+    "web_search": "WebSearch",
+    "web_fetch": "WebFetch",
+}
+_GROK_EVENT_ALIASES = {
+    "pre_tool_use": "PreToolUse",
+    "post_tool_use": "PostToolUse",
+    "post_tool_use_failure": "PostToolUseFailure",
+    "user_prompt_submit": "UserPromptSubmit",
+    "session_start": "SessionStart",
+}
+
+
 def _normalize_grok(payload: Dict[str, Any], session_id: str, workspace: Path) -> Dict[str, Any]:
-    hook_event = payload.get("hookEventName") or payload.get("hook_event_name") or "unknown"
+    # Grok puts Claude's PascalCase event in `hook_event_name` and its own
+    # snake_case one (`pre_tool_use`) in `hookEventName`; prefer the former.
+    hook_event = payload.get("hook_event_name") or payload.get("hookEventName") or "unknown"
+    hook_event = _GROK_EVENT_ALIASES.get(hook_event, hook_event)
     tool_name = payload.get("toolName") or payload.get("tool_name") or ""
+    # Matchers alias Claude names, but the payload carries Grok's own names.
+    tool_name = _GROK_TOOL_ALIASES.get(tool_name, tool_name)
     tool_input = payload.get("toolInput") or payload.get("tool_input") or {}
     base = {
         "ts": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
@@ -1829,16 +1928,17 @@ def _normalize_grok(payload: Dict[str, Any], session_id: str, workspace: Path) -
             "stderr": payload.get("stderr", ""),
         }
     if tool_name == "Read":
-        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
+        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("target_file") or tool_input.get("path", "")}
     if tool_name in {"Edit", "MultiEdit", "Write"}:
         return {
             **base,
             "type": "file_write",
-            "path": tool_input.get("file_path") or tool_input.get("path", ""),
+            "path": tool_input.get("file_path") or tool_input.get("target_file") or tool_input.get("path", ""),
             "content": (
                 _join_edits(tool_input.get("edits", []))
                 or tool_input.get("content", "")
                 or tool_input.get("new_string", "")
+                or tool_input.get("replace", "")
             ),
         }
     if tool_name in {"WebFetch", "WebSearch"}:
@@ -2696,8 +2796,21 @@ def _normalize_windsurf(payload: Dict[str, Any], session_id: str, workspace: Pat
     return _unmapped_tool_event(base, payload)
 
 
-def _normalize_cursor(payload: Dict[str, Any], session_id: str) -> Dict[str, Any]:
-    hook_event = (
+def _cursor_path(payload: Dict[str, Any]) -> str:
+    return str(payload.get("file_path") or payload.get("path") or payload.get("filePath") or "")
+
+
+def _normalize_cursor(payload: Dict[str, Any], session_id: str, workspace: Path) -> Dict[str, Any]:
+    """Map a Cursor hook payload (https://cursor.com/docs/agent/hooks) to an event.
+
+    Cursor names the operation in ``hook_event_name`` and puts its arguments at
+    the top level: ``command``/``cwd``/``output`` (shell), ``tool_name``/
+    ``tool_input`` (a JSON string)/``mcp_server_name``/``result_json`` (MCP),
+    ``file_path`` (beforeReadFile), ``file_path``/``edits`` (afterFileEdit),
+    ``prompt`` (beforeSubmitPrompt). An unknown event name falls back to a
+    keyword match so it still lands on the closest canonical type.
+    """
+    hook_event = str(
         payload.get("hook_event_name")
         or payload.get("hookEventName")
         or payload.get("event_name")
@@ -2705,21 +2818,79 @@ def _normalize_cursor(payload: Dict[str, Any], session_id: str) -> Dict[str, Any
         or payload.get("event")
         or "unknown"
     )
+    roots = payload.get("workspace_roots")
+    cwd = payload.get("cwd") or (roots[0] if isinstance(roots, list) and roots else None)
     base = {
         "ts": payload.get("timestamp") or datetime.now(timezone.utc).isoformat(),
         "session_id": session_id,
         "agent": "cursor",
         "agent_event": hook_event,
-        "metadata": {"raw": payload},
+        "metadata": {
+            "cwd": cwd,
+            "tool_name": payload.get("tool_name") or "",
+            "transcript_path": payload.get("transcript_path"),
+            "raw": payload,
+        },
     }
-    if "prompt" in hook_event.lower():
+    lower = hook_event.lower()
+    if hook_event == "sessionStart":
+        # Same project-memory scan as Claude's SessionStart (#155). Cursor's
+        # sessionStart is fire-and-forget, so its findings are reported only.
+        memory_root = Path(cwd) if isinstance(cwd, str) and cwd else workspace
+        memory = _read_project_memory(memory_root)
+        base["metadata"]["memory_files"] = memory["files"]
+        base["metadata"]["truncated"] = memory["truncated"]
+        base["metadata"]["has_invisible_controls"] = memory["has_invisible_controls"]
+        base["metadata"]["memory_digests"] = memory["digests"]
+        return {**base, "type": "memory", "content": memory["content"]}
+    if "prompt" in lower:
         return {**base, "type": "prompt", "prompt": payload.get("prompt") or payload.get("message", "")}
-    if "shell" in hook_event.lower():
-        return {**base, "type": "shell", "command": payload.get("command") or payload.get("commandLine") or ""}
-    if "write" in hook_event.lower():
-        return {**base, "type": "file_write", "path": payload.get("path") or payload.get("filePath") or "", "content": payload.get("content", "")}
-    if "read" in hook_event.lower():
-        return {**base, "type": "file_read", "path": payload.get("path") or payload.get("filePath") or ""}
+    if "mcp" in lower:
+        server = str(payload.get("mcp_server_name") or payload.get("server") or "")
+        tool = str(payload.get("tool_name") or "")
+        tool_input: Any = payload.get("tool_input")
+        if isinstance(tool_input, str):
+            try:
+                tool_input = json.loads(tool_input)
+            except ValueError:
+                pass  # keep the raw string; it is still scanned as text
+        synthetic = f"mcp__{server}__{tool}" if server else f"mcp__{tool}__{tool}"
+        mcp_event = _classify_mcp_event(
+            base=base,
+            tool_name=synthetic,
+            tool_input=tool_input if tool_input is not None else {},
+            response=payload.get("result_json") or payload.get("result"),
+            is_post=lower.startswith(("after", "post")),
+            workspace=workspace,
+        )
+        # HTTP/SSE servers carry their endpoint on the call itself, so a remote
+        # server takes the network path (egress allowlist, secret-in-args)
+        # even when it is not in any MCP config Prismor can read.
+        inline_url = str(payload.get("mcp_server_url") or payload.get("url") or "")
+        if mcp_event is not None and inline_url and not lower.startswith(("after", "post")):
+            if mcp_event.get("type") != "network":
+                mcp_event = {**base, "type": "network", "url": inline_url,
+                             "outbound_payload": mcp_event.get("response", ""),
+                             "mcp_server": mcp_event.get("mcp_server"),
+                             "mcp_tool": mcp_event.get("mcp_tool")}
+            elif not mcp_event.get("url"):
+                mcp_event["url"] = inline_url
+        if mcp_event is not None:
+            return mcp_event
+    if "shell" in lower:
+        return {
+            **base,
+            "type": "shell",
+            "command": payload.get("command") or payload.get("commandLine") or "",
+            "stdout": payload.get("output", ""),
+        }
+    if "edit" in lower or "write" in lower:
+        edits = payload.get("edits")
+        content = _join_edits(edits) if isinstance(edits, list) else ""
+        return {**base, "type": "file_write", "path": _cursor_path(payload),
+                "content": content or payload.get("content", "")}
+    if "read" in lower:
+        return {**base, "type": "file_read", "path": _cursor_path(payload)}
     return _unmapped_tool_event(base, payload)
 
 
@@ -2801,11 +2972,16 @@ def _normalize_opencode(payload: Dict[str, Any], session_id: str) -> Dict[str, A
     }
     if tool_name in {"bash", "shell", "exec", "terminal", "Bash"}:
         return {**base, "type": "shell", "command": tool_input.get("command", "")}
+    # OpenCode's own tools take camelCase args (filePath, newString).
+    path = tool_input.get("filePath") or tool_input.get("file_path") or tool_input.get("path", "")
     if tool_name in {"read", "file_read", "FileRead", "Read"}:
-        return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
+        return {**base, "type": "file_read", "path": path}
     if tool_name in {"write", "edit", "file_write", "FileWrite", "Write", "Edit"}:
-        return {**base, "type": "file_write", "path": tool_input.get("file_path") or tool_input.get("path", ""), "content": tool_input.get("content", "")}
-    if tool_name in {"fetch", "search", "web_fetch", "web_search", "browser"}:
+        content = tool_input.get("content")
+        if content is None:
+            content = tool_input.get("newString", "")
+        return {**base, "type": "file_write", "path": path, "content": content}
+    if tool_name in {"webfetch", "websearch", "fetch", "search", "web_fetch", "web_search", "browser"}:
         return {**base, "type": "network", "url": tool_input.get("url", "")}
     return {**base, "type": "tool_result", "response": json.dumps(payload)}
 
@@ -2877,7 +3053,7 @@ def _merge_gemini(config: Dict[str, Any], command: str) -> Dict[str, Any]:
         hooks[event_name] = _merge_claude_entries(
             hooks.get(event_name, []),
             {
-                "matcher": "run_shell_command|read_file|write_file|replace_in_file|web_fetch|web_search|mcp__.*",
+                "matcher": "run_shell_command|read_file|read_many_files|write_file|replace|replace_in_file|web_fetch|google_web_search|web_search|mcp__.*",
                 "hooks": [{"type": "command", "name": "prismor", "command": command}],
             },
         )
@@ -2909,10 +3085,15 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
     Built-in tool names and their Prismor event-type mappings:
       run_shell_command  -> shell     (field: command)
       read_file          -> file_read (fields: absolute_path, file_path, path)
+      read_many_files    -> file_read (field: include, a list of paths/globs)
       write_file         -> file_write (fields: file_path, content)
-      replace_in_file    -> file_write (fields: file_path, diff)
+      replace            -> file_write (fields: file_path, old_string, new_string)
+      replace_in_file    -> file_write (fields: file_path, diff; older builds)
       web_fetch          -> network   (field: url)
-      web_search         -> network   (field: query)
+      google_web_search  -> network   (field: query; `web_search` in older builds)
+
+    Tool names checked against @google/gemini-cli 0.63 (EDIT_TOOL_NAME =
+    "replace", READ_MANY_FILES_TOOL_NAME, WEB_SEARCH_TOOL_NAME).
     """
     hook_event = payload.get("hook_event_name", "unknown")
     tool_name = payload.get("tool_name", "")
@@ -2965,7 +3146,19 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
             ),
         }
 
-    if tool_name in {"write_file", "replace_in_file"}:
+    if tool_name == "read_many_files":
+        include = tool_input.get("include") or tool_input.get("paths") or []
+        if isinstance(include, str):
+            include = [include]
+        return {
+            **base,
+            "type": "file_read",
+            # One event per call: join the requested paths/globs so path rules
+            # (e.g. secret-access) still match any one of them.
+            "path": "\n".join(str(p) for p in include),
+        }
+
+    if tool_name in {"write_file", "replace", "replace_in_file"}:
         return {
             **base,
             "type": "file_write",
@@ -2974,9 +3167,13 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
                 or tool_input.get("absolute_path")
                 or tool_input.get("path", "")
             ),
-            # replace_in_file sends a unified diff in "diff"; write_file
-            # sends the full file body in "content".
-            "content": tool_input.get("content") or tool_input.get("diff", ""),
+            # write_file sends the full body in "content", replace sends
+            # old_string/new_string, older replace_in_file a unified "diff".
+            "content": (
+                tool_input.get("content")
+                or tool_input.get("new_string")
+                or tool_input.get("diff", "")
+            ),
         }
 
     if tool_name == "web_fetch":
@@ -2987,7 +3184,7 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
             "response": payload.get("response", ""),
         }
 
-    if tool_name == "web_search":
+    if tool_name in {"web_search", "google_web_search"}:
         return {
             **base,
             "type": "network",
@@ -3170,5 +3367,7 @@ def _is_pre_action(agent_event: str) -> bool:
     return (
         lower.startswith("pre")
         or lower.startswith("before")
+        # OpenCode's plugin hook is `tool.execute.before`.
+        or lower.endswith(".before")
         or agent_event in {"PreToolUse", "UserPromptSubmit", "PermissionRequest"}
     )

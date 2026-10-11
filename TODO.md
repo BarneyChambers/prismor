@@ -32,15 +32,15 @@ Data is already captured and tagged per-user in findings/events (field: `subject
 ### ~~Docs: framework docs~~ — DONE
 All framework docs written: frameworks-openai-agents.md, frameworks-langchain.md, frameworks-crewai.md, frameworks-browser-use.md, frameworks-overview.md.
 
-### Coding-agent adapters: Gemini CLI, Kiro, OpenCode
-Registry entries exist (`status: roadmap`), hook surfaces documented. Need normalizers + `_merge_*`/`_normalize_*` functions in `prismor/runtime/hooks.py`, entries in `_SUPPORTED_AGENTS`. Gemini and Kiro use `exit-2` (same convention as Claude/Cursor); OpenCode uses `throw`.
+### ~~Coding-agent adapters: Gemini CLI, Kiro, OpenCode~~ — DONE
+All three ship in `prismor/runtime/hooks.py` and `_SUPPORTED_AGENTS`, with registry `status: shipped`. Gemini, Kiro and OpenCode are still unverified against live binaries; see AGENT_INTEGRATIONS.md.
 
 ---
 
 ## Low priority / nice-to-have
 
-### `verify_registry.sh` in CI
-Add `bash scripts/verify_registry.sh` to the CI workflow (`.github/workflows/`) alongside the existing test step. Catches registry drift and matrix out-of-sync.
+### ~~`verify_registry.sh` in CI~~ — DONE
+Runs in `.github/workflows/security-regression.yml`.
 
 ### Per-user telemetry SIEM field
 `prismor/runtime/enterprise/telemetry.py` `build_record()` already has `"subject"` field added. Verify that SIEM sinks (Splunk, Datadog, generic HTTP) forward it correctly, and document the field in the sink schema.

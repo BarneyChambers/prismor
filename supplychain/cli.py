@@ -8,6 +8,9 @@ Reachable as:
   prismor supplychain uv add fastapi
   prismor supplychain cargo add serde
   prismor supplychain go get github.com/some/pkg
+  prismor supplychain gem install rails        (also: bundle add)
+  prismor supplychain composer require vendor/pkg
+  prismor supplychain mvn dependency:get -Dartifact=g:a:v
   prismor supplychain harden [--dry-run] [PATH]
 
 Any sub-argv that isn't a recognised package install is passed through
@@ -74,6 +77,8 @@ def _format_pinned(name: str, version: str, ecosystem: str) -> str:
         return f"{name}=={version}"
     if ecosystem in ("npm", "pnpm", "yarn", "bun", "cargo"):
         return f"{name}@{version}"
+    if ecosystem in ("gem", "composer", "maven"):
+        return f"{name}:{version}"
     return f"{name} {version}"
 
 
@@ -357,6 +362,8 @@ def _usage() -> None:
     print("    prismor supplychain uv add fastapi")
     print("    prismor supplychain cargo add serde")
     print("    prismor supplychain go get github.com/some/pkg")
+    print("    prismor supplychain gem install rails")
+    print("    prismor supplychain composer require monolog/monolog")
     print()
     print("  Config hardening:")
     print("    prismor supplychain harden              Apply hardening to project configs")

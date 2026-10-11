@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+### Security
+- **The advisory feed was loaded without checking its signature.** `load_feed` read `advisories/immunity-feed.json` as is, so the detached Ed25519 signature that `pipeline/sign_feed.sh` writes was only checked by `prismor audit`, setup and `verify_feed.sh`. It is now checked on every load, with `cryptography` and then `openssl` as the backends. A feed with a bad, missing or garbled `.sig` is refused: an empty advisory list is returned and a warning is logged. `PRISMOR_FEED_ALLOW_UNSIGNED=1` accepts an unsigned feed for local pipeline work. When neither backend can do the check, the feed is still used, marked unverified, with a warning. The result is cached in `~/.prismor/cache/feed-signature.json`, keyed by the hashes of the feed, signature and key, so a hook call adds about 0.5 ms instead of the roughly 80 ms it takes to import `cryptography`. `prismor audit` and `prismor setup` now use the same verification code, so audit no longer requires openssl.
+
+### Added
+- **Typosquat checks cover far more packages.** The lists of popular packages that install names are compared against grew from 5–32 names per ecosystem to about 340 for npm, 350 for PyPI, 210 for crates.io and 160 for Go, plus new lists for RubyGems, Packagist and Maven. Changes to keep false positives down:
+  - A name on a list is never flagged.
+  - Targets shorter than 5 characters are skipped.
+  - PyPI (PEP 503) and crates.io (`-` and `_` are the same) spelling rules are applied.
+  - Packages under well-known npm scopes such as `@types` or `@radix-ui` are trusted.
+  - Go modules, Packagist packages and Maven artifacts are only compared against packages from a different owner.
+
+  Known squats such as `crossenv`, `cross-env.js`, `colourama`, `python3-dateutil` and `github.com/boltdb-go/bolt` are caught. 0 of about 1,300 real npm package names in local `node_modules` trees are flagged.
+- **More install commands are checked.** `gem install` and `bundle add` (RubyGems), `composer require` (Packagist) and `mvn dependency:get` (Maven) are now recognised, along with their version pins and custom sources. OSV lookups use the `RubyGems`, `Packagist` and `Maven` ecosystems. Gradle has no command that adds a dependency, so it is still not covered.
+
 ### Fixed
 - **`prismor skills audit` flagged Prismor's own skill as CRITICAL** (#554). The `immunity-agent` skill that `prismor setup` installs documents shell commands and credential paths on purpose, so a fresh install's first audit reported `skill-shell-injection`, `skill-prompt-override` and `skill-secret-access` against it. A `SKILL.md` at `.../skills/immunity-agent/` whose bytes hash to the `SKILL.md` inside the installed package now shows as `bundled` with no findings. Any edit changes the hash, so the file is reported as `changed` and audited in full again, and a different skill with the same name elsewhere, or the same bytes under another directory name, is audited as before. A copy installed by an older release (such as 1.55.3 in the issue) is still audited, because setup never replaces it; delete `.claude/skills/immunity-agent/` and re-run `prismor setup`.
 
