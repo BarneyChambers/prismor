@@ -1,12 +1,12 @@
 """Named action transforms for the R4 MODIFY verdict.
 
 A policy rule may resolve to ``action: modify`` and name a transform via
-``transform: <name>``. When such a finding blocks a Claude ``PreToolUse`` event,
-the hook dispatcher rewrites the tool input through the named transform and emits
-``hookSpecificOutput.updatedInput`` — the action still runs, but in a safer form.
-On any surface that cannot rewrite tool input (Copilot, Cursor, framework
-adapters in Phase 1), the caller fails closed to DENY rather than silently
-allowing the un-transformed action.
+``transform: <name>``. When such a finding blocks a ``PreToolUse`` event on an
+agent that can rewrite tool input (see :mod:`prismor.runtime.hook_caps`), the
+hook dispatcher rewrites the input through the named transform and emits it in
+that agent's shape — the action still runs, but in a safer form. On any surface
+that cannot rewrite tool input (Copilot, Cursor, framework adapters), the caller
+fails closed to DENY rather than silently allowing the un-transformed action.
 
 A transform receives the raw hook ``payload`` plus context and returns a Claude
 hook-output dict (carrying ``updatedInput``), or ``None`` when it declines / is
