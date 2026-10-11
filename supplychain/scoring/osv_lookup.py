@@ -42,6 +42,7 @@ _ECOSYSTEM_MAP = {
     "cargo": "crates.io",
     "go": "Go",
     "gem": "RubyGems",
+    "composer": "Packagist",
     "maven": "Maven",
 }
 
