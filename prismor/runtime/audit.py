@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from prismor.runtime.feed_signature import MISMATCH as SIG_MISMATCH
+from prismor.runtime.feed_signature import MISSING as SIG_MISSING
+from prismor.runtime.feed_signature import VERIFIED as SIG_VERIFIED
+from prismor.runtime.feed_signature import is_signature_mismatch, verify_feed_file
 from prismor.runtime.policy_engine import PolicyEngine, _load_yaml
 
 
@@ -331,18 +334,8 @@ def _openssl_label() -> str:
         return "openssl"
 
 
-def _is_signature_mismatch(result: "subprocess.CompletedProcess") -> bool:
-    """Whether openssl actually rejected the signature.
-
-    A non-zero exit is not enough. macOS ships LibreSSL, which cannot load an
-    Ed25519 key and has no -rawin, so it exits non-zero for a feed that is
-    perfectly intact. Only OpenSSL's explicit rejection line means tampering;
-    anything else is a toolchain that could not answer the question.
-    """
-    output = b"".join(
-        part for part in (result.stdout, result.stderr) if isinstance(part, bytes)
-    ).decode("utf-8", "replace")
-    return "signature verification failure" in output.lower()
+# Shared with feed.load_feed and the setup wizard; re-exported for callers/tests.
+_is_signature_mismatch = is_signature_mismatch
 
 
 def _check_feed_signature(repo_root: Path) -> List[AuditFinding]:
@@ -379,74 +372,46 @@ def _check_feed_signature(repo_root: Path) -> List[AuditFinding]:
         ))
         return findings
 
-    # Check if openssl is available
-    if not shutil.which("openssl"):
-        findings.append(AuditFinding(
-            severity="MEDIUM",
-            category="feed",
-            message="openssl not found — cannot verify feed signature",
-        ))
-        return findings
-
-    # Verify signature
+    # Verify signature (cryptography, then openssl; never the cache -- an
+    # audit is the place to do the real check).
     try:
-        import tempfile
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            sig_b64 = sig_path.read_bytes()
-            import base64
-            tmp.write(base64.b64decode(sig_b64))
-            tmp_path = tmp.name
-
-        result = subprocess.run(
-            [
-                "openssl", "pkeyutl", "-verify",
-                "-pubin", "-inkey", str(pub_key),
-                "-rawin",
-                "-in", str(feed_path),
-                "-sigfile", tmp_path,
-            ],
-            capture_output=True,
-            timeout=10,
-        )
-        os.unlink(tmp_path)
-
-        if result.returncode == 0:
-            # Also report advisory count
-            try:
-                feed_data = json.loads(feed_path.read_text(encoding="utf-8"))
-                n_advisories = len(feed_data.get("advisories", []))
-                findings.append(AuditFinding(
-                    severity="PASS",
-                    category="feed",
-                    message=f"Feed signature valid — {n_advisories} advisories loaded",
-                ))
-            except Exception:
-                findings.append(AuditFinding(
-                    severity="PASS",
-                    category="feed",
-                    message="Feed signature valid",
-                ))
-        elif _is_signature_mismatch(result):
-            findings.append(AuditFinding(
-                severity="CRITICAL",
-                category="feed",
-                message="Feed signature verification FAILED — feed may be tampered with",
-            ))
-        else:
-            findings.append(AuditFinding(
-                severity="MEDIUM",
-                category="feed",
-                message=(
-                    "Cannot verify feed signature — "
-                    f"{_openssl_label()} could not run the check "
-                    "(needs OpenSSL 3.x for Ed25519 with -rawin)"
-                ),
-            ))
+        result = verify_feed_file(feed_path, sig_path, pub_key, use_cache=False)
     except Exception as exc:
         findings.append(AuditFinding(
             severity="MEDIUM",
             category="feed",
             message=f"Feed signature check error: {exc}",
+        ))
+        return findings
+
+    if result.status == SIG_VERIFIED:
+        try:
+            feed_data = json.loads(feed_path.read_text(encoding="utf-8"))
+            n_advisories = len(feed_data.get("advisories", []))
+            message = f"Feed signature valid — {n_advisories} advisories loaded"
+        except Exception:
+            message = "Feed signature valid"
+        findings.append(AuditFinding(severity="PASS", category="feed", message=message))
+    elif result.status == SIG_MISMATCH:
+        findings.append(AuditFinding(
+            severity="CRITICAL",
+            category="feed",
+            message="Feed signature verification FAILED — feed may be tampered with",
+        ))
+    elif result.status == SIG_MISSING:
+        findings.append(AuditFinding(
+            severity="HIGH",
+            category="feed",
+            message=f"Feed signature unusable — {result.detail}",
+        ))
+    else:
+        detail = result.detail
+        if result.backend == "openssl":
+            detail = f"{_openssl_label()} could not run the check (needs OpenSSL 3.x for Ed25519 with -rawin)"
+        findings.append(AuditFinding(
+            severity="MEDIUM",
+            category="feed",
+            message=f"Cannot verify feed signature — {detail}",
         ))
 
     return findings

@@ -214,7 +214,7 @@ _HELP_HIDDEN = {"hook-dispatch", "exec-hook", "inference-hook-server", "info", "
 # supplychain is dispatched by this umbrella, not a prismor.runtime.cli subcommand, so it
 # is injected manually with its own help + sub-actions.
 _SUPPLY_HELP = ("Supply-chain install gating + project hardening", "supplychain")
-_SUPPLY_ACTIONS = ["npm", "pip", "pnpm", "yarn", "uv", "cargo", "go", "harden"]
+_SUPPLY_ACTIONS = ["npm", "pip", "pnpm", "yarn", "uv", "cargo", "go", "gem", "composer", "harden"]
 
 
 def _command_table():
