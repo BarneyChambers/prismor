@@ -25,21 +25,18 @@ class TestIsPreAction(unittest.TestCase):
     def test_claude_stop(self):
         self.assertFalse(_is_pre_action("Stop"))
 
-    # Cursor events
-    def test_cursor_before_shell_command(self):
-        self.assertTrue(_is_pre_action("beforeShellCommand"))
+    # Cursor events (https://cursor.com/docs/agent/hooks)
+    def test_cursor_pre_events(self):
+        for name in ("beforeShellExecution", "beforeMCPExecution", "beforeReadFile",
+                     "beforeSubmitPrompt", "preToolUse"):
+            with self.subTest(name=name):
+                self.assertTrue(_is_pre_action(name))
 
-    def test_cursor_before_submit_prompt(self):
-        self.assertTrue(_is_pre_action("beforeSubmitPrompt"))
-
-    def test_cursor_before_file_write(self):
-        self.assertTrue(_is_pre_action("beforeFileWrite"))
-
-    def test_cursor_after_shell_command(self):
-        self.assertFalse(_is_pre_action("afterShellCommand"))
-
-    def test_cursor_after_file_write(self):
-        self.assertFalse(_is_pre_action("afterFileWrite"))
+    def test_cursor_post_events(self):
+        for name in ("afterShellExecution", "afterMCPExecution", "afterFileEdit",
+                     "postToolUse", "sessionStart", "stop"):
+            with self.subTest(name=name):
+                self.assertFalse(_is_pre_action(name))
 
     # Windsurf events
     def test_windsurf_pre_run_command(self):
@@ -76,7 +73,7 @@ class TestShouldBlock(unittest.TestCase):
 
     def test_blocks_enforce_rule_alt_event(self):
         findings = [{"category": "secret_exfiltration", "severity": "CRITICAL", "mode": "enforce"}]
-        event = {"agent_event": "beforeShellCommand", "type": "shell"}
+        event = {"agent_event": "beforeShellExecution", "type": "shell"}
         self.assertIsNotNone(should_block(findings, event))
 
     def test_observe_finding_does_not_block(self):

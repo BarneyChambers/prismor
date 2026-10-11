@@ -148,6 +148,23 @@ def _block_header(finding: Dict[str, Any]) -> str:
     return line + "\n"
 
 
+# Cursor permission hooks that accept {"permission": "ask"}. beforeReadFile only
+# takes allow|deny, and preToolUse accepts "ask" without enforcing it.
+_CURSOR_ASK_EVENTS = frozenset({"beforeShellExecution", "beforeMCPExecution"})
+
+
+def _cursor_decision(agent_event: str, decision: str, user_message: str, agent_message: str) -> Dict[str, Any]:
+    """Cursor's stdout shape for a hook decision (https://cursor.com/docs/agent/hooks).
+
+    beforeSubmitPrompt answers with ``continue``; the permission hooks
+    (beforeShellExecution / beforeMCPExecution / beforeReadFile / preToolUse)
+    answer with ``permission``.
+    """
+    if agent_event == "beforeSubmitPrompt":
+        return {"continue": decision == "allow", "user_message": user_message}
+    return {"permission": decision, "user_message": user_message, "agent_message": agent_message}
+
+
 def _offer_post_enroll_install(workspace: Path) -> None:
     """After a successful enroll, offer to guard the WHOLE MACHINE — not just the
     current project. Enrollment means the device is managed, so the hooks go in
@@ -2049,8 +2066,24 @@ def main(argv: Optional[List[str]] = None) -> None:
                     # step-up rule always reaches a human.
                     sys.stdout.write(json.dumps({"decision": "force_ask", "reason": reason}) + "\n")
                     return
-                # No inline-approval surface (cursor/windsurf/codex/grok/kiro/
-                # crush/openhands/continue/goose): fail closed.
+                if args.agent == "cursor":
+                    if _agent_event in _CURSOR_ASK_EVENTS:
+                        sys.stdout.write(json.dumps(_cursor_decision(
+                            _agent_event, "ask",
+                            "Prismor requires approval for this action: " + _block_header(blocking).strip(),
+                            reason,
+                        )) + "\n")
+                        return
+                    # beforeReadFile / beforeSubmitPrompt have no "ask": fail closed.
+                    sys.stdout.write(json.dumps(_cursor_decision(
+                        _agent_event, "deny",
+                        "Prismor requires approval for this action (no approval surface, blocked): "
+                        + _block_header(blocking).strip(),
+                        reason,
+                    )) + "\n")
+                # No inline-approval surface (windsurf/codex/grok/kiro/crush/
+                # openhands/continue/goose, and the cursor events above without
+                # "ask"): fail closed.
                 sys.stderr.write(f"Prismor requires approval for this action (no approval surface — blocked): {reason}\n")
                 raise SystemExit(2)
 
@@ -2095,6 +2128,13 @@ def main(argv: Optional[List[str]] = None) -> None:
                     sys.stdout.write(json.dumps(update) + "\n")
                     return
                 # Transform unavailable / declined on this surface: fail closed.
+                if args.agent == "cursor":
+                    sys.stdout.write(json.dumps(_cursor_decision(
+                        _agent_event, "deny",
+                        "Prismor could not safely modify this action (blocked): "
+                        + _block_header(blocking).strip(),
+                        reason,
+                    )) + "\n")
                 sys.stderr.write(f"Prismor could not safely modify this action (blocked): {reason}\n")
                 raise SystemExit(2)
 
@@ -2136,6 +2176,15 @@ def main(argv: Optional[List[str]] = None) -> None:
                         sys.stderr.write(f"\n{unblock_text}\n")
                     raise SystemExit(2)
                 else:
+                    if args.agent == "cursor":
+                        # Cursor reads {"permission": "deny"} ({"continue": false}
+                        # on beforeSubmitPrompt) from stdout and shows
+                        # user_message/agent_message; exit 2 below is its
+                        # equivalent deny signal, kept so the block holds even
+                        # if stdout is not parsed.
+                        sys.stdout.write(json.dumps(_cursor_decision(
+                            _agent_event, "deny", _block_header(blocking).strip(), reason,
+                        )) + "\n")
                     sys.stderr.write(_block_header(blocking))
                     if blocking.get("evidence"):
                         sys.stderr.write(f"{blocking['evidence']}\n")

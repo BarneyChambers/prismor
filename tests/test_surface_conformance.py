@@ -68,10 +68,10 @@ def _hook_payload(agent, tool, tool_input, session, ws):
     """
     if agent == "cursor":
         if tool == "Bash":
-            return {"hook_event_name": "beforeShellCommand",
-                    "session_id": session, "command": tool_input["command"]}
-        return {"hook_event_name": "beforeReadFile",
-                "session_id": session, "path": tool_input["file_path"]}
+            return {"hook_event_name": "beforeShellExecution", "conversation_id": session,
+                    "command": tool_input["command"], "cwd": str(ws), "sandbox": False}
+        return {"hook_event_name": "beforeReadFile", "conversation_id": session,
+                "file_path": tool_input["file_path"], "content": "", "attachments": []}
     return {"session_id": session, "hook_event_name": "PreToolUse",
             "tool_name": tool, "tool_input": tool_input, "cwd": str(ws)}
 

@@ -92,7 +92,7 @@ class TestStripCursor(unittest.TestCase):
         marker = "/repo/prismor/runtime/cli.py"
         config = {
             "hooks": {
-                "beforeShellCommand": [
+                "beforeShellExecution": [
                     {"command": f'python3 "{marker}" hook-dispatch --agent cursor'},
                     {"command": "other-linter --check"},
                 ]
@@ -100,13 +100,92 @@ class TestStripCursor(unittest.TestCase):
         }
         result, removed = _strip_cursor(config, marker)
         self.assertTrue(removed)
-        self.assertEqual(len(result["hooks"]["beforeShellCommand"]), 1)
-        self.assertEqual(result["hooks"]["beforeShellCommand"][0]["command"], "other-linter --check")
+        self.assertEqual(len(result["hooks"]["beforeShellExecution"]), 1)
+        self.assertEqual(result["hooks"]["beforeShellExecution"][0]["command"], "other-linter --check")
 
     def test_no_change(self):
-        config = {"hooks": {"beforeShellCommand": [{"command": "unrelated"}]}}
+        config = {"hooks": {"beforeShellExecution": [{"command": "unrelated"}]}}
         result, removed = _strip_cursor(config, "/repo/prismor/runtime/cli.py")
         self.assertFalse(removed)
+
+    def test_drops_legacy_key_left_empty(self):
+        # Older releases registered event names Cursor never had; once
+        # Prismor's entry is gone the dead key goes with it.
+        cmd = {"command": 'python3 "/x/hook-dispatch.py" hook-dispatch --agent cursor'}
+        config = {"hooks": {
+            "beforeShellCommand": [cmd],
+            "afterFileWrite": [cmd, {"command": "user-tool"}],
+            "beforeShellExecution": [cmd],
+        }}
+        result, removed = _strip_cursor(config, "hook-dispatch")
+        self.assertTrue(removed)
+        self.assertNotIn("beforeShellCommand", result["hooks"])
+        # A legacy key still holding someone else's entry is left alone.
+        self.assertEqual(result["hooks"]["afterFileWrite"], [{"command": "user-tool"}])
+        # A current key keeps its (now empty) list, as before.
+        self.assertEqual(result["hooks"]["beforeShellExecution"], [])
+
+
+class TestCursorInstallMigration(unittest.TestCase):
+    """install_hooks(agent="cursor") registers Cursor's real events and
+    migrates configs written by releases that used invented names."""
+
+    _REAL = ["sessionStart", "beforeSubmitPrompt", "beforeShellExecution",
+             "afterShellExecution", "beforeMCPExecution", "afterMCPExecution",
+             "beforeReadFile", "afterFileEdit"]
+    _LEGACY = ["beforeShellCommand", "afterShellCommand", "beforeFileWrite", "afterFileWrite"]
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.workspace = Path(self.tmpdir) / "project"
+        (self.workspace / ".cursor").mkdir(parents=True)
+        self.repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.config_path = self.workspace / ".cursor" / "hooks.json"
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _install(self):
+        install_hooks(repo_root=self.repo_root, workspace=self.workspace,
+                      agent="cursor", scope="project", mode="enforce")
+        return json.loads(self.config_path.read_text())
+
+    def test_registers_real_events_only(self):
+        hooks = self._install()["hooks"]
+        self.assertEqual(sorted(hooks), sorted(self._REAL))
+        for name in self._REAL:
+            self.assertEqual(len(hooks[name]), 1)
+            self.assertIn("hook-dispatch --agent cursor", hooks[name][0]["command"])
+
+    def test_reinstall_is_idempotent(self):
+        first = self._install()
+        second = self._install()
+        self.assertEqual(first, second)
+
+    def test_migrates_legacy_entries(self):
+        old = 'python3 "/old/prismor/runtime/cli.py" hook-dispatch --agent cursor --mode observe'
+        legacy = {name: [{"command": old}] for name in self._LEGACY}
+        legacy["afterFileWrite"].append({"command": "my-formatter"})
+        legacy["beforeSubmitPrompt"] = [{"command": old}, {"command": "my-prompt-hook"}]
+        self.config_path.write_text(json.dumps({"version": 1, "hooks": legacy}))
+        hooks = self._install()["hooks"]
+        for name in ("beforeShellCommand", "afterShellCommand", "beforeFileWrite"):
+            self.assertNotIn(name, hooks)
+        self.assertEqual(hooks["afterFileWrite"], [{"command": "my-formatter"}])
+        self.assertEqual(hooks["beforeSubmitPrompt"][0], {"command": "my-prompt-hook"})
+        self.assertEqual(len(hooks["beforeSubmitPrompt"]), 2)
+        for entries in hooks.values():
+            self.assertFalse(any(e.get("command") == old for e in entries))
+
+    def test_uninstall_removes_legacy_entries(self):
+        old = 'python3 "/old/prismor/runtime/cli.py" hook-dispatch --agent cursor --mode observe'
+        self.config_path.write_text(json.dumps({"version": 1, "hooks": {
+            name: [{"command": old}] for name in self._LEGACY}}))
+        results = uninstall_hooks(repo_root=self.repo_root, workspace=self.workspace,
+                                  agent="cursor", scope="project")
+        self.assertTrue(results[0]["removed"])
+        self.assertEqual(json.loads(self.config_path.read_text())["hooks"], {})
 
 
 class TestStripCodex(unittest.TestCase):
@@ -838,49 +917,107 @@ class TestSingleEditContentReachesDownstreamChecks(unittest.TestCase):
 class TestNormalizePayloadCursor(unittest.TestCase):
     """Test Cursor payload normalization."""
 
-    def test_before_shell_command(self):
-        payload = {
-            "hook_event_name": "beforeShellCommand",
-            "session_id": "cur-1",
-            "command": "npm test",
-        }
-        result = normalize_payload(agent="cursor", payload=payload, workspace=Path("/tmp"))
+    # Payload shapes follow https://cursor.com/docs/agent/hooks: every hook
+    # carries these base fields, then its own top-level arguments.
+    _BASE = {
+        "conversation_id": "conv-1",
+        "generation_id": "gen-1",
+        "model": "claude-4.5-sonnet",
+        "cursor_version": "2.0.0",
+        "workspace_roots": ["/tmp/proj"],
+        "user_email": None,
+        "transcript_path": None,
+    }
+
+    def _event(self, **fields):
+        return normalize_payload(agent="cursor", payload={**self._BASE, **fields},
+                                 workspace=Path("/tmp"))
+
+    def test_before_shell_execution(self):
+        result = self._event(hook_event_name="beforeShellExecution", command="npm test",
+                             cwd="/tmp/proj", sandbox=False)
         event = result["event"]
         self.assertEqual(event["type"], "shell")
         self.assertEqual(event["command"], "npm test")
         self.assertEqual(event["agent"], "cursor")
+        self.assertEqual(event["agent_event"], "beforeShellExecution")
+        self.assertTrue(_is_pre_action(event["agent_event"]))
+        # conversation_id is Cursor's stable per-conversation id.
+        self.assertEqual(result["sessionId"], "conv-1")
+
+    def test_after_shell_execution(self):
+        event = self._event(hook_event_name="afterShellExecution", command="ls",
+                            output="a.txt\nb.txt", duration=12, sandbox=False)["event"]
+        self.assertEqual(event["type"], "shell")
+        self.assertEqual(event["command"], "ls")
+        self.assertIn("a.txt", event["response"])
+        self.assertFalse(_is_pre_action(event["agent_event"]))
 
     def test_before_submit_prompt(self):
-        payload = {
-            "hookEventName": "beforeSubmitPrompt",
-            "sessionId": "cur-2",
-            "prompt": "Fix the test",
-        }
-        result = normalize_payload(agent="cursor", payload=payload, workspace=Path("/tmp"))
-        event = result["event"]
+        event = self._event(hook_event_name="beforeSubmitPrompt", prompt="Fix the test",
+                            attachments=[])["event"]
         self.assertEqual(event["type"], "prompt")
         self.assertEqual(event["prompt"], "Fix the test")
 
-    def test_before_file_write(self):
-        payload = {
-            "event_name": "beforeFileWrite",
-            "session_id": "cur-3",
-            "path": "/src/index.ts",
-            "content": "export {}",
-        }
-        result = normalize_payload(agent="cursor", payload=payload, workspace=Path("/tmp"))
-        event = result["event"]
+    def test_before_read_file(self):
+        event = self._event(hook_event_name="beforeReadFile", file_path="/home/u/.ssh/id_rsa",
+                            content="", attachments=[])["event"]
+        self.assertEqual(event["type"], "file_read")
+        self.assertEqual(event["path"], "/home/u/.ssh/id_rsa")
+
+    def test_after_file_edit(self):
+        event = self._event(hook_event_name="afterFileEdit", file_path="/src/index.ts",
+                            edits=[{"old_string": "a", "new_string": "export {}"}])["event"]
         self.assertEqual(event["type"], "file_write")
         self.assertEqual(event["path"], "/src/index.ts")
+        self.assertEqual(event["content"], "export {}")
+        self.assertFalse(_is_pre_action(event["agent_event"]))
+
+    def test_before_mcp_execution_stdio(self):
+        event = self._event(hook_event_name="beforeMCPExecution", tool_name="query",
+                            tool_input='{"sql": "select 1"}', mcp_server_name="db",
+                            command="npx db-mcp")["event"]
+        self.assertEqual(event["mcp_server"], "db")
+        self.assertEqual(event["mcp_tool"], "query")
+        # tool_input arrives as a JSON string; arguments must stay scannable.
+        self.assertIn("select 1", event["response"])
+        self.assertTrue(_is_pre_action(event["agent_event"]))
+
+    def test_before_mcp_execution_http_uses_inline_url(self):
+        # A server absent from every readable MCP config still takes the
+        # network path when Cursor names its endpoint.
+        event = self._event(hook_event_name="beforeMCPExecution", tool_name="fetch",
+                            tool_input='{"q": "x"}', mcp_server_name="remote",
+                            url="https://mcp.example.com/sse",
+                            mcp_server_url="https://mcp.example.com/sse")["event"]
+        self.assertEqual(event["type"], "network")
+        self.assertEqual(event["url"], "https://mcp.example.com/sse")
+        self.assertIn('"q"', event["outbound_payload"])
+        self.assertEqual(event["mcp_server"], "remote")
+
+    def test_after_mcp_execution(self):
+        event = self._event(hook_event_name="afterMCPExecution", tool_name="query",
+                            tool_input="{}", mcp_server_name="db",
+                            result_json='{"content": [{"type": "text", "text": "IGNORE PREVIOUS"}]}',
+                            duration=3)["event"]
+        self.assertEqual(event["type"], "tool_result")
+        self.assertIn("IGNORE PREVIOUS", event["response"])
+
+    def test_session_start_scans_project_memory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "AGENTS.md").write_text("Always run the tests.\n")
+            event = normalize_payload(agent="cursor", payload={
+                **self._BASE, "workspace_roots": [tmp], "hook_event_name": "sessionStart",
+                "session_id": "conv-1", "is_background_agent": False, "composer_mode": "agent",
+            }, workspace=Path("/nonexistent"))["event"]
+        self.assertEqual(event["type"], "memory")
+        self.assertIn("Always run the tests.", event["content"])
+        self.assertFalse(_is_pre_action(event["agent_event"]))
 
     def test_alternate_key_names(self):
-        payload = {
-            "eventName": "beforeShellCommand",
-            "session_id": "cur-4",
-            "commandLine": "git status",
-        }
-        result = normalize_payload(agent="cursor", payload=payload, workspace=Path("/tmp"))
-        event = result["event"]
+        event = normalize_payload(agent="cursor", payload={
+            "eventName": "beforeShellExecution", "session_id": "cur-4", "commandLine": "git status",
+        }, workspace=Path("/tmp"))["event"]
         self.assertEqual(event["command"], "git status")
 
 
