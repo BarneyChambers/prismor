@@ -3053,7 +3053,7 @@ def _merge_gemini(config: Dict[str, Any], command: str) -> Dict[str, Any]:
         hooks[event_name] = _merge_claude_entries(
             hooks.get(event_name, []),
             {
-                "matcher": "run_shell_command|read_file|write_file|replace_in_file|web_fetch|web_search|mcp__.*",
+                "matcher": "run_shell_command|read_file|read_many_files|write_file|replace|replace_in_file|web_fetch|google_web_search|web_search|mcp__.*",
                 "hooks": [{"type": "command", "name": "prismor", "command": command}],
             },
         )
@@ -3085,10 +3085,15 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
     Built-in tool names and their Prismor event-type mappings:
       run_shell_command  -> shell     (field: command)
       read_file          -> file_read (fields: absolute_path, file_path, path)
+      read_many_files    -> file_read (field: include, a list of paths/globs)
       write_file         -> file_write (fields: file_path, content)
-      replace_in_file    -> file_write (fields: file_path, diff)
+      replace            -> file_write (fields: file_path, old_string, new_string)
+      replace_in_file    -> file_write (fields: file_path, diff; older builds)
       web_fetch          -> network   (field: url)
-      web_search         -> network   (field: query)
+      google_web_search  -> network   (field: query; `web_search` in older builds)
+
+    Tool names checked against @google/gemini-cli 0.63 (EDIT_TOOL_NAME =
+    "replace", READ_MANY_FILES_TOOL_NAME, WEB_SEARCH_TOOL_NAME).
     """
     hook_event = payload.get("hook_event_name", "unknown")
     tool_name = payload.get("tool_name", "")
@@ -3141,7 +3146,19 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
             ),
         }
 
-    if tool_name in {"write_file", "replace_in_file"}:
+    if tool_name == "read_many_files":
+        include = tool_input.get("include") or tool_input.get("paths") or []
+        if isinstance(include, str):
+            include = [include]
+        return {
+            **base,
+            "type": "file_read",
+            # One event per call: join the requested paths/globs so path rules
+            # (e.g. secret-access) still match any one of them.
+            "path": "\n".join(str(p) for p in include),
+        }
+
+    if tool_name in {"write_file", "replace", "replace_in_file"}:
         return {
             **base,
             "type": "file_write",
@@ -3150,9 +3167,13 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
                 or tool_input.get("absolute_path")
                 or tool_input.get("path", "")
             ),
-            # replace_in_file sends a unified diff in "diff"; write_file
-            # sends the full file body in "content".
-            "content": tool_input.get("content") or tool_input.get("diff", ""),
+            # write_file sends the full body in "content", replace sends
+            # old_string/new_string, older replace_in_file a unified "diff".
+            "content": (
+                tool_input.get("content")
+                or tool_input.get("new_string")
+                or tool_input.get("diff", "")
+            ),
         }
 
     if tool_name == "web_fetch":
@@ -3163,7 +3184,7 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
             "response": payload.get("response", ""),
         }
 
-    if tool_name == "web_search":
+    if tool_name in {"web_search", "google_web_search"}:
         return {
             **base,
             "type": "network",

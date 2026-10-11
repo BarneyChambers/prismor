@@ -242,10 +242,11 @@ Prismor integrates with Hermes at two complementary layers:
 ### Gemini CLI (Google)
 
 - **Config:** `.gemini/settings.json` (project) or `~/.gemini/settings.json` (user). Gemini also layers `/etc/gemini-cli/settings.json` (system), which Prismor does not write. Same nested Claude-shape `hooks.<Event>[].matcher` + `.hooks[]` entries, each `{type: "command", name: "prismor", command}`.
-- **Events hooked:** `BeforeTool`, `AfterTool` with matcher `run_shell_command|read_file|write_file|replace_in_file|web_fetch|web_search|mcp__.*`; `SessionStart` (matcher `*`) to scan `GEMINI.md` / `AGENTS.md`. Gemini's other events (`BeforeAgent`, `AfterAgent`, `BeforeModel`, `BeforeToolSelection`, `AfterModel`, `SessionEnd`, `Notification`, `PreCompress`) are not hooked.
+- **Events hooked:** `BeforeTool`, `AfterTool` with matcher `run_shell_command|read_file|read_many_files|write_file|replace|replace_in_file|web_fetch|google_web_search|web_search|mcp__.*` (gemini-cli 0.63 names its edit tool `replace` and web search `google_web_search`; the older names are kept); `SessionStart` (matcher `*`) to scan `GEMINI.md` / `AGENTS.md`. Gemini's other events (`BeforeAgent`, `AfterAgent`, `BeforeModel`, `BeforeToolSelection`, `AfterModel`, `SessionEnd`, `Notification`, `PreCompress`) are not hooked.
 - **Payload:** JSON on stdin with `session_id`, `transcript_path`, `cwd`, `hook_event_name`, `timestamp`, `tool_name`, `tool_input`.
 - **Blocking:** exit 2 from `BeforeTool` blocks the call; stderr is the rejection reason.
-- **Not yet verified against a live `gemini` binary.** Built from the [hooks reference](https://geminicli.com/docs/hooks/reference/).
+- **Verified live (2026-10, gemini-cli 0.63.0):** hooks fire for `SessionStart`, `BeforeTool` and `AfterTool`. A lockfile deletion and a secret read were blocked. The post-tool injection notice and the `GEMINI.md` memory-poisoning notice reached the model. Built from the [hooks reference](https://geminicli.com/docs/hooks/reference/).
+- **Project hooks need a trusted folder.** Gemini loads no project-scope hooks in an untrusted folder (`--skip-trust` alone is not enough; the debug log shows "Hook registry initialized with 0 hook entries"). Trust the folder, set `GEMINI_CLI_TRUST_WORKSPACE=true`, or install at user scope.
 - **Code:** `prismor/runtime/hooks.py` `_merge_gemini()`, `_strip_gemini()`, `_normalize_gemini()`.
 
 ### OpenCode
