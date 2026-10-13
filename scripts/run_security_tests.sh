@@ -49,6 +49,7 @@ for t in \
   tests/test_dogfood_configs.py \
   tests/test_hooks_extended.py \
   tests/test_skills_audit.py \
+  tests/test_hook_health.py \
   ; do
   [[ -f "$t" ]] && pytest_targets+=("$t")
 done
