@@ -141,6 +141,28 @@ An individual entry can also be scoped with `agents: [name, ...]` so only those 
 
 The org layer is applied after the project layer, so an org egress policy overrides a project one. Egress only applies to org-managed workspaces — personal repos use default + project policy and report nothing to the org.
 
+Three consequences that surprise people:
+
+- **Console egress "Disabled" ships nothing.** Destinations listed in a policy whose egress mode is Disabled stay in the document but are never sent to devices, so a repo whose own `.prismor/policy.yaml` is a strict allowlist (for example after `prismor mode apply dev-safe`) keeps blocking them. The console warns about this in the egress editor, on the policy card and in the publish dialog. Set the mode to Observe or Enforce to ship the list.
+- **The org block replaces the local one wholesale.** Once the org ships egress, a local `prismor egress allow` has no effect on that workspace (`prismor egress show` reports `source remote`). It also means an org policy with `default: allow` loosens a repo that was stricter locally.
+- **Host matching is exact unless you use a wildcard.** `linkedin.com` does not cover `www.linkedin.com`; `*.linkedin.com` covers both the subdomains and the bare domain.
+
+### When your agent is blocked: request access
+
+When an agent hits an egress block, the block message says who owns the verdict and what to do:
+
+- **The org's policy blocked it** (`source remote`): a local allow cannot help. Ask your org:
+
+  ```bash
+  prismor egress request www.linkedin.com --reason "prospect research for the growth team"
+  ```
+
+  The request appears in the Prismor console under **Policy → Requests** (owners also get an email). When an admin approves it, the host is added to the egress allowlist of the policy that governs your device, and your device picks it up within about 30 seconds — then retry. If that policy's egress is Disabled, the admin can approve and turn egress on (Observe) in one step. The agent itself may file the request for you: asking is not editing, so `prismor egress request` is not a self-protected command.
+
+- **Your repo's own policy blocked it** (`source project`): `prismor egress allow <host>` in that repo fixes it. On an enrolled device the message also offers `prismor egress request`, for when the host should be allowed for everyone.
+
+`prismor egress show` and `prismor egress test` refresh the org policy first, so they reflect a just-approved request rather than a cached one.
+
 ### Egress-aware tag rules
 
 The egress verdict is also published as a tag, so [tag rules](./tool-tags.md) can reason about *where* a call is going rather than only which tool it is:

@@ -881,10 +881,18 @@ def main(argv: Optional[List[str]] = None) -> None:
             print(f"  scope:      ORG-MANAGED — {why}")
             print(f"  org:        {ident.get('org_name') or ident.get('org_id')}")
             print("  → Org policy applies and redacted telemetry is reported to your org.")
-            if reason in ("default_all", "opt_in"):
-                print("  → Personal repo? Run `prismor workspace personal` to keep it local-only.")
+            # No "run `prismor workspace personal`" hint here: on an enrolled
+            # device that is advertising the way out of governance (same call
+            # as store.py's refusal message). It stays in `--help`, and orgs
+            # can forbid it outright with allow_personal_workspaces=false.
+        elif reason == "revoked":
+            print("  scope:      local-only — this device was removed or revoked by your org admin")
+            print("  → Org policy no longer applies and nothing is reported to the org;")
+            print("    the built-in and project rules still run.")
+            print("  → To rejoin, ask an admin for a new enrollment token: prismor enroll <token>")
         else:
-            why = {"opt_out": "you marked it personal", "personal": "not an org-claimed repo"}.get(reason, reason)
+            why = {"opt_out": "you marked it personal", "personal": "not an org-claimed repo",
+                   "env_opt_out": "PRISMOR_WORKSPACE_SCOPE opts this process out"}.get(reason, reason)
             print(f"  scope:      personal / local-only — {why}")
             print("  → Local protection is active, but NOTHING is reported to your org")
             print("    and no org policy applies. Use `prismor workspace managed` to opt in.")
@@ -3029,6 +3037,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         if ec == "migrate":
             egress_cli.egress_migrate(workspace)
             return
+        if ec == "request":
+            egress_cli.egress_request(workspace, args.host, reason=args.reason)
+            return
         parser.parse_args(["egress", "--help"])
         return
 
@@ -4204,6 +4215,12 @@ def build_parser() -> argparse.ArgumentParser:
     egress_migrate_p = egress_sub.add_parser(
         "migrate", help="Move a legacy settings.egress_allowlist into settings.egress")
     egress_migrate_p.add_argument("--workspace", help="Workspace path")
+
+    egress_request_p = egress_sub.add_parser(
+        "request", help="Ask your org's admins to allow a host (shows in the console's Requests)")
+    egress_request_p.add_argument("host", help="Host or wildcard, e.g. www.linkedin.com or *.linkedin.com")
+    egress_request_p.add_argument("--reason", default="", help="Why you need it (required)")
+    egress_request_p.add_argument("--workspace", help="Workspace path")
 
     tags_parser = subparsers.add_parser(
         "tags", help="Tag tools/MCPs and write tag-rules (policy as code)")
@@ -5520,6 +5537,10 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
             reason = info.get("reason")
             if info.get("scope") == "managed":
                 add("ok", "workspace scope", f"managed ({reason}) — org policy and telemetry apply here")
+            elif reason == "revoked":
+                add("fail", "workspace scope",
+                    "local (revoked) — your org removed this device; no org policy or telemetry. "
+                    "Ask an admin for a new token and run: prismor enroll <token>")
             elif reason == "env_opt_out":
                 add("warn", "workspace scope",
                     "local by PRISMOR_WORKSPACE_SCOPE — deliberate opt-out; nothing is reported")

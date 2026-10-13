@@ -174,8 +174,9 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
         if exc.code in (401, 403):
             _identity.mark_revoked(f"policy version check rejected ({exc.code})")
             sys.stderr.write(
-                "[prismor] control plane rejected this device's key "
-                f"({exc.code}) — keeping last good policy. Re-enroll with: prismor enroll <token>\n"
+                "[prismor] this device was removed or revoked by your org admin "
+                f"({exc.code}) — org policy no longer applies and nothing is reported to the org; "
+                "the built-in and project rules still run. Re-link with: prismor enroll <token>\n"
             )
         return False
     except (urllib.error.URLError, ValueError, OSError):
@@ -743,8 +744,9 @@ def fetch(ttl: float = DEFAULT_TTL_SECONDS, force: bool = False) -> bool:
         if exc.code in (401, 403):
             _identity.mark_revoked(f"policy fetch rejected ({exc.code})")
             sys.stderr.write(
-                "[prismor] control plane rejected this device's key "
-                f"({exc.code}) — keeping last good policy. Re-enroll with: prismor enroll <token>\n"
+                "[prismor] this device was removed or revoked by your org admin "
+                f"({exc.code}) — org policy no longer applies and nothing is reported to the org; "
+                "the built-in and project rules still run. Re-link with: prismor enroll <token>\n"
             )
         else:
             sys.stderr.write(f"[prismor] remote policy fetch failed: {exc}\n")

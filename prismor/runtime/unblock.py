@@ -165,11 +165,130 @@ def _floor_steps(rule_id: str, finding: Dict[str, Any], enrolled: bool) -> List[
     return steps
 
 
+def _console() -> Dict[str, Any]:
+    """The org console's address and this person's role in it.
+
+    Comes from ``settings.console`` in the signed org policy (the console adds
+    it per device), so a link in a block message is one the org itself vouched
+    for. Falls back to the enrolled identity's API base with no role. Empty
+    when the machine is not connected to an org.
+    """
+    try:
+        from prismor.runtime.enterprise import identity as _identity
+        from prismor.runtime.enterprise import remote_policy as _remote
+
+        pol = _remote.verify_and_load() or {}
+        block = (pol.get("settings") or {}).get("console") or {}
+        url = str(block.get("url") or "").rstrip("/")
+        if not url:
+            ident = _identity.load_identity() or {}
+            url = str(ident.get("api_base") or "").rstrip("/")
+        if not url.startswith(("https://", "http://")):
+            return {}
+        return {
+            "url": url,
+            "role": str(block.get("role") or "").upper(),
+            "policy_id": block.get("policy_id"),
+            "policy_name": block.get("policy_name"),
+        }
+    except Exception:
+        return {}
+
+
+def _console_links(console: Dict[str, Any], host: str) -> List[str]:
+    """Where to act in the console, matched to what this person may do there.
+
+    An admin is pointed at the policy itself (fastest fix) and the Requests
+    queue; anyone else at the page that shows their own requests' status. The
+    console enforces roles regardless — this only avoids handing a member a
+    link that bounces them.
+    """
+    url = console.get("url")
+    if not url:
+        return []
+    if console.get("role") in ("OWNER", "ADMIN"):
+        where = (f"{url}/admin/policies?policy={console['policy_id']}"
+                 if console.get("policy_id") else f"{url}/admin/policies")
+        name = f" “{console['policy_name']}”" if console.get("policy_name") else ""
+        return [
+            f"   You are an admin of this org, so you can allow {host} yourself: "
+            f"open{name} → Network egress:  {where}",
+            f"   Pending requests from your team:  {url}/admin/policies?section=requests",
+        ]
+    return [f"   Track your request:  {url}/dashboard?tab=mypolicy#access-requests"]
+
+
+def _egress_steps(
+    rule_id: str,
+    finding: Dict[str, Any],
+    workspace: Optional[Path],
+    enrolled: bool,
+) -> List[str]:
+    """Egress blocks: who owns the verdict decides what can lift it.
+
+    When the org's signed policy carries settings.egress it replaces the local
+    block wholesale, so `prismor egress allow` would write a file the next
+    evaluation ignores. The only real path is the org: request the host, an
+    admin approves it in the console, and it lands in the next policy pull.
+    """
+    host = str(finding.get("egressHost") or "<host>")
+    request = f'prismor egress request {host} --reason "<why you need it>"'
+    request_where = (
+        "   It appears in your org's Prismor console under Policy → Requests. "
+        f"When an admin approves it, {host} is added to the org's egress "
+        "allowlist and reaches this device within ~30s — then retry. "
+        "(The agent may file this request for you.)"
+    )
+
+    console = _console() if enrolled or finding.get("egressSource") == "remote" else {}
+    links = _console_links(console, host)
+
+    if finding.get("egressSource") == "remote":
+        if rule_id == "egress-deny":
+            lead = (f"Your org's network egress policy explicitly denies {host}. "
+                    "Only an org admin can change that.")
+        else:
+            lead = (f"Your org's network egress policy does not allow {host}. "
+                    "Local `prismor egress allow` does not apply here — the org "
+                    "policy replaces this device's egress settings.")
+        return [
+            lead,
+            f"1. Request access:  {request}",
+            request_where,
+            *links,
+            f"2. Or ask a Prismor admin to add {host} under Policy → Network "
+            "egress in the console.",
+            "3. Or run the call yourself in a terminal outside the agent session.",
+        ]
+
+    if rule_id == "egress-deny":
+        first = (
+            "1. This destination matches an entry in settings.egress.deny. "
+            "Find it with `prismor egress show`, then: prismor egress rm <entry>"
+        )
+    else:
+        first = f"1. Allow this destination:  prismor egress allow {host}"
+    steps = [
+        first,
+        "2. Or keep checking but stop blocking (still reported):  prismor egress mode observe",
+        f"Each writes {_policy_path(workspace)}; check a command first with: "
+        f"prismor egress test {host}",
+    ]
+    if enrolled:
+        steps += [
+            f"3. Or ask your org to allow it for everyone:  {request}",
+            request_where,
+            *links,
+        ]
+    return steps
+
+
 def _subsystem_steps(
     rule_id: str,
     finding: Dict[str, Any],
     workspace: Optional[Path],
     session_id: Optional[str],
+    enrolled: bool = False,
 ) -> Optional[List[str]]:
     """Steps for blocks that policy.yaml does not govern. None = not one of these."""
     if rule_id == "agent-disabled":
@@ -231,20 +350,7 @@ def _subsystem_steps(
     if rule_id in ("egress-allowlist", "egress-deny"):
         # Egress verdicts come from settings.egress, not a policy rule, so the
         # generic `prismor allow <rule>` ladder would answer "No rule named".
-        host = str(finding.get("egressHost") or "<host>")
-        if rule_id == "egress-deny":
-            first = (
-                "1. This destination matches an entry in settings.egress.deny. "
-                "Find it with `prismor egress show`, then: prismor egress rm <entry>"
-            )
-        else:
-            first = f"1. Allow this destination:  prismor egress allow {host}"
-        return [
-            first,
-            "2. Or keep checking but stop blocking (still reported):  prismor egress mode observe",
-            f"Each writes {_policy_path(workspace)}; check a command first with: "
-            f"prismor egress test {host}",
-        ]
+        return _egress_steps(rule_id, finding, workspace, enrolled)
 
     if rule_id.startswith("codex-cloak-"):
         return [
@@ -277,7 +383,7 @@ def unblock_steps(
     if rule_id in _SELF_PROTECTION_RULE_IDS:
         return _self_protection_steps(rule_id, workspace)
 
-    steps = _subsystem_steps(rule_id, finding, workspace, session_id)
+    steps = _subsystem_steps(rule_id, finding, workspace, session_id, enrolled)
     if steps is None:
         if is_floor(finding):
             steps = _floor_steps(rule_id, finding, enrolled)
@@ -316,13 +422,20 @@ def format_unblock(
     )
     if not steps:
         return ""
+    # An unlock window only lets the agent edit LOCAL policy, which cannot lift
+    # a block the org's egress policy owns — offering it there is a dead end,
+    # and the one step that works (a request) is open to the agent too.
+    org_egress = finding.get("egressSource") == "remote"
     header = (
+        "To unblock (tell the user — only an org admin can allow this):"
+        if org_egress else
         "To unblock (for the human at the keyboard — an agent running these is "
         "blocked unless `prismor unlock` is open):"
     )
     return "\n".join(
         [header] + steps
-        + _delegate_steps(str(finding.get("ruleId") or "").strip(), workspace)
+        + ([] if org_egress else
+           _delegate_steps(str(finding.get("ruleId") or "").strip(), workspace))
     )
 
 

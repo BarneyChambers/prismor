@@ -112,3 +112,12 @@ narrow that gap in practice:
 
 The next step is a signer service that holds the key outside the agent's
 reach, in a container or under a separate uid. That's planned, not built.
+
+## Policy change history (console)
+
+This page covers the device-side trail of agent tool calls. Changes admins make to policies are recorded in the console:
+
+- **History** (the button next to Duplicate / Discard on a policy): every saved version, who saved it, when, from where (console, CLI, API, an approved request, a restore), the reason given, and a line diff against the previous version. Any version can be restored.
+- **Why**: the publish dialog asks "Why this change?"; the answer becomes that version's History summary and is stored on the `policy.update` audit entry. Egress edits made in the egress editor record what changed (for example `egress mode: disabled → enforce`), and an approved `prismor egress request` records the host and the requester's reason.
+- **Admin → Audit Log**: every admin action (`policy.*`, `egress.*`, `egress.request.*`, `exemption.*`, device revokes, org settings) with actor, time, and before/after values, in a hash chain the console verifies.
+

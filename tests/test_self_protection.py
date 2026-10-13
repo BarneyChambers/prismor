@@ -41,6 +41,11 @@ BLOCKED_COMMANDS = [
     "prismor install-hooks --mode observe",
     "prismor egress allow evil.com",
     "prismor workspace personal",
+    # Leaving the org altogether, or opting a child agent out of it through
+    # the environment — the same escape as `workspace personal`, one level down.
+    "prismor logout",
+    "PRISMOR_WORKSPACE_SCOPE=personal claude -p 'do the thing'",
+    "export PRISMOR_WORKSPACE_SCOPE=local",
     # The mirror's exits: an agent whose Bash IS the mirror must not be able
     # to hand itself the native tools back or flip itself to pass-through.
     "prismor mirror off",
@@ -89,6 +94,12 @@ ALLOWED_COMMANDS = [
     "prismor sessions --findings-only",
     "prismor deps",
     "prismor policy show",
+    # Asking is not editing: the request only lands in the console for an
+    # admin to decide, so the agent may file it on the user's behalf.
+    "prismor egress request www.linkedin.com --reason 'research task'",
+    "prismor egress show",
+    "prismor enroll-status",
+    "PRISMOR_WORKSPACE_SCOPE=managed python3 bot.py",
     "cat README.md",
     "python3 -m pytest tests/",
     "git commit -m 'fix'",

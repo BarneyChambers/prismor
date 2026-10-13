@@ -56,7 +56,7 @@ prismor
 │   ├─ proxy                  LLM policy proxy — screens model traffic and proposed tool calls
 │   ├─ proxy                  LLM proxy — screens model traffic and proposed tool calls
 │   ├─ inference-hook <action> serve · test · secret — Claude Inference Hooks AI security server
-│   ├─ egress <action>        show · report · test · allow · deny · mode — network egress policy
+│   ├─ egress <action>        show · report · test · allow · deny · mode · request — network egress policy
 │   ├─ mirror <action>        on · off · status · passthrough — governed built-ins over MCP
 │   ├─ mode <action>          list · explain · apply · show — whole-posture templates
 │   └─ policy <action>        init · validate · show · edit · test
@@ -359,6 +359,7 @@ outside all of this, the same as every other Prismor control.
 | `prismor mirror status` | `--workspace` | Where the mirror is configured, whether it is governing / passing through / paused, its tool roster, live gateway processes. |
 | `prismor mirror passthrough <on\|off>` | `--workspace` | Runtime switch, no restart: `on` runs mirrored built-ins ungoverned (logged, not blocked or redacted). `prismor pause` does the same for hooks + gateway together, with auto-resume. |
 | `prismor egress migrate` | `--workspace` | Convert a legacy warn-only `settings.egress_allowlist` into an enforceable `settings.egress`. |
+| `prismor egress request <host>` | `--reason` (required), `--workspace` | Enrolled devices: ask your org's admins to allow a host. Lands in the console under Policy → Requests; approving adds it to the egress allowlist of the policy governing your device. See [Network Isolation](network-isolation.md#when-your-agent-is-blocked-request-access). |
 | `prismor tags list` | `--last N`, `--workspace` | Tools seen in recent sessions + resolved tags + which tier resolved them (explicit / `_meta` / default / inference). See [Tool Tags](tool-tags.md). |
 | `prismor tags set <tool> <tag>...` | `--workspace` | Tag a tool or glob in `.prismor/policy.yaml` (`tags rm` removes). |
 | `prismor tags rules [add\|rm]` | `--workspace` | List, add, or remove tag-rule expressions, e.g. `"untrusted_content then critical_action -> block"`. Adds are parse-checked with caret diagnostics. |
