@@ -16,6 +16,7 @@ from __future__ import annotations
 import errno
 import selectors
 import socket
+import sys
 import time
 
 # RFC 8305 recommends 250ms before starting the next attempt.
@@ -32,7 +33,9 @@ def create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
         infos = []
     if len({i[0] for i in infos}) < 2:
         # Single-family: nothing to race, keep stdlib behaviour exactly.
-        return _stdlib_create_connection(address, timeout, source_address, all_errors=all_errors)
+        # all_errors only exists on 3.11+; pass it only when asked for.
+        kw = {"all_errors": True} if all_errors else {}
+        return _stdlib_create_connection(address, timeout, source_address, **kw)
 
     if timeout is socket._GLOBAL_DEFAULT_TIMEOUT:
         timeout = socket.getdefaulttimeout()
@@ -99,9 +102,9 @@ def create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
         winner.settimeout(timeout)
         return winner
     if not errors or (deadline is not None and time.monotonic() >= deadline):
-        raise TimeoutError("timed out")
-    if all_errors:
-        raise ExceptionGroup("create_connection failed", errors)
+        raise socket.timeout("timed out")  # == TimeoutError on 3.10+
+    if all_errors and sys.version_info >= (3, 11):
+        raise ExceptionGroup("create_connection failed", errors)  # noqa: F821 (3.11+ only)
     raise errors[0]
 
 
