@@ -916,6 +916,9 @@ def _is_prismor_cursor_dispatcher(command: Any) -> bool:
         argv = list(lexer)
     except ValueError:
         return False
+    # v1.14-v1.44 prefixed the module launcher with PYTHONPATH="<repo>".
+    if argv and argv[0].startswith("PYTHONPATH="):
+        argv = argv[1:]
     if len(argv) < 2:
         return False
     executable = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
@@ -923,6 +926,12 @@ def _is_prismor_cursor_dispatcher(command: Any) -> bool:
         if argv[1] != "hook-dispatch":
             return False
         tail = argv[2:]
+    elif argv[1] == "-m":
+        # Module launchers written by v1.7-v1.44 ("<py>" -m <module> hook-dispatch ...).
+        if (len(argv) < 4 or argv[3] != "hook-dispatch"
+                or argv[2] not in ("prismor.runtime.immunity_cli", "warden.immunity_cli")):
+            return False
+        tail = argv[4:]
     else:
         if len(argv) < 3 or argv[2] != "hook-dispatch":
             return False

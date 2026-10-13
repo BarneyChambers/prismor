@@ -135,6 +135,10 @@ class TestStripCursor(unittest.TestCase):
             'prismor hook-dispatch --agent cursor && vendor-check',
             'prismor hook-dispatch --agent cursor&&vendor-check',
             'python3 "/old/prismor/runtime/cli.py" hook-dispatch --agent cursor; vendor-check',
+            'python3 -m vendor.cli hook-dispatch --agent cursor',
+            'PYTHONPATH="/vendor" python3 -m vendor.cli hook-dispatch',
+            'PYTHONPATH="/r" python3 -m prismor.runtime.immunity_cli hook-dispatch --agent cursor && vendor-check',
+            'DEBUG=1 python3 -m prismor.runtime.immunity_cli hook-dispatch --agent cursor',
         ]
         for command in commands:
             with self.subTest(command=command):
@@ -160,6 +164,10 @@ class TestStripCursor(unittest.TestCase):
             '"C:\\Python\\python.exe" "C:\\Users\\test\\.prismor\\hook-dispatch.py" hook-dispatch --agent cursor',
             f'"{sys.executable}" "{prismor_home() / _SHIM_NAME}" hook-dispatch --agent cursor',
             _PORTABLE_TEMPLATE.format(agent="cursor", mode="enforce"),
+            # Module launchers written by v1.7 (warden) and v1.14-v1.44.
+            '"/usr/bin/python3" -m warden.immunity_cli hook-dispatch --agent cursor --workspace "/w" --mode observe',
+            'PYTHONPATH="/repo" "/usr/bin/python3" -m warden.immunity_cli hook-dispatch --agent cursor --workspace "/w" --mode enforce',
+            'PYTHONPATH="/repo path" "/venv/bin/python" -m prismor.runtime.immunity_cli hook-dispatch --agent cursor --workspace "/w s" --mode observe',
         ]
         for command in commands:
             with self.subTest(command=command):
@@ -248,6 +256,25 @@ class TestCursorInstallMigration(unittest.TestCase):
         self.assertEqual(restored["vendorSetting"], config["vendorSetting"])
         for event, expected in {"beforeShellCommand": [vendor], "beforeShellExecution": [vendor, unknown, "vendor-entry"], "vendorEvent": [vendor]}.items():
             self.assertEqual(restored["hooks"][event], expected)
+
+    def test_upgrade_from_module_launcher_releases(self):
+        # v1.14-v1.44 wrote PYTHONPATH="<repo>" "<py>" -m prismor.runtime.immunity_cli ...
+        # Reinstall must replace those entries, and uninstall must remove them.
+        old = {"command": f'PYTHONPATH="{self.repo_root}" "{sys.executable}" -m prismor.runtime.immunity_cli '
+                          f'hook-dispatch --agent cursor --workspace "{self.workspace}" --mode observe'}
+        vendor = {"command": 'vendor-check --message "hook-dispatch"'}
+        self.config_path.write_text(json.dumps({"hooks": {
+            **{event: [old] for event in self._REAL[:5]},
+            "beforeShellExecution": [old, vendor],
+        }}), encoding="utf-8")
+        hooks = self._install()["hooks"]
+        commands = [e["command"] for entries in hooks.values() for e in entries]
+        self.assertNotIn(old["command"], commands)
+        self.assertEqual(sum("hook-dispatch --agent" in c for c in commands), len(self._REAL))
+        self.assertIn(vendor, hooks["beforeShellExecution"])
+        uninstall_hooks(repo_root=self.repo_root, workspace=self.workspace, agent="cursor", scope="project")
+        restored = json.loads(self.config_path.read_text(encoding="utf-8"))["hooks"]
+        self.assertEqual([e for entries in restored.values() for e in entries], [vendor])
 
     def test_custom_state_home_roundtrip(self):
         state = Path(self.tmpdir) / "custom state with spaces"
