@@ -148,6 +148,8 @@ def _force_utf8_streams() -> None:
 
 def main(argv: Optional[List[str]] = None) -> None:
     _force_utf8_streams()
+    from prismor.runtime.happy_eyeballs import install as _race_ip_families
+    _race_ip_families()
     if argv is None:
         argv = sys.argv[1:]
 
