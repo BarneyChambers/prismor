@@ -107,6 +107,21 @@ def test_mirrored_bash_decloaks_placeholders(ws, monkeypatch):
     assert "s3cr3t-value-1234" in out
 
 
+@pytest.mark.parametrize("template", ['echo "{}"', "echo {}", "echo '{}'"])
+def test_mirrored_bash_secret_value_is_data_not_shell(ws, tmp_path, monkeypatch, template):
+    """#616: a secret holding shell syntax must not run after policy passed the
+    placeholder form — the value expands as an argument, never reparsed."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    marker = tmp_path / "pwned"
+    payload = f'tok"; touch {marker}; echo "$(touch {marker})'
+    (vault / "DEMO_TOKEN").write_text(payload)
+    monkeypatch.setenv("PRISMOR_SECRETS_DIR", str(vault))
+    out = mirror.execute("Bash", {"command": template.format(PLACEHOLDER)}, ws)
+    assert not marker.exists(), "secret value was executed as shell code"
+    assert out.strip() == payload
+
+
 def test_unregistered_placeholder_fails_closed(ws, monkeypatch):
     monkeypatch.setattr("prismor.runtime.cloaking.runtime._read_secret_map", lambda: {})
     with pytest.raises(mirror.MirrorError, match="unregistered secret placeholder"):

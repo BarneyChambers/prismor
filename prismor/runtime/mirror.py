@@ -439,8 +439,8 @@ def _resolve(raw: str, workspace: Path) -> Path:
     return p
 
 
-def _decloak_command(command: str) -> str:
-    """Substitute ``@@SECRET:name@@`` placeholders just before execution.
+def _decloak_env(command: str) -> Optional[Dict[str, str]]:
+    """Bind the secrets a command's ``@@SECRET:name@@`` placeholders name.
 
     Cloaking normally runs as a Claude Code PreToolUse hook whose matcher is
     the exact string ``Bash``. Mirroring renames the tool to
@@ -458,38 +458,66 @@ def _decloak_command(command: str) -> str:
     subprocess. Output is masked back to placeholders by the gateway's result
     redaction.
 
-    Fails closed on an unregistered placeholder: executing a command with a
-    literal placeholder still in it is never what the caller meant.
+    The value is never spliced into the command text (#616): a secret holding
+    ``"; touch pwned; "`` would be reparsed as shell code after policy passed
+    the placeholder form. Each value is exported as ``_PRISMOR_SECRET_*`` and
+    the hook's resolver, decloak-exec.sh, rewrites each placeholder into a
+    quoted reference to it — the same fix the hook path got in #457.
+
+    Returns None when there is nothing to resolve. Fails closed on an
+    unregistered placeholder: executing a command with a literal placeholder
+    still in it is never what the caller meant.
     """
     if "@@SECRET:" not in command:
-        return command
+        return None
     try:
-        from prismor.runtime.cloaking.runtime import decloak_text
+        from prismor.runtime.cloaking.runtime import _read_secret_map, placeholder_names
+        from prismor.runtime.cloaking.secrets_store import secrets_dir
     except Exception:
-        return command
-    try:
-        return decloak_text(command)
-    except KeyError as exc:
-        raise MirrorError(
-            f"command references an unregistered secret placeholder: {exc.args[0]}. "
-            f"Register it with `prismor cloak add {exc.args[0]}`, or run "
-            f"`prismor cloak list` to see the registered names.")
+        return None
+    names = placeholder_names(command)
+    if not names:
+        return None
+    secrets = _read_secret_map()
+    env = dict(os.environ)
+    for name in names:
+        if name not in secrets:
+            raise MirrorError(
+                f"command references an unregistered secret placeholder: {name}. "
+                f"Register it with `prismor cloak add {name}`, or run "
+                f"`prismor cloak list` to see the registered names.")
+        # decloak-exec.sh's injective name escaping: `_` -> `__`, `-` -> `_D`.
+        var = "_PRISMOR_SECRET_" + name.replace("_", "__").replace("-", "_D")
+        env[var] = secrets[name].rstrip("\n")  # as the resolver's $(cat file) reads it
+    env["PRISMOR_CLOAK_CMD"] = command
+    env["PRISMOR_SECRETS_DIR"] = str(secrets_dir())
+    return env
+
+
+_DECLOAK_RESOLVER = Path(__file__).parent / "cloaking" / "hooks" / "decloak-exec.sh"
 
 
 def _run_bash(args: Dict[str, Any], workspace: Path) -> str:
     command = str(args.get("command") or "")
     if not command.strip():
         raise MirrorError("command is required")
-    command = _decloak_command(command)
+    decloak_env = _decloak_env(command)
     try:
         timeout_ms = float(args.get("timeout") or DEFAULT_BASH_TIMEOUT_MS)
     except (TypeError, ValueError):
         timeout_ms = DEFAULT_BASH_TIMEOUT_MS
     timeout_s = max(1.0, min(timeout_ms, MAX_BASH_TIMEOUT_MS) / 1000.0)
     try:
-        proc = subprocess.run(command, shell=True, cwd=str(workspace),  # mirrors the agent's Bash tool  # nosec B602
-                              capture_output=True, text=True, timeout=timeout_s,
-                              env=dict(os.environ))
+        if decloak_env is not None:
+            proc = subprocess.run(["bash", str(_DECLOAK_RESOLVER)], cwd=str(workspace),
+                                  capture_output=True, text=True, timeout=timeout_s,
+                                  env=decloak_env)
+        else:
+            proc = subprocess.run(command, shell=True, cwd=str(workspace),  # mirrors the agent's Bash tool  # nosec B602
+                                  capture_output=True, text=True, timeout=timeout_s,
+                                  env=dict(os.environ))
+    except FileNotFoundError:
+        raise MirrorError("resolving secret placeholders requires bash on PATH")
     except subprocess.TimeoutExpired:
         raise MirrorError(f"command timed out after {timeout_s:.0f}s")
     parts: List[str] = []
