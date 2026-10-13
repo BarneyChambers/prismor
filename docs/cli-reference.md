@@ -116,6 +116,12 @@ prismor
 Agent → config matrix and per-agent details: [AGENT_INTEGRATIONS.md](../AGENT_INTEGRATIONS.md).
 Modes (`observe` vs `enforce`): [Prismor](prismor-runtime.md).
 
+Cursor reinstall and uninstall remove recognized Prismor launchers, not other
+tools whose command text mentions `hook-dispatch`. Legacy event keys are removed
+only when cleanup removes their last entry. Third-party entries and unrelated
+settings are preserved; custom wrappers that cannot be recognized remain for
+manual inspection.
+
 ### Choosing what blocks
 
 `observe` reports everything and blocks nothing, so setup leaves every rule on.
