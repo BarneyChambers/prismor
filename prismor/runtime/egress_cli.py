@@ -11,6 +11,8 @@ Subcommands:
     enable / disable         flip settings.egress.enabled
     mode <observe|enforce>   set the enforcement mode
     default <allow|deny>     set the no-match verdict
+    request <host> --reason  ask the org's admins to allow a host (enrolled
+                             devices; lands in the console's Requests tab)
 
 The matching, extraction, and verdict logic all live in ``egress``; this module
 is UX only. `report` is the intended on-ramp: turn egress on in observe, run
@@ -82,16 +84,53 @@ def _egress_block(data: Dict[str, Any]) -> Dict[str, Any]:
     return block
 
 
+def _org_ships_egress(workspace: Path) -> bool:
+    """True when the org's signed policy carries settings.egress for this
+    workspace, i.e. the remote block replaces the local one wholesale."""
+    try:
+        return getattr(_engine(workspace), "_egress_source", "") == "remote"
+    except Exception:
+        return False
+
+
 def _org_managed_hint(workspace: Path) -> None:
-    """A local edit on an enrolled device may be overridden by org policy."""
+    """Say whether a local edit on an enrolled device actually takes effect.
+
+    The org's egress block, when it ships one, replaces this file's egress
+    settings entirely; when it ships none, the local file is what applies.
+    Telling the user the wrong one is how a local allow "silently fails".
+    """
     try:
         from prismor.runtime.enterprise.identity import load_identity
 
-        if load_identity() is not None:
+        if load_identity() is None:
+            return
+        if _org_ships_egress(workspace):
             print(_c(
-                "note: this device is org-enrolled — the org's signed egress policy "
-                "is authoritative and applies on top of this file; manage fleet-wide "
-                "egress in the Prismor console (Network > Egress).", _DIM))
+                "note: your org's signed egress policy applies to this workspace and "
+                "replaces the egress settings in this file — local allow/deny/mode "
+                "edits have no effect here. To get a host allowed, ask your org:\n"
+                "  prismor egress request <host> --reason \"<why>\"", _YELLOW))
+        else:
+            print(_c(
+                "note: this device is org-enrolled, but your org currently ships no "
+                "egress policy, so this file's egress settings apply. If an admin "
+                "turns on egress in the console, the org's policy will replace them.",
+                _DIM))
+    except Exception:
+        pass
+
+
+def _refresh_remote() -> None:
+    """Pick up a just-published org policy before reporting on it.
+
+    `egress show`/`test` build a PolicyEngine straight from the cached bundle;
+    without this they answer from a policy up to one refresh interval old,
+    right after an admin said "I changed it, try again"."""
+    try:
+        from prismor.runtime.enterprise import remote_policy
+
+        remote_policy.check_and_refresh(interval=0)
     except Exception:
         pass
 
@@ -122,6 +161,7 @@ def _entry_label(raw: Any) -> str:
 # ── show ─────────────────────────────────────────────────────────────────────
 
 def egress_show(workspace: Path) -> None:
+    _refresh_remote()
     engine = _engine(workspace)
     pol: EgressPolicy = engine.egress
 
@@ -152,7 +192,10 @@ def egress_show(workspace: Path) -> None:
             "never blocks.\n  Migrate with `prismor egress migrate` to get enforcement.",
             _YELLOW))
 
-    raw = ((_load_policy_file(workspace).get("settings") or {}).get("egress") or {})
+    # Labels (reasons, ports) come from the local file — only meaningful when
+    # that file is what the entries were compiled from.
+    raw = (((_load_policy_file(workspace).get("settings") or {}).get("egress") or {})
+           if pol.source == "project" else {})
     for key, color in (("allow", _GREEN), ("deny", _RED)):
         entries = getattr(pol, key)
         print(f"\n  {_c(key, color)} ({len(entries)})")
@@ -183,6 +226,7 @@ def egress_show(workspace: Path) -> None:
 
 def egress_test(workspace: Path, targets: List[str], agent: str = "") -> None:
     """Dry-run destinations or whole shell commands against the live policy."""
+    _refresh_remote()
     engine = _engine(workspace)
     pol = engine.egress
     if not pol.enabled:
@@ -369,6 +413,9 @@ def _mutate_list(workspace: Path, key: str, hosts: List[str], reason: str = "") 
         added.append(host)
 
     if not added:
+        # Still say whether the file even applies: "already in allow" while the
+        # org's policy blocks the host reads as "should work" when it cannot.
+        _org_managed_hint(workspace)
         return
     # Adding a rule to a policy nobody enabled is a silent no-op — turn it on.
     if not block.get("enabled"):
@@ -453,3 +500,85 @@ def egress_migrate(workspace: Path) -> None:
           f"into settings.egress.allow (default: deny, mode: observe)")
     print(_c("run `prismor egress report`, then `prismor egress mode enforce`.", _DIM))
     _org_managed_hint(workspace)
+
+
+# ── request ──────────────────────────────────────────────────────────────────
+
+def egress_request(workspace: Path, host: str, reason: str = "") -> None:
+    """Ask the org's admins to allow a destination.
+
+    Device-authenticated POST; the console files it as a pending request in
+    Policy → Requests. Approving adds the host to the egress allowlist of the
+    policy that governs this device, which reaches it on the next pull. The
+    developer can only ask: nothing is relaxed until an admin approves.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+
+    from prismor.runtime.egress import EgressEntry
+    from prismor.runtime.enterprise import identity as _identity
+    from prismor.runtime.enterprise import workspace_scope as _scope
+
+    host = host.strip().lower()
+    try:
+        EgressEntry(host, "allow")
+    except ValueError as exc:
+        print(_c(f"invalid host {host!r}: {exc}", _RED))
+        sys.exit(2)
+    ident = _identity.load_identity()
+    if not ident:
+        print("This machine is not enrolled with an org, so there is no admin to ask.")
+        print(f"Allow it locally instead:  prismor egress allow {host}")
+        sys.exit(1)
+    if _identity.revoked_info():
+        print(_c("This device was removed from its org, so the request cannot be sent.", _RED))
+        print("Re-link it with: prismor enroll <token>")
+        sys.exit(1)
+    if not reason.strip():
+        print(_c("A reason is required, so the admin can judge the request:", _YELLOW))
+        print(f'  prismor egress request {host} --reason "what the agent needs it for"')
+        sys.exit(2)
+
+    base = str(ident.get("api_base") or _identity.api_base()).rstrip("/")
+    payload = _json.dumps({
+        "host": host,
+        "reason": reason.strip()[:1000],
+        "repo": _scope.detect_git_remote(workspace) or "",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}/api/devices/egress-requests", data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {ident.get('device_key')}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # fixed or operator-configured URL  # nosec B310
+            body = _json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300] if exc.fp else ""
+        try:
+            detail = _json.loads(detail).get("message") or detail
+        except Exception:
+            pass
+        print(_c(f"Request failed ({exc.code}): {detail or exc.reason}", _RED))
+        sys.exit(1)
+    except (urllib.error.URLError, ValueError, OSError) as exc:
+        print(_c(f"Request failed: {exc}", _RED))
+        sys.exit(1)
+
+    if body.get("status") == "already_allowed":
+        print(_c(f"{host} is already on your org's egress allowlist.", _GREEN))
+        print(body.get("message") or "Your device picks it up on the next policy pull (~30s).")
+        return
+    print(_c(f"Requested access to {host}.", _GREEN))
+    print(f"  reason: {reason.strip()}")
+    print("  → It is waiting for an org admin in the Prismor console (Policy → Requests).")
+    print("    Once approved it reaches this device within ~30s; until then the block stays.")
+    # The console returns links matched to this person's role: everyone can
+    # track their own request; admins also get the queue where it is decided.
+    if body.get("trackUrl"):
+        print(f"  track it:   {body['trackUrl']}")
+    if body.get("reviewUrl"):
+        print(f"  approve it: {body['reviewUrl']}  (you are an org admin)")
+    if body.get("note"):
+        print(_c(f"  note: {body['note']}", _YELLOW))

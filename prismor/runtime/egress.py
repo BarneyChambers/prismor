@@ -825,6 +825,10 @@ class EgressPolicy:
                     "expected, or route the call through an approved endpoint."
                 ),
                 "egressHost": dest.host,
+                # Which layer the verdict came from (remote = the org's signed
+                # policy). The unblock help needs it: a local `egress allow`
+                # cannot lift a block the org's policy owns.
+                "egressSource": pol.source or "default",
             }
             if dest.port:
                 finding["egressPort"] = dest.port

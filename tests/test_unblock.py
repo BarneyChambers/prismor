@@ -231,5 +231,62 @@ class EgressStepsTest(unittest.TestCase):
         self.assertNotIn("prismor allow egress-deny", joined)
 
 
+class EgressOwnershipTest(unittest.TestCase):
+    """Who owns the egress verdict decides what can lift it."""
+
+    def _text(self, source, enrolled=True, rule_id="egress-allowlist"):
+        return unblock.format_unblock(
+            _finding(ruleId=rule_id, category="network_isolation",
+                     egressHost="www.linkedin.com", egressSource=source),
+            workspace=Path("/w"), enrolled=enrolled, org_managed=enrolled,
+        )
+
+    def test_org_owned_block_points_at_a_request_not_a_local_edit(self):
+        text = self._text("remote")
+        self.assertIn('prismor egress request www.linkedin.com --reason', text)
+        self.assertIn("Policy → Requests", text)
+        self.assertNotIn("Allow this destination:", text)
+        self.assertNotIn("prismor egress mode observe", text)
+        # An unlock window only reaches local policy, so it is a dead end here.
+        self.assertNotIn("prismor unlock", text)
+
+    def test_org_owned_explicit_deny_names_the_admin(self):
+        text = self._text("remote", rule_id="egress-deny")
+        self.assertIn("explicitly denies www.linkedin.com", text)
+        self.assertNotIn("prismor egress rm", text)
+
+    def test_local_block_on_enrolled_device_offers_both(self):
+        text = self._text("project")
+        self.assertIn("prismor egress allow www.linkedin.com", text)
+        self.assertIn("prismor egress request www.linkedin.com", text)
+
+    def _with_console(self, console, source="remote"):
+        from unittest import mock
+        with mock.patch.object(unblock, "_console", return_value=console):
+            return self._text(source)
+
+    def test_admin_gets_a_link_to_allow_it_in_the_policy(self):
+        text = self._with_console({"url": "https://www.prismor.dev", "role": "ADMIN",
+                                   "policy_id": "pol1", "policy_name": "Engineering"})
+        self.assertIn("https://www.prismor.dev/admin/policies?policy=pol1", text)
+        self.assertIn("“Engineering” → Network egress", text)
+        self.assertIn("https://www.prismor.dev/admin/policies?section=requests", text)
+        self.assertNotIn("Track your request", text)
+
+    def test_member_gets_a_link_to_track_their_request(self):
+        text = self._with_console({"url": "https://www.prismor.dev", "role": "MEMBER"})
+        self.assertIn("Track your request:  https://www.prismor.dev/dashboard?tab=mypolicy#access-requests", text)
+        self.assertNotIn("/admin/policies", text)
+
+    def test_no_console_no_links(self):
+        text = self._with_console({})
+        self.assertNotIn("https://", text)
+
+    def test_unenrolled_device_has_no_org_to_ask(self):
+        text = self._text("project", enrolled=False)
+        self.assertIn("prismor egress allow www.linkedin.com", text)
+        self.assertNotIn("egress request", text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -599,11 +599,13 @@ def upload_telemetry(
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             # The control plane rejected our device key: revoked (or deleted).
-            # Local protection continues with the last good policy.
+            # Org policy is dropped (scope resolves local); built-in and
+            # project rules keep running.
             _identity.mark_revoked(f"telemetry upload rejected ({exc.code})")
             sys.stderr.write(
-                "[prismor] control plane rejected this device's key "
-                f"({exc.code}) — telemetry paused. Re-enroll with: prismor enroll <token>\n"
+                "[prismor] this device was removed or revoked by your org admin "
+                f"({exc.code}) — org policy no longer applies and nothing is reported to the org; "
+                "the built-in and project rules still run. Re-link with: prismor enroll <token>\n"
             )
             return
         _spool.append(batch)
