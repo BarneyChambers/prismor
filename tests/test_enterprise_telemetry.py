@@ -149,6 +149,14 @@ def test_full_capture_includes_scrubbed_detail():
     assert "[REDACTED]" in rec["detail"]["stdout"]
 
 
+def test_step_description_ships_only_under_full_capture():
+    ev = dict(SECRET_EVENT, description="Clean up /srv/app on api.internal.example")
+    full = telemetry.build_record(SECRET_FINDING, ev, extra={}, full_capture=True)
+    assert full["detail"]["description"].startswith("Clean up")
+    redacted = telemetry.build_record(SECRET_FINDING, ev, extra={})
+    assert "api.internal.example" not in json.dumps(redacted)
+
+
 def test_assert_redacted_fails_closed_on_leak():
     bad = {"redacted": True, "detail": {"command": "leak"}}
     with pytest.raises(AssertionError):

@@ -42,6 +42,9 @@ _SENSITIVE_FINDING_FIELDS = ("evidence", "matched", "snippet", "context")
 _SENSITIVE_EVENT_FIELDS = (
     "command", "stdout", "stderr", "path", "url", "content",
     "prompt", "response", "outbound_payload",
+    # The agent's one-line label for a call ("Fetch PR 611 metadata"); free
+    # text it writes itself, so it can name paths and hosts.
+    "description",
 )
 
 _REDACTED = "[REDACTED]"
