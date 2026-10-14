@@ -497,7 +497,7 @@ rules:
     event_types: [shell]
     fields: [command]
     patterns:
-      - '(?:^|\s|;|&|\||\(|["''])rm\b(?=[^\n;&|]*(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF]|-[a-zA-Z]*[fF][a-zA-Z]*[rR]|\s-[rR](?=\s|$)[^\n;&|]*\s-[fF]\b|\s-[fF](?=\s|$)[^\n;&|]*\s-[rR]\b|--recursive\b[^\n;&|]*--force\b|--force\b[^\n;&|]*--recursive\b))[^\n;&|]*\s+["'']?(?:~|\$\{?HOME\}?|/(?:home|Users)/[^/\s"'']+)/(?![^\s"'';&|]*?(?:^|/)?(?:node_modules|dist|build|\.next|__pycache__|\.cache|target|coverage|out|\.venv|venv|\.pytest_cache|\.turbo)/?(?:["'']|\s|$|;|&|\|))[^\s"'';&|]+'
+      - '(?:^|\s|;|&|\||\(|["''])rm\b(?=[^\n;&|]*(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF]|-[a-zA-Z]*[fF][a-zA-Z]*[rR]|\s-[rR](?=\s|$)[^\n;&|]*\s-[fF]\b|\s-[fF](?=\s|$)[^\n;&|]*\s-[rR]\b|--recursive\b[^\n;&|]*--force\b|--force\b[^\n;&|]*--recursive\b))[^\n;&|]*\s+["'']?(?:~|\$\{?HOME\}?|/(?:home|Users)/[^/\s"'']+)/(?!(?:\.cache|Library/Caches|\.npm/_cacache|\.npm/_npx|\.yarn/cache|\.gradle/caches)(?:/(?:(?!\.\.)[^\s"'';&|])*)?(?:["'']|\s|$|;|&|\|))(?![^\s"'';&|]*?(?:^|/)?(?:node_modules|dist|build|\.next|__pycache__|\.cache|target|coverage|out|\.venv|venv|\.pytest_cache|\.turbo)/?(?:["'']|\s|$|;|&|\|))[^\s"'';&|]+'
     action: warn
 
   # ── CRITICAL: Secret exfiltration ─────────────────────────────────────
