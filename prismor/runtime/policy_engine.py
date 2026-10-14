@@ -1026,6 +1026,11 @@ class PolicyEngine:
         # Which policy layer last set the egress config. "remote" means the org
         # signed it, which is what makes an enforce verdict authoritative.
         self._egress_source: str = "default"
+        # Set when the workspace's .prismor/policy.yaml could not be parsed. The
+        # broken layer is skipped (built-in + org policy still apply) rather
+        # than raised: an exception here used to crash hook-dispatch with exit 1,
+        # which agents treat as "allow" - one typo switched enforcement off.
+        self.project_policy_error: Optional[str] = None
         self.outputs: List[Dict[str, Any]] = []
         self.semantic_guard_config: Dict[str, Any] = {}
         self.sandbox_config: Dict[str, Any] = {}
@@ -1317,7 +1322,21 @@ class PolicyEngine:
                 override_path = candidate
 
         if override_path is not None and override_path.exists():
-            override_raw = _load_yaml(override_path)
+            try:
+                override_raw = _load_yaml(override_path)
+                if override_raw is not None and not isinstance(override_raw, dict):
+                    raise ValueError("the top level must be a mapping (version:, rules:, settings:)")
+            except Exception as exc:  # malformed YAML or shape: skip the layer, say so
+                override_raw = None
+                detail = " ".join(str(exc).split())[:240]
+                self.project_policy_error = f"{override_path}: {detail}"
+                if self.project_policy_error not in _WARNED_PROJECT_ERRORS:  # once per process
+                    _WARNED_PROJECT_ERRORS.add(self.project_policy_error)
+                    sys.stderr.write(
+                        f"[prismor] {override_path} is invalid and was ignored ({detail}). "
+                        "Built-in and org rules still apply. Fix it, then check with: "
+                        f"prismor policy validate {override_path}\n"
+                    )
             if override_raw is not None:
                 self._apply_override(override_raw, rules_by_id, allowlist_raw, settings, "project")
 
@@ -4323,6 +4342,10 @@ try:  # pragma: no cover - depends on the installed PyYAML build
     from yaml import CSafeLoader as _SafeLoader  # type: ignore
 except Exception:  # pragma: no cover
     _SafeLoader = getattr(yaml, "SafeLoader", None) if yaml is not None else None
+
+
+# Project-policy parse errors already reported on stderr in this process.
+_WARNED_PROJECT_ERRORS: set = set()
 
 
 def _load_yaml(path: Path) -> Optional[Dict[str, Any]]:

@@ -1494,7 +1494,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         costs = sessions_cost(workspace, [s["sessionId"] for s in sessions])
         for s in sessions:
             s["cost"] = costs[s["sessionId"]]
-        emit({"sessions": sessions}, as_json=args.json, formatter=format_sessions)
+        _payload: Dict[str, Any] = {"sessions": sessions}
+        if not sessions and not getattr(args, "global_view", False):
+            _payload["hint"] = _sessions_elsewhere_hint(workspace)
+        emit(_payload, as_json=args.json, formatter=format_sessions)
         return
 
     if args.command == "session":
@@ -1519,7 +1522,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         if args.command == "rca":
             sid = args.session_id or next((s["sessionId"] for s in list_sessions(workspace, 1)), None)
             if not sid:
-                raise SystemExit("rca: no sessions recorded yet")
+                raise SystemExit("rca: " + (_sessions_elsewhere_hint(workspace)
+                                            or "no sessions recorded yet")
+                                 + ("; or pass a session id: prismor rca <session-id>"
+                                    if _sessions_elsewhere_hint(workspace) else ""))
             emit(devlog.rca(sid), as_json=args.json, formatter=devlog.format_rca)
         elif args.command == "blame":
             path, _, line = args.target.rpartition(":") if re.search(r":\d+$", args.target) else (args.target, "", "")
@@ -3098,7 +3104,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             _policy_init(workspace)
             return
         if args.policy_command == "validate":
-            _policy_validate(Path(args.file))
+            _policy_validate(Path(args.file) if args.file else workspace / ".prismor" / "policy.yaml")
             return
         if args.policy_command == "show":
             _policy_show(workspace)
@@ -4108,7 +4114,8 @@ def build_parser() -> argparse.ArgumentParser:
     policy_init.add_argument("--workspace", help="Workspace path")
 
     policy_validate = policy_sub.add_parser("validate", help="Validate a policy YAML file")
-    policy_validate.add_argument("file", help="Path to policy.yaml")
+    policy_validate.add_argument("file", nargs="?", default=None,
+                                 help="Path to policy.yaml (default: this workspace's .prismor/policy.yaml)")
     policy_validate.add_argument("--workspace", help="Workspace path")
 
     policy_show = policy_sub.add_parser("show", help="Show active policy rules (default + project overrides)")
@@ -5179,15 +5186,30 @@ def _run_trail(args) -> None:
         )
         if report.get("pinned_key_id"):
             print(f"  verified against key id {report['pinned_key_id']}")
-        for lo, hi in report["gaps"]:
+        if report.get("unverifiable"):
+            print(f"  ⚠ {report['unverifiable']} signed record(s) not checked: the signature "
+                  "backend is not installed. Hash chain and order were still verified. "
+                  "To check signatures too: pip install 'prismor[signing]'")
+        if report["unsigned"]:
+            print(f"  · {report['unsigned']} record(s) are unsigned (written before a device "
+                  "signing key existed, or while signing was unavailable). The hash chain still covers them.")
+        # A long tail of identical lines buries the summary; show a few, count the rest.
+        _cap = 10
+        for i, (lo, hi) in enumerate(report["gaps"]):
+            if i == _cap:
+                print(f"  … and {len(report['gaps']) - _cap} more gap(s) (--json for all)")
+                break
             span = f"record {lo}" if lo == hi else f"records {lo}–{hi}"
             print(f"  ⚠ gap: {span} missing — crash and deletion look identical locally; "
-                  f"compare an anchored checkpoint to tell them apart")
+                  f"compare against a saved checkpoint (prismor trail checkpoint) to tell them apart")
         for err in report["errors"]:
             where = f"seq {err['seq']}" if err.get("seq") is not None else f"line {err.get('line')}"
             print(f"  ✗ {err['kind']} at {where}: {err['detail']}")
-        for seq in report["sig_failures"]:
+        _fails = report["sig_failures"]
+        for seq in _fails[:_cap]:
             print(f"  ✗ invalid signature at seq {seq}")
+        if len(_fails) > _cap:
+            print(f"  … and {len(_fails) - _cap} more invalid signature(s) (--json for all)")
         for fk, count in (report.get("foreign_keys") or {}).items():
             print(f"  ✗ {count} record(s) signed by foreign key {fk} — "
                   f"history may have been rewritten and re-signed")
@@ -5725,7 +5747,11 @@ def _print_status_overview(workspace: Path) -> None:
     sessions = list_sessions(workspace, 1)
     print()
     if not sessions:
-        print(f"  {_color('Latest session:', _GREEN)}  {_color('none yet', _DIM)}")
+        _hint = _sessions_elsewhere_hint(workspace)
+        print(f"  {_color('Latest session:', _GREEN)}  "
+              f"{_color('none in this workspace' if _hint else 'none yet', _DIM)}")
+        if _hint:
+            print(f"  {_color(_hint, _DIM)}")
     else:
         latest = sessions[0]
         session = get_session(workspace, latest["sessionId"])
@@ -6811,11 +6837,24 @@ def _redact_evidence(evidence: str) -> str:
     return _SECRET_PATTERNS.sub(_mask, evidence)
 
 
+def _sessions_elsewhere_hint(workspace: Path) -> str:
+    """When this workspace has no sessions, say whether others do. Every
+    session command filters to the current directory, so "No sessions" in a
+    fresh checkout read as "Prismor recorded nothing" on a busy machine."""
+    try:
+        if list_sessions(workspace, 1, all_workspaces=True):
+            return (f"No sessions in this workspace ({workspace}). Other workspaces on this "
+                    "machine have some: prismor sessions --global")
+    except Exception:
+        pass
+    return ""
+
+
 def format_sessions(payload: Dict[str, Any]) -> str:
     sessions = payload["sessions"]
     lines = ["Prismor Sessions", "======================"]
     if not sessions:
-        lines.append("No sessions stored.")
+        lines.append(payload.get("hint") or "No sessions stored.")
         return "\n".join(lines)
     for index, session in enumerate(sessions, start=1):
         risk = session['riskScore']

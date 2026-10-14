@@ -407,7 +407,13 @@ def verify_trail(
         "head": None,
         "state": _read_state(state_path()),
         "pinned_key_id": pinned_key_id,
+        # Signed records whose signature could not be checked because the
+        # Ed25519 backend (`cryptography`) is not installed. Not checking is
+        # not the same as failing: reporting these as tampered told users
+        # their trail was forged when a dependency was missing.
+        "unverifiable": 0,
     }
+    can_verify = bool(getattr(_signing, "_HAVE_CRYPTO", False))
 
     if not trail.exists():
         report["status"] = "empty"
@@ -467,7 +473,9 @@ def verify_trail(
                     "detail": "prev_hash does not match the preceding record",
                 })
 
-            if record.get("signature"):
+            if record.get("signature") and not can_verify:
+                report["unverifiable"] += 1
+            elif record.get("signature"):
                 key_id = record.get("signing_key_id")
                 if pinned and key_id != pinned_key_id:
                     report["foreign_keys"][key_id] = report["foreign_keys"].get(key_id, 0) + 1

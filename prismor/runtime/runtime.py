@@ -728,6 +728,18 @@ def evaluate_tool_call(
     # showed a stopped prompt as "allowed" (#541).
     if blocking is not None:
         blocking["mode"] = "enforce"
+        # The local store saved this finding above, before the block was
+        # decided, so the dashboard, `prismor status` and the stats counted a
+        # blocked call as "warned". Re-save the decided version (upsert by id).
+        # A copy: `action` on the live finding also drives modify/step-up
+        # handling below and must keep its value.
+        if persist and blocking.get("action") in (None, "", "warn", "observe"):
+            try:
+                persist_runtime_findings(
+                    workspace, session_id, [dict(blocking, action="block")], _session_seq,
+                )
+            except Exception as exc:
+                sys.stderr.write(f"[prismor] finding persistence error: {exc}\n")
 
     _dispatch_telemetry(
         engine=engine,

@@ -1110,12 +1110,20 @@ def _step_confirm(target: Path, mode: str, rules: List[dict], agents: List[str],
 _SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
+# Steps that failed during the current _do_install, as (label, message). The
+# success banner must not print over a failed hook install: setup used to say
+# "installed successfully" and exit 0 with every hook unwritten.
+_STEP_FAILURES: List[tuple] = []
+
+
 def _spinner_run(label: str, fn) -> None:
     if _PLAIN:
         try:
             ok, msg = fn()
         except Exception as e:
-            ok, msg = False, str(e)[:60]
+            ok, msg = False, str(e)[:200]
+        if not ok:
+            _STEP_FAILURES.append((label, msg))
         print(f"  {'✓' if ok else '✗'}  {label}{f'  {msg}' if msg else ''}")
         return
     stop = threading.Event()
@@ -1134,7 +1142,9 @@ def _spinner_run(label: str, fn) -> None:
     try:
         ok, msg = fn()
     except Exception as e:
-        ok, msg = False, str(e)[:60]
+        ok, msg = False, str(e)[:200]
+    if not ok:
+        _STEP_FAILURES.append((label, msg))
     stop.set()
     t.join(timeout=0.3)
     icon = _w("✓", GRN) if ok else _w("✗", RED)
@@ -1274,6 +1284,7 @@ def _install_skill(target: Path):
 
 
 def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], cloak: bool = False, scope: str = "project", mirror_agents: Optional[List[str]] = None, gov_mode: Optional[str] = None, judge: tuple = ("", "")) -> None:
+    _STEP_FAILURES.clear()
     if not _PLAIN:
         sys.stdout.write(ALT_OFF)
         sys.stdout.write("\033[H\033[J" + HIDE)
@@ -1416,7 +1427,7 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
                 )
                 return True, ""
             except Exception as e:
-                return False, str(e)[:50]
+                return False, str(e)[:200]
         _spinner_run(f"Installing {agent} hooks", _install_hook)
     if "codex" in agents:
         # Codex runs nothing until the human trusts the hooks; installed is not screened.
@@ -1437,7 +1448,7 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
                 rc = mirror_cli.mirror_on(target, mode=mode, agent=a)
                 return rc == 0, "" if rc == 0 else "see output above"
             except Exception as e:
-                return False, str(e)[:50]
+                return False, str(e)[:200]
         _spinner_run(f"Serving {agent} built-ins over MCP", _install_mirror)
 
     # 3b. Cloaking hooks (opt-in — Claude Code only for now)
@@ -1488,7 +1499,7 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
             _write_agent_context(target, agents)
             return True, ""
         except OSError as e:
-            return False, str(e)[:50]
+            return False, str(e)[:200]
     _spinner_run("Writing agent context", _write_context)
 
     # 5. Feed signature verification (use prismor.runtime.paths resolver, skip shell script)
@@ -1516,6 +1527,19 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
             return False, "signature unusable"
         return True, "skipped (install prismor[signing] to verify)"
     _spinner_run("Verifying feed signature", _verify_feed)
+
+    # A hook that was not written means the agent is not protected, whatever
+    # else succeeded. Say so and exit non-zero (scripts and CI check this).
+    hook_failures = [(l, m) for l, m in _STEP_FAILURES if l.startswith("Installing") and "hooks" in l]
+    if hook_failures:
+        print()
+        print(f"  {_w('Prismor setup did not finish: these agents are NOT protected.', RED)}")
+        for label, msg in hook_failures:
+            print(f"    ✗ {label}: {msg}")
+        print(f"  {_w('Fix the error above (often a directory you cannot write to), then run setup again.', DIM)}")
+        print(f"  {_w('Check what is installed with: prismor doctor', DIM)}")
+        print()
+        raise SystemExit(1)
 
     # Done — success banner
     home = str(Path.home())
