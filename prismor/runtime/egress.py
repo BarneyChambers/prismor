@@ -303,6 +303,13 @@ _HOSTPORT_CMDS = frozenset({"nc", "ncat", "netcat", "telnet", "socat", "nmap", "
 # flag was being screened as egress to example.com.
 _NO_DESTINATION_CMDS = frozenset({
     "ssh-keygen", "ssh-add", "gpg", "gpg2", "git-config", "npm", "yarn", "pnpm",
+    # Text tools: they only read and rewrite text, so an email address in a
+    # sed expression or a grep pattern is data, not an ssh destination
+    # (`sed -e "s/x/qa@example.dev/"` was blocked as egress to port 22).
+    # Deliberately NOT xargs/env/sh: those run other programs.
+    "sed", "awk", "gawk", "grep", "egrep", "fgrep", "rg", "ag", "echo", "printf",
+    "cat", "head", "tail", "jq", "yq", "cut", "tr", "sort", "uniq", "wc", "diff",
+    "less", "more", "tee", "ls", "touch", "mkdir", "file", "stat",
 })
 # `git <sub>` forms that stay on this machine. Clone/fetch/push/pull keep the
 # scan, because user@host there is exactly the remote being contacted.
@@ -319,7 +326,11 @@ _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?'
 _FILE_EXT_RE = re.compile(
     r'\.(json|ya?ml|txt|log|md|csv|tsv|xml|html?|js|ts|py|rb|go|rs|java|c|h|cpp|sh|zsh|bash|'
     r'tar|gz|tgz|bz2|xz|zip|whl|jar|deb|rpm|pkg|dmg|iso|img|png|jpe?g|gif|svg|pdf|env|lock|'
-    r'toml|ini|cfg|conf|pem|key|crt|sql|db|sqlite3?|bak|tmp|out|so|dylib|dll|exe)$',
+    r'toml|ini|cfg|conf|pem|key|crt|sql|db|sqlite3?|bak|tmp|out|so|dylib|dll|exe|'
+    # Fonts, media, styles and source files: `egress report` listed
+    # departuremono-regular.otf and github.com.helper (a git config key) as hosts.
+    r'otf|ttf|woff2?|eot|ico|webp|avif|mp[34]|wav|webm|mov|css|scss|less|map|mjs|cjs|'
+    r'jsx|tsx|vue|svelte|kt|swift|php|lua|ipynb|parquet|onnx|plist|helper|lockb)$',
     re.IGNORECASE,
 )
 
@@ -402,6 +413,23 @@ def _default_port(scheme: str) -> Optional[int]:
     return _DEFAULT_PORTS.get((scheme or "").lower())
 
 
+_PRISMOR_DRY_RUNS = (("egress", "test"), ("egress", "show"), ("egress", "report"), ("check",))
+
+
+def _only_prismor_dry_runs(command: str) -> bool:
+    segments = [seg for seg in _SHELL_SEP_RE.split(command) if seg and seg.strip()]
+    if not segments:
+        return False
+    for seg in segments:
+        tokens = _tokenize(seg)
+        if not tokens or tokens[0].rsplit("/", 1)[-1].lower() not in ("prismor", "immunity"):
+            return False
+        sub = tuple(t.lower() for t in tokens[1:3])
+        if not any(sub[:len(d)] == d for d in _PRISMOR_DRY_RUNS):
+            return False
+    return True
+
+
 def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
     """Pull every outbound destination out of an event.
 
@@ -446,6 +474,13 @@ def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
 
     command = str(event.get("command") or "")
     if not command:
+        return list(seen.values())
+
+    # Prismor's own dry runs only NAME a destination (`prismor egress test
+    # "ssh host"`, `prismor check "curl x"`); nothing is contacted. Screening
+    # them blocked the very command meant to check a host. Only when every
+    # segment is such a dry run: anything chained after one is still screened.
+    if _only_prismor_dry_runs(command):
         return list(seen.values())
 
     # Catch URLs anywhere, including inside quoted strings and heredocs that

@@ -504,6 +504,31 @@ def egress_migrate(workspace: Path) -> None:
 
 # ── request ──────────────────────────────────────────────────────────────────
 
+def _request_host(raw: str) -> str:
+    """Reduce what people paste to the host the policy matches on:
+    ``https://Docs.Example.com/path?q=1`` → ``docs.example.com``."""
+    from urllib.parse import urlsplit
+
+    h = str(raw or "").strip()
+    if "://" in h:
+        h = urlsplit(h).hostname or h
+    return h.lower().rstrip(".")
+
+
+def _is_catch_all(host: str) -> bool:
+    """``*`` or a CIDR that spans most of the address space."""
+    if host == "*":
+        return True
+    if "/" in host:
+        addr, _, bits = host.partition("/")
+        try:
+            n = int(bits)
+        except ValueError:
+            return False
+        return n < (16 if ":" in addr else 8)
+    return False
+
+
 def egress_request(workspace: Path, host: str, reason: str = "") -> None:
     """Ask the org's admins to allow a destination.
 
@@ -520,11 +545,15 @@ def egress_request(workspace: Path, host: str, reason: str = "") -> None:
     from prismor.runtime.enterprise import identity as _identity
     from prismor.runtime.enterprise import workspace_scope as _scope
 
-    host = host.strip().lower()
+    host = _request_host(host)
     try:
         EgressEntry(host, "allow")
     except ValueError as exc:
         print(_c(f"invalid host {host!r}: {exc}", _RED))
+        sys.exit(2)
+    if _is_catch_all(host):
+        print(_c(f"{host!r} would allow every destination — request the specific host "
+                 "your agent needs (for example www.linkedin.com or *.linkedin.com).", _RED))
         sys.exit(2)
     ident = _identity.load_identity()
     if not ident:
@@ -555,11 +584,16 @@ def egress_request(workspace: Path, host: str, reason: str = "") -> None:
         with urllib.request.urlopen(req, timeout=15) as resp:  # fixed or operator-configured URL  # nosec B310
             body = _json.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:300] if exc.fp else ""
+        raw = exc.read().decode("utf-8", "replace")[:2000] if exc.fp else ""
         try:
-            detail = _json.loads(detail).get("message") or detail
+            detail = _json.loads(raw).get("message") or ""
         except Exception:
-            pass
+            detail = ""  # an HTML error page is noise, never print it
+        if exc.code == 404 and not detail:
+            # A console from before egress requests existed.
+            print(_c("Your org's Prismor console does not accept egress requests yet.", _YELLOW))
+            print(f"Ask an admin to allow {host} under Policy → Network egress in the console.")
+            sys.exit(1)
         print(_c(f"Request failed ({exc.code}): {detail or exc.reason}", _RED))
         sys.exit(1)
     except (urllib.error.URLError, ValueError, OSError) as exc:

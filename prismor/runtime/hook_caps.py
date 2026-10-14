@@ -144,6 +144,21 @@ def context_output(agent: str, canonical: str, text: str) -> Optional[Dict[str, 
     }}
 
 
+# Agents that show a hook's top-level ``systemMessage`` to the PERSON in the
+# chat (as opposed to additionalContext, which only the model reads).
+_USER_MESSAGE_AGENTS = frozenset({"claude"})
+
+
+def add_user_message(agent: str, output: Optional[Dict[str, Any]], message: str) -> Optional[Dict[str, Any]]:
+    """Attach a short human-facing line to a hook output, where the agent can
+    show one. Agent context alone left people unaware Prismor had acted."""
+    if not message or agent not in _USER_MESSAGE_AGENTS:
+        return output
+    out = dict(output or {})
+    out["systemMessage"] = message
+    return out
+
+
 def _rewrite_mode(caps: "HookCaps") -> Optional[str]:
     # REWRITE_ALLOW agents only take a rewrite next to permissionDecision
     # "allow", which also skips the agent's own approval prompt for the call.

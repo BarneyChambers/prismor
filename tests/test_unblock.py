@@ -282,6 +282,11 @@ class EgressOwnershipTest(unittest.TestCase):
         text = self._with_console({})
         self.assertNotIn("https://", text)
 
+    def test_local_egress_block_does_not_offer_an_unlock_window(self):
+        text = self._text("project")
+        self.assertIn("prismor egress allow www.linkedin.com", text)
+        self.assertNotIn("prismor unlock", text)
+
     def test_unenrolled_device_has_no_org_to_ask(self):
         text = self._text("project", enrolled=False)
         self.assertIn("prismor egress allow www.linkedin.com", text)
