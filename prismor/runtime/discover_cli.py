@@ -158,7 +158,7 @@ def _print_summary(report: Dict[str, Any]) -> None:
         print(f"  Next: {_c('prismor enroll', _CYAN)}"
               f"   {_c('— report coverage to the console', _DIM)}")
     elif shadow_total:
-        print(f"  Next: {_c('prismor install', _CYAN)}"
+        print(f"  Next: {_c('prismor discover --fix', _CYAN)}"
               f"        {_c('— hook the unmanaged agents', _DIM)}")
         if summary["mcp_shadow"]:
             print(f"        {_c('prismor mcp-gateway install', _CYAN)}"
