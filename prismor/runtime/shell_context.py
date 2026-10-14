@@ -272,6 +272,35 @@ def _blank(text: str, spans) -> str:
     return "".join(chars)
 
 
+# Files whose contents are read by people, not run by anything. A redirect into
+# one of these keeps an echo/printf argument inert: appending a warning sentence
+# to NOTES.md writes prose, not a script. Deliberately excludes .yml, .json and
+# .toml - CI workflows and package.json scripts DO get executed.
+_TEXT_FILE_EXTS = frozenset({".md", ".markdown", ".txt", ".log", ".rst", ".adoc", ".csv", ".tsv"})
+_TEXT_DEVICES = frozenset({"/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"})
+_REDIRECT_RE = re.compile(r"\d*(?:&>>?|>>?\|?)\s*(&\d+|[^\s;&|<>]+)")
+
+
+def _redirects_to_text(segment: str, command: str) -> bool:
+    """True when every output redirect in ``segment`` targets a text sink: a
+    file descriptor, /dev/null and friends, or a prose/data file (by extension)
+    that the rest of the command never names again - so it is not then run in
+    the same call with ``. notes.md`` or ``bash notes.md``."""
+    targets = _REDIRECT_RE.findall(segment)
+    if not targets:
+        return False
+    for target in targets:
+        if target.startswith("&") or target in _TEXT_DEVICES:
+            continue
+        name = target.rsplit("/", 1)[-1]
+        ext = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+        if ext not in _TEXT_FILE_EXTS:
+            return False
+        if command.count(name) != 1:
+            return False
+    return True
+
+
 def is_inert_match(command: str, match_start: int, match_end: int) -> bool:
     """True when the match lies wholly inside inert text.
 
@@ -342,8 +371,12 @@ def is_inert_match(command: str, match_start: int, match_end: int) -> bool:
         if is_payload or not is_closed:
             continue
         # +1 tolerance: a pattern anchored on a trailing delimiter may consume
-        # the closing quote itself.
-        if not (match_start >= start and match_end <= end + 1):
+        # the closing quote itself - and then the whitespace after it, which
+        # is no more executable than the quote.
+        trimmed_end = match_end
+        while trimmed_end > match_start and command[trimmed_end - 1].isspace():
+            trimmed_end -= 1
+        if not (match_start >= start and trimmed_end <= end + 1):
             continue
         seg_start = 0
         for k in range(start):
@@ -355,7 +388,7 @@ def is_inert_match(command: str, match_start: int, match_end: int) -> bool:
                 seg_end = k
                 break
         segment = bare[seg_start:seg_end]
-        if ">" in segment or "<" in segment:
+        if "<" in segment or (">" in segment and not _redirects_to_text(segment, command)):
             return False
         tokens = segment.split()
         if not tokens:

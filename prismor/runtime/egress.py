@@ -402,6 +402,23 @@ def _default_port(scheme: str) -> Optional[int]:
     return _DEFAULT_PORTS.get((scheme or "").lower())
 
 
+_PRISMOR_DRY_RUNS = (("egress", "test"), ("egress", "show"), ("egress", "report"), ("check",))
+
+
+def _only_prismor_dry_runs(command: str) -> bool:
+    segments = [seg for seg in _SHELL_SEP_RE.split(command) if seg and seg.strip()]
+    if not segments:
+        return False
+    for seg in segments:
+        tokens = _tokenize(seg)
+        if not tokens or tokens[0].rsplit("/", 1)[-1].lower() not in ("prismor", "immunity"):
+            return False
+        sub = tuple(t.lower() for t in tokens[1:3])
+        if not any(sub[:len(d)] == d for d in _PRISMOR_DRY_RUNS):
+            return False
+    return True
+
+
 def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
     """Pull every outbound destination out of an event.
 
@@ -446,6 +463,13 @@ def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
 
     command = str(event.get("command") or "")
     if not command:
+        return list(seen.values())
+
+    # Prismor's own dry runs only NAME a destination (`prismor egress test
+    # "ssh host"`, `prismor check "curl x"`); nothing is contacted. Screening
+    # them blocked the very command meant to check a host. Only when every
+    # segment is such a dry run: anything chained after one is still screened.
+    if _only_prismor_dry_runs(command):
         return list(seen.values())
 
     # Catch URLs anywhere, including inside quoted strings and heredocs that

@@ -2861,6 +2861,50 @@ def _read_memory_file(path: Path) -> Optional[str]:
         return None
 
 
+def _norm_paragraph(text: str) -> str:
+    t = " ".join(text.split())
+    # Older installs wrote the same block under the product's previous name.
+    return t.replace("Prismor Warden", "Prismor").replace("The Warden decloak", "The Prismor decloak")
+
+
+def _prismor_managed_paragraphs() -> frozenset:
+    """Paragraphs Prismor itself writes into CLAUDE.md/AGENTS.md (setup and
+    cloak). Scanning them flagged Prismor's own instructions as prompt
+    injection on every session, which teaches people to ignore the finding."""
+    blocks: List[str] = []
+    try:
+        from prismor.runtime.cloaking.installer import _CLAUDE_MD_BLOCK
+        blocks.append(_CLAUDE_MD_BLOCK)
+    except Exception:
+        pass
+    try:
+        from prismor.runtime import setup_wizard as _sw
+        blocks.append(getattr(_sw, "_AGENT_CONTEXT_BLOCK", ""))
+    except Exception:
+        pass
+    paras = set()
+    for block in blocks:
+        for para in re.split(r"\n\s*\n", block or ""):
+            n = _norm_paragraph(para)
+            if n and not n.startswith("#"):
+                paras.add(n)
+    return frozenset(paras)
+
+
+def strip_prismor_managed(content: str) -> str:
+    """Drop paragraphs that are exactly Prismor's own managed text before the
+    memory content is scanned. Exact-paragraph matching only: anything added to
+    or around those paragraphs - including under a Prismor heading - is still
+    scanned, so the heading cannot be used to hide an injection."""
+    if not content:
+        return content
+    known = _prismor_managed_paragraphs()
+    if not known:
+        return content
+    parts = re.split(r"(\n\s*\n)", content)
+    return "".join(p for p in parts if _norm_paragraph(p) not in known)
+
+
 def _read_project_memory(workspace: Path) -> Dict[str, Any]:
     """Collect the instruction-file content the agent loads at session start.
 
@@ -2964,7 +3008,7 @@ def _normalize_claude(payload: Dict[str, Any], session_id: str, workspace: Path)
             from prismor.runtime.memory_guard import verify_memory_files
             _integrity_findings = verify_memory_files(_read_entries, memory_root)
             base.setdefault("integrity_findings", []).extend(_integrity_findings)
-        return {**base, "type": "memory", "content": memory["content"]}
+        return {**base, "type": "memory", "content": strip_prismor_managed(memory["content"])}
     if hook_event == "UserPromptSubmit":
         return {**base, "type": "prompt", "prompt": payload.get("prompt", "")}
     if tool_name in {"Task", "Agent"}:
@@ -3101,7 +3145,7 @@ def _normalize_cursor(payload: Dict[str, Any], session_id: str, workspace: Path)
         base["metadata"]["truncated"] = memory["truncated"]
         base["metadata"]["has_invisible_controls"] = memory["has_invisible_controls"]
         base["metadata"]["memory_digests"] = memory["digests"]
-        return {**base, "type": "memory", "content": memory["content"]}
+        return {**base, "type": "memory", "content": strip_prismor_managed(memory["content"])}
     if "prompt" in lower:
         return {**base, "type": "prompt", "prompt": payload.get("prompt") or payload.get("message", "")}
     if "mcp" in lower:
@@ -3378,7 +3422,7 @@ def _normalize_gemini(payload: Dict[str, Any], session_id: str, workspace: Path)
         memory = _read_project_memory(memory_root)
         base["metadata"]["memory_files"] = memory["files"]
         base["metadata"]["memory_digests"] = memory["digests"]
-        return {**base, "type": "memory", "content": memory["content"]}
+        return {**base, "type": "memory", "content": strip_prismor_managed(memory["content"])}
 
     if hook_event in {"BeforeAgent", "AfterAgent"}:
         return {**base, "type": "prompt", "prompt": payload.get("prompt", "")}
