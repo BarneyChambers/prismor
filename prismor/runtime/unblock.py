@@ -425,17 +425,23 @@ def format_unblock(
     # An unlock window only lets the agent edit LOCAL policy, which cannot lift
     # a block the org's egress policy owns — offering it there is a dead end,
     # and the one step that works (a request) is open to the agent too.
+    # For a local egress block it is overkill: one `prismor egress allow
+    # <host>` by the person clears it, and agents relayed the unlock offer as
+    # "let me edit the policy myself" - a bigger grant than the fix needs.
+    rule_id = str(finding.get("ruleId") or "").strip()
     org_egress = finding.get("egressSource") == "remote"
+    is_egress = rule_id in ("egress-allowlist", "egress-deny")
     header = (
         "To unblock (tell the user — only an org admin can allow this):"
         if org_egress else
+        "To unblock (tell the user — run one of these in your own terminal):"
+        if is_egress else
         "To unblock (for the human at the keyboard — an agent running these is "
         "blocked unless `prismor unlock` is open):"
     )
     return "\n".join(
         [header] + steps
-        + ([] if org_egress else
-           _delegate_steps(str(finding.get("ruleId") or "").strip(), workspace))
+        + ([] if is_egress else _delegate_steps(rule_id, workspace))
     )
 
 
