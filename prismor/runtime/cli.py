@@ -1613,6 +1613,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         _perf.STAGES["startup"] = (time.time() - _HOOK_T0) * 1000
         _perf.lap()
         payload = json.loads(sys.stdin.read() or "{}")
+        _hook_claimed = True   # set for real just before evaluation
         # A global (~/.claude) hook carries no --workspace: attribute the call
         # to the repo the agent is actually running in (payload cwd → git root),
         # not to whichever directory `setup --scope global` happened to run
@@ -1810,6 +1811,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         # the MCP proxy, so every agent gets identical semantics. Subject is
         # resolved inside (PRISMOR_SUBJECT / device identity) — single-user installs
         # are unchanged.
+        _hook_claimed = _claim_hook_call(payload, args.agent)
         decision = evaluate_tool_call(
             event=event,
             workspace=workspace,
@@ -1818,6 +1820,11 @@ def main(argv: Optional[List[str]] = None) -> None:
             session_id=normalized["sessionId"],
             repo_root=repo_root,
             flush_at_exit=False,  # one process per call: keep the 60s batching
+            # Global + project installs of one agent both fire on every call.
+            # Both still DECIDE (the stricter verdict wins), but only the first
+            # records it - otherwise every finding, event and telemetry row
+            # appeared twice.
+            record=_hook_claimed,
         )
         _perf.lap("decision")
         _current_engine = decision.engine
@@ -1950,7 +1957,9 @@ def main(argv: Optional[List[str]] = None) -> None:
                     _start_ctx.insert(0, _gtext)
             except Exception:
                 pass
-        if _start_ctx:
+        # Notices are informational: the second install of a double-hooked
+        # agent stays quiet so the person and the model see each one once.
+        if _start_ctx and _hook_claimed:
             sys.stdout.write(json.dumps(_hook_caps.add_user_message(
                 args.agent,
                 _hook_caps.context_output(args.agent, "SessionStart", "\n\n".join(_start_ctx)),
@@ -1990,7 +1999,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                 _what = str(event.get("path") or event.get("url") or normalized.get("toolName") or "a tool result")
                 _post_user = (f"Prismor flagged {_what} as a likely prompt injection; "
                               "the agent was told not to act on it.")
-        if _post_ctx:
+        if _post_ctx and _hook_claimed:
             sys.stdout.write(json.dumps(_hook_caps.add_user_message(
                 args.agent,
                 _hook_caps.context_output(args.agent, "PostToolUse", "\n\n".join(_post_ctx)),
@@ -2277,7 +2286,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                     _prompt_out = _hook_caps.add_user_message(args.agent, _prompt_out, _secret_hint)
             except Exception:
                 pass
-            if _prompt_out:
+            if _prompt_out and _hook_claimed:
                 sys.stdout.write(json.dumps(_prompt_out) + "\n")
 
         # Docker sandboxing is applied after policy/IAM/scoped checks have had a
@@ -6861,6 +6870,54 @@ def _redact_evidence(evidence: str) -> str:
             return full
         return full[:6] + "****" + full[-2:]
     return _SECRET_PATTERNS.sub(_mask, evidence)
+
+
+_HOOK_CLAIM_WINDOW_S = 30
+
+
+def _claim_hook_call(payload: Dict[str, Any], agent: str) -> bool:
+    """True for the first hook process to see this exact call; False for a
+    second install (global + project) firing on the same call. Keyed on the
+    agent's own call id where it gives one, else the call's input; a claim
+    lapses after a few seconds, so a genuinely repeated call later is recorded.
+    Any error claims (records) - double-counting beats losing a record."""
+    try:
+        import hashlib
+        from prismor.runtime.store import prismor_home
+        ident = (payload.get("tool_use_id") or payload.get("toolUseId")
+                 or json.dumps([payload.get("tool_name") or payload.get("toolName"),
+                                payload.get("tool_input") or payload.get("toolArgs"),
+                                payload.get("prompt"), payload.get("source")],
+                               sort_keys=True, default=str))
+        key = hashlib.sha256("|".join([
+            agent, str(payload.get("session_id") or payload.get("sessionId") or ""),
+            str(payload.get("hook_event_name") or payload.get("hookEventName") or ""), str(ident),
+        ]).encode("utf-8")).hexdigest()[:32]
+        d = prismor_home() / "hook-claims"
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / key
+        now = time.time()
+        for _ in range(2):
+            try:
+                os.close(os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+                if int(now) % 50 == 0:   # occasional sweep of stale claims
+                    for old in d.iterdir():
+                        try:
+                            if now - old.stat().st_mtime > 600:
+                                old.unlink()
+                        except OSError:
+                            pass
+                return True
+            except FileExistsError:
+                try:
+                    if now - path.stat().st_mtime < _HOOK_CLAIM_WINDOW_S:
+                        return False
+                    path.unlink()
+                except OSError:
+                    return True
+        return True
+    except Exception:
+        return True
 
 
 def _prompt_secret_notice(prompt: str, workspace: Path) -> str:

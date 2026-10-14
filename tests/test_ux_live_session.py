@@ -127,5 +127,33 @@ class PersonSeesWhatPrismorDid(unittest.TestCase):
         self.assertEqual(clean, "")
 
 
+class DoubleHookedCallsRecordOnce(unittest.TestCase):
+    """A global and a project install of the same agent both fire on every
+    call. The first records; the second only decides."""
+
+    def test_second_process_on_the_same_call_does_not_record(self):
+        from prismor.runtime import cli
+        home = Path(tempfile.mkdtemp())
+        payload = {"session_id": "s1", "hook_event_name": "PreToolUse", "tool_use_id": "toolu_1",
+                   "tool_name": "Bash", "tool_input": {"command": "ls"}}
+        with mock.patch("prismor.runtime.store.prismor_home", return_value=home):
+            self.assertTrue(cli._claim_hook_call(payload, "claude"))
+            self.assertFalse(cli._claim_hook_call(payload, "claude"))
+            # A different call, or the same call by another agent, records.
+            self.assertTrue(cli._claim_hook_call({**payload, "tool_use_id": "toolu_2"}, "claude"))
+            self.assertTrue(cli._claim_hook_call(payload, "codex"))
+            # Once the window lapses, a repeat is a new call.
+            claim = next((home / "hook-claims").iterdir())
+            old = claim.stat().st_mtime - cli._HOOK_CLAIM_WINDOW_S - 5
+            for p in (home / "hook-claims").iterdir():
+                os.utime(p, (old, old))
+            self.assertTrue(cli._claim_hook_call(payload, "claude"))
+
+    def test_a_broken_claim_store_still_records(self):
+        from prismor.runtime import cli
+        with mock.patch("prismor.runtime.store.prismor_home", side_effect=OSError("ro")):
+            self.assertTrue(cli._claim_hook_call({"session_id": "x"}, "claude"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -179,6 +179,7 @@ def evaluate_tool_call(
     repo_root: Optional[Path] = None,
     subject: Optional[Subject] = None,
     persist: bool = True,
+    record: bool = True,
     agent_name: str = "",
     taint_store: Optional[Any] = None,
     register_agent: bool = True,
@@ -199,6 +200,9 @@ def evaluate_tool_call(
         repo_root: repo root for analysis (defaults to ``workspace``).
         subject: resolved end-user principal; if ``None`` it is resolved from
             ``PRISMOR_SUBJECT`` / device identity so single-user installs are unchanged.
+        record: when False, decide only - no event, finding, telemetry, heartbeat
+            or audit record. Used when another hook process (a global and a
+            project install of the same agent) already records this call.
         persist: append the event + write a session snapshot (set ``False`` for
             pure pre-checks like ``immunity check``).
         taint_store: optional session-taint store to use instead of the on-disk
@@ -242,6 +246,8 @@ def evaluate_tool_call(
         meta["resource"] = resource
 
     perf.lap()
+    if not record:
+        persist = False
     if persist:
         append_session_event(workspace, session_id, event)
         events = read_session_events(workspace, session_id)
@@ -658,7 +664,7 @@ def evaluate_tool_call(
             sys.stderr.write(f"[prismor] finding persistence error: {exc}\n")
 
     # Per-call inspected-volume heartbeat (org observability), managed repos only.
-    if getattr(engine, "workspace_managed", False):
+    if record and getattr(engine, "workspace_managed", False):
         try:
             from prismor.runtime.enterprise import heartbeat
             heartbeat.record_call(
@@ -741,22 +747,23 @@ def evaluate_tool_call(
             except Exception as exc:
                 sys.stderr.write(f"[prismor] finding persistence error: {exc}\n")
 
-    _dispatch_telemetry(
-        engine=engine,
-        findings=findings,
-        event=event,
-        workspace=workspace,
-        agent=agent,
-        agent_name=_agent_name if _agent_name != agent else None,
-        # The effective mode, not the caller's: an enrolled device (or an
-        # always-enforced category) blocks even under a local observe, and
-        # the console reads mode=observe as "would block".
-        mode="enforce" if blocking is not None else mode,
-        session_id=session_id,
-        subject=subject,
-        eval_ms=_eval_ms,
-        session_seq=_session_seq,
-    )
+    if record:
+        _dispatch_telemetry(
+            engine=engine,
+            findings=findings,
+            event=event,
+            workspace=workspace,
+            agent=agent,
+            agent_name=_agent_name if _agent_name != agent else None,
+            # The effective mode, not the caller's: an enrolled device (or an
+            # always-enforced category) blocks even under a local observe, and
+            # the console reads mode=observe as "would block".
+            mode="enforce" if blocking is not None else mode,
+            session_id=session_id,
+            subject=subject,
+            eval_ms=_eval_ms,
+            session_seq=_session_seq,
+        )
 
     # Tamper-evident signed audit trail: one chained + signed record per
     # evaluated call — every verdict, not just findings — so the local trail
@@ -765,7 +772,7 @@ def evaluate_tool_call(
     # the action closed when the record cannot be written.
     try:
         from prismor.runtime.enterprise import audit_trail as _audit
-        if _audit.enabled():
+        if record and _audit.enabled():
             _audit.append_action_record(
                 event=event,
                 findings=findings,
