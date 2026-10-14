@@ -303,6 +303,13 @@ _HOSTPORT_CMDS = frozenset({"nc", "ncat", "netcat", "telnet", "socat", "nmap", "
 # flag was being screened as egress to example.com.
 _NO_DESTINATION_CMDS = frozenset({
     "ssh-keygen", "ssh-add", "gpg", "gpg2", "git-config", "npm", "yarn", "pnpm",
+    # Text tools: they only read and rewrite text, so an email address in a
+    # sed expression or a grep pattern is data, not an ssh destination
+    # (`sed -e "s/x/qa@example.dev/"` was blocked as egress to port 22).
+    # Deliberately NOT xargs/env/sh: those run other programs.
+    "sed", "awk", "gawk", "grep", "egrep", "fgrep", "rg", "ag", "echo", "printf",
+    "cat", "head", "tail", "jq", "yq", "cut", "tr", "sort", "uniq", "wc", "diff",
+    "less", "more", "tee", "ls", "touch", "mkdir", "file", "stat",
 })
 # `git <sub>` forms that stay on this machine. Clone/fetch/push/pull keep the
 # scan, because user@host there is exactly the remote being contacted.

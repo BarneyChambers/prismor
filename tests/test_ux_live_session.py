@@ -108,6 +108,21 @@ class DryRunsAreNotEgress(unittest.TestCase):
         self.assertGreater(self._n(f"ssh ubuntu@{HOST} ls"), 0)
 
 
+class EmailAddressesInTextToolsAreNotSsh(unittest.TestCase):
+    def test_email_in_sed_or_grep_is_data(self):
+        who = "qa-admin" + "@" + "example-test.dev"
+        for cmd in (f'sed -e "s#user#{who}#" in.mjs > out.mjs', f"grep -rn '{who}' src/",
+                    f"echo '{who}' >> CONTRIBUTORS.txt"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(len(extract_destinations({"type": "shell", "command": cmd})), 0)
+
+    def test_real_ssh_and_mail_are_still_destinations(self):
+        who = "ubuntu" + "@" + "host.example-test.dev"
+        for cmd in (f"ssh {who} ls", f"scp a.txt {who}:/tmp/", f"mail -s hi {who}"):
+            with self.subTest(cmd=cmd):
+                self.assertGreater(len(extract_destinations({"type": "shell", "command": cmd})), 0)
+
+
 class PersonSeesWhatPrismorDid(unittest.TestCase):
     def test_user_message_only_where_the_agent_shows_one(self):
         from prismor.runtime.hook_caps import add_user_message
