@@ -6902,6 +6902,14 @@ def _claim_hook_call(payload: Dict[str, Any], agent: str) -> bool:
     agent's own call id where it gives one, else the call's input; a claim
     lapses after a few seconds, so a genuinely repeated call later is recorded.
     Any error claims (records) - double-counting beats losing a record."""
+    # Only calls that can be told apart are deduplicated. A prompt has no id,
+    # and the same text twice ("continue", "continue") is two real prompts, so
+    # prompts always record; a double install shows its prompt notice twice.
+    _event_name = str(payload.get("hook_event_name") or payload.get("hookEventName") or "")
+    if _event_name in ("UserPromptSubmit", "userPromptSubmitted", "beforeSubmitPrompt"):
+        return True
+    if not (payload.get("tool_use_id") or payload.get("toolUseId")) and _event_name not in ("SessionStart", "sessionStart"):
+        return True
     try:
         import hashlib
         from prismor.runtime.store import prismor_home

@@ -164,6 +164,14 @@ class DoubleHookedCallsRecordOnce(unittest.TestCase):
                 os.utime(p, (old, old))
             self.assertTrue(cli._claim_hook_call(payload, "claude"))
 
+    def test_the_same_prompt_twice_is_two_prompts(self):
+        from prismor.runtime import cli
+        home = Path(tempfile.mkdtemp())
+        p = {"session_id": "s1", "hook_event_name": "UserPromptSubmit", "prompt": "continue"}
+        with mock.patch("prismor.runtime.store.prismor_home", return_value=home):
+            self.assertTrue(cli._claim_hook_call(p, "claude"))
+            self.assertTrue(cli._claim_hook_call(p, "claude"))
+
     def test_a_broken_claim_store_still_records(self):
         from prismor.runtime import cli
         with mock.patch("prismor.runtime.store.prismor_home", side_effect=OSError("ro")):
