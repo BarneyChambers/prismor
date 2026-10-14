@@ -319,7 +319,11 @@ _HOSTNAME_RE = re.compile(r'^[A-Za-z0-9]([A-Za-z0-9\-]*[A-Za-z0-9])?'
 _FILE_EXT_RE = re.compile(
     r'\.(json|ya?ml|txt|log|md|csv|tsv|xml|html?|js|ts|py|rb|go|rs|java|c|h|cpp|sh|zsh|bash|'
     r'tar|gz|tgz|bz2|xz|zip|whl|jar|deb|rpm|pkg|dmg|iso|img|png|jpe?g|gif|svg|pdf|env|lock|'
-    r'toml|ini|cfg|conf|pem|key|crt|sql|db|sqlite3?|bak|tmp|out|so|dylib|dll|exe)$',
+    r'toml|ini|cfg|conf|pem|key|crt|sql|db|sqlite3?|bak|tmp|out|so|dylib|dll|exe|'
+    # Fonts, media, styles and source files: `egress report` listed
+    # departuremono-regular.otf and github.com.helper (a git config key) as hosts.
+    r'otf|ttf|woff2?|eot|ico|webp|avif|mp[34]|wav|webm|mov|css|scss|less|map|mjs|cjs|'
+    r'jsx|tsx|vue|svelte|kt|swift|php|lua|ipynb|parquet|onnx|plist|helper|lockb)$',
     re.IGNORECASE,
 )
 

@@ -5434,6 +5434,19 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
             add(state, "hooks", f"configured ({' · '.join(_parts)}); agent invocation not verified")
     else:
         add("warn", "hooks", "no IDE hooks installed (run `prismor install-hooks`; SDK adapters are unaffected)")
+    # 1b. Version skew: the `prismor` a person runs and the one their hooks run
+    #     can be different installs (pipx vs a venv). They then screen the same
+    #     call differently, and doctor only ever checked the one on PATH.
+    try:
+        from prismor.runtime import __version__ as _here
+        for _interp, _ver in sorted(_hook_runtime_versions(workspace).items()):
+            if _ver and _ver != _here:
+                add("warn", "hook version",
+                    f"hooks run prismor {_ver} ({_interp}) but this prismor is {_here}. Two "
+                    f"versions screen calls differently; upgrade the hooks' install: "
+                    f"{_interp} -m pip install -U prismor")
+    except Exception:
+        pass
     if "codex" in agents_with_hooks:
         # A full, silent bypass when untrusted (verified live: hooks logged, never
         # executed), so it fails the check rather than merely warning.
@@ -5509,6 +5522,14 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
         add("warn", "enrollment", "not enrolled — local protection only (run `prismor enroll <token>` to link an org)")
         add("warn", "remote policy", "n/a (not enrolled)")
     else:
+        # The enrolled identity's api_base wins over $PRISMOR_API_BASE. Setting
+        # the variable silently did nothing, which is a long debug session.
+        _env_base = os.environ.get("PRISMOR_API_BASE", "").rstrip("/")
+        _id_base = str(ident.get("api_base") or "").rstrip("/")
+        if _env_base and _id_base and _env_base != _id_base:
+            add("warn", "api base",
+                f"PRISMOR_API_BASE={_env_base} is ignored: this device is enrolled to {_id_base}. "
+                "To use another control plane, enroll against it (prismor enroll <token>).")
         revoked = _identity.revoked_info()
         if revoked:
             add("warn", "enrollment",
@@ -6918,6 +6939,57 @@ def _claim_hook_call(payload: Dict[str, Any], agent: str) -> bool:
         return True
     except Exception:
         return True
+
+
+def _hook_runtime_versions(workspace: Path) -> Dict[str, str]:
+    """{interpreter: prismor version} for every hook command that dispatches to
+    Prismor in the known agent hook configs (project and user scope)."""
+    import shlex as _shlex
+    import subprocess as _sp
+    home = Path.home()
+    configs = [workspace / ".claude" / "settings.json", home / ".claude" / "settings.json",
+               workspace / ".codex" / "hooks.json", home / ".codex" / "hooks.json",
+               workspace / ".cursor" / "hooks.json", home / ".cursor" / "hooks.json"]
+    interps = set()
+
+    def _walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == "command" and isinstance(v, str):
+                    yield v
+                else:
+                    yield from _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                yield from _walk(v)
+
+    for cfg in configs:
+        try:
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for cmd in _walk(data):
+            if "hook-dispatch" not in cmd or "dev-hook" in cmd:
+                continue  # source-tree (dogfood) runners have no installed version
+            try:
+                words = [w for w in _shlex.split(cmd) if "=" not in w.split("/")[0]]
+            except ValueError:
+                continue
+            if words:
+                interps.add(words[0])
+    out: Dict[str, str] = {}
+    probe = "import importlib.metadata as m; print(m.version('prismor'))"
+    for interp in interps:
+        is_cli = interp.rsplit("/", 1)[-1] in ("prismor", "immunity")
+        argv = [interp, "--version"] if is_cli else [interp, "-c", probe]
+        try:
+            r = _sp.run(argv, capture_output=True, text=True, timeout=10)
+        except (OSError, _sp.SubprocessError):
+            continue
+        m = re.search(r"(\d+\.\d+\.\d+\S*)", r.stdout)
+        if r.returncode == 0 and m:
+            out[interp] = m.group(1)
+    return out
 
 
 def _prompt_secret_notice(prompt: str, workspace: Path) -> str:
