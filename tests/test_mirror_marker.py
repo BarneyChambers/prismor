@@ -95,3 +95,17 @@ def test_corrupt_marker_fails_towards_screening(ws):
 def test_marker_records_the_live_pid(ws):
     mirror.mark_active(ws)
     assert json.loads(mirror._marker_path(ws).read_text())["pid"] == os.getpid()
+
+
+def test_instruction_files_are_redelivered_while_mirror_serves_read(ws, tmp_path, monkeypatch):
+    """`mirror on` denies native Read, and Claude Code will not load a CLAUDE.md
+    a Read deny covers: project instructions silently disappeared."""
+    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))
+    (ws / "CLAUDE.md").write_text("Always use tabs in this repo.\n")
+    (ws / "AGENTS.md").write_text("codex-only notes\n")
+    assert mirror.instruction_context(ws) == ""           # no live mirror: Claude loads it
+    mirror.mark_active(ws)
+    ctx = mirror.instruction_context(ws)
+    assert "Always use tabs in this repo." in ctx
+    assert "codex-only notes" not in ctx                  # Claude Code never loads AGENTS.md
+    assert mirror.instruction_context(ws, agent="codex") == ""

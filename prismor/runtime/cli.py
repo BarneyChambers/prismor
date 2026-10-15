@@ -1934,6 +1934,14 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "prismor memory approve"
             )
 
+        if _session_ctx_ok:
+            try:
+                from prismor.runtime import mirror as _mirror
+                _start_ctx.append(_mirror.instruction_context(workspace, args.agent))
+            except Exception:
+                pass
+            _start_ctx = [c for c in _start_ctx if c]
+
         # Extensions are instruction files and code too: skills, plugins, third-
         # party hooks, MCP servers, mostly installed by a command no hook ever
         # saw. At SessionStart, sync the ledger (which writes anything new or

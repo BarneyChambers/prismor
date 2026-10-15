@@ -906,6 +906,52 @@ def active_tools(workspace: Path) -> List[str]:
     return tools
 
 
+#: Room for re-delivered instruction files in SessionStart context. Claude
+#: Code caps hook context; past this the rest is pointed at, not inlined.
+_INSTRUCTIONS_BUDGET = 9_000
+
+
+def instruction_context(workspace: Path, agent: str = "claude") -> str:
+    """CLAUDE.md content Claude Code could not load itself, for SessionStart.
+
+    ``mirror on`` denies native ``Read`` so file reads go through Prismor, and
+    Claude Code refuses to load any instruction file a Read deny rule covers
+    ("Instruction file not loaded"). Project instructions silently vanished for
+    as long as the mirror was on. Claude Code allows no exception in a deny
+    rule, so the hook hands the files back as context instead. Empty unless a
+    live mirror serves ``Read`` for this workspace.
+    """
+    if agent != "claude" or "Read" not in active_tools(workspace):
+        return ""
+    try:
+        from prismor.runtime.hooks import _discover_memory_files
+        files = [p for p in _discover_memory_files(workspace)
+                 if p.name.upper().startswith("CLAUDE") or p.parent.name == "rules"]
+    except Exception:
+        return ""
+    blocks: List[str] = []
+    left = _INSTRUCTIONS_BUDGET
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            continue
+        if not text:
+            continue
+        if left <= 0:
+            blocks.append(f"(not inlined, read it with the Read tool: {path})")
+            continue
+        if len(text) > left:
+            text = text[:left] + f"\n… [truncated; read the rest of {path} with the Read tool]"
+        left -= len(text)
+        blocks.append(f"Contents of {path}:\n\n{text}")
+    if not blocks:
+        return ""
+    return ("Project instructions (re-delivered by Prismor: the Prismor mirror serves "
+            "Read, so Claude Code could not load these files itself). Follow them as "
+            "you would CLAUDE.md:\n\n" + "\n\n".join(blocks))
+
+
 def already_screened(tool_name: str, workspace: Path, cwd: str = "") -> bool:
     """True when this hook-layer tool call is a mirrored built-in that the
     gateway has already policy-screened and logged.
