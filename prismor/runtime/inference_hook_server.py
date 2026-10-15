@@ -420,6 +420,22 @@ def _preflight(workspace: Path) -> None:
         pass
 
 
+def _budget_judge(timeout_s: float) -> None:
+    """Give the LLM judge a deadline inside the turn's timeout.
+
+    The judge took 1.5-7.7s against a 3s turn budget, so the turn timed out
+    and the fail posture decided: an injection the regex layer had already
+    caught was denied by timeout, and would have been ALLOWED under
+    --fail-open. With a per-event budget the judge's overrun falls back to the
+    heuristic verdict (``_analyze_within``) and the turn answers on time with
+    whatever the rules found. An operator-set budget is left alone.
+    """
+    if not os.environ.get("PRISMOR_SEMANTIC_BUDGET_MS"):
+        # ponytail: one budget per judged event; a turn that fans out to
+        # several long events can still overrun. Split by event count if seen.
+        os.environ["PRISMOR_SEMANTIC_BUDGET_MS"] = str(max(300, int(timeout_s * 1000 * 0.4)))
+
+
 def run_inference_hook_server(
     host: str = "127.0.0.1",
     port: int = DEFAULT_PORT,
@@ -474,6 +490,7 @@ def run_inference_hook_server(
         )
 
     _preflight(ws)
+    _budget_judge(default_cfg.timeout_s)
 
     server = _ThreadingHTTPServer((host, port), InferenceHookHandler)
     effective_mode = InferenceHookHandler.cli_overrides["mode"] or default_cfg.mode
@@ -482,7 +499,7 @@ def run_inference_hook_server(
     print(f"[prismor] mode: {effective_mode}"
           + ("  (shadow — logs would-be denies, returns allow)" if effective_mode == "observe" else ""))
     print(f"[prismor] fail posture: {'open' if (fail_open or default_cfg.fail_open) else 'closed'} "
-          f"· timeout {default_cfg.timeout_s}s · deny floor: {', '.join(sorted(default_cfg.deny_categories))}")
+          f"· timeout {default_cfg.timeout_s}s · judge budget {os.environ['PRISMOR_SEMANTIC_BUDGET_MS']}ms/event · deny floor: {', '.join(sorted(default_cfg.deny_categories))}")
     print(f"[prismor] auth: "
           + ("signature (whsec_ configured)" if default_cfg.is_signed else
              ("bearer key" if (default_cfg.api_key or api_key) else "BOOTSTRAP (unsigned accepted)"))

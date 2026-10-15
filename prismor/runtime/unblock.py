@@ -56,6 +56,7 @@ def _allowlist_yaml(rule_id: str, finding: Dict[str, Any]) -> List[str]:
         "allowlists:",
         f"  - id: allow-{rule_id}",
         f"    rule_ids: [{yaml_single_quoted(rule_id)}]",
+        "    match: exact",
         "    patterns:",
         f"      - {yaml_single_quoted(pattern)}",
         "    reason: '<why this specific case is safe>'",
@@ -341,9 +342,10 @@ def _subsystem_steps(
             "This is a tag-sequence rule (settings.tool_tags.rules), not a policy "
             "rule, so `prismor allow` cannot relax it.",
             "1. See the rules and why tools carry each tag: prismor tags rules  /  prismor tags list",
-            "2. Untag the tool that should not count (prismor tags set <tool> ...), "
-            "or set `settings.tool_tags.inference_enabled: false` so plain reads and "
-            "commands are not tagged by event type.",
+            "2. Untag the tool that should not count. Where `prismor tags list` shows its "
+            "TIER as explicit: prismor tags rm <tool> <tag>. Where it shows inference: set "
+            "`settings.tool_tags.inference_enabled: false` so plain reads and commands are "
+            "not tagged by event type.",
             "3. Or drop the rule: prismor tags rules rm <index>",
             "Tags accumulate for the whole session, so start a fresh session afterwards.",
         ]
@@ -366,6 +368,9 @@ def _subsystem_steps(
         # generic `prismor allow <rule>` ladder would answer "No rule named".
         return _egress_steps(rule_id, finding, workspace, enrolled)
 
+    if finding.get("category") == "data_boundary":
+        return data_boundary_steps(finding, workspace)
+
     if rule_id.startswith("codex-cloak-"):
         return [
             "This is secret cloaking, not a policy rule — Codex hooks cannot "
@@ -379,6 +384,26 @@ def _subsystem_steps(
         ]
 
     return None
+
+
+def data_boundary_steps(finding: Dict[str, Any], workspace: Optional[Path]) -> List[str]:
+    """settings.data_boundary decides these, not a policy rule, so neither
+    `prismor allow` nor an allowlist pattern can lift them (the old message
+    offered both, with a pattern built from the masked value)."""
+    path = _policy_path(workspace)
+    host = str(finding.get("destHost") or "").strip() or "<destination host>"
+    classes = list(finding.get("dataClasses") or []) or ["<class>"]
+    per_class = ", ".join(f"{c}: allow" for c in classes)
+    return [
+        "This is the data boundary (settings.data_boundary), not a policy rule, "
+        "so `prismor allow` cannot relax it. Edit "
+        f"{path}:",
+        f'1. Allow only this data to this destination:  under settings.data_boundary.per_domain add  "{host}": {{{per_class}}}',
+        f'2. Or trust the destination for every class:  settings.data_boundary.trusted_domains: ["{host}"]',
+        "3. Or keep reporting but stop blocking:  settings.data_boundary.mode: observe",
+        f"Check the file with: prismor policy validate {path}  — then retry the call "
+        "(`prismor check` does not run the data boundary).",
+    ]
 
 
 def unblock_steps(

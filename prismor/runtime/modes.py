@@ -539,9 +539,20 @@ def has_drifted(workspace: Path) -> bool:
         expected = compile_mode(mode, observe=is_observe_build(workspace))
     except (OSError, ModeError):
         return False
-    # Compare everything below the generated header — the header carries a
-    # date, so a same-content re-compile a day later is not drift.
-    return _strip_header(current) != _strip_header(expected)
+    # Compare content, not text: the header carries a date, and setup writes
+    # the judge choice (settings.semantic_guard) into the same file right after
+    # compiling the mode. The judge is not a mode axis, so it is not drift.
+    import yaml
+
+    def _axes(text: str) -> Any:
+        try:
+            raw = yaml.safe_load(text) or {}
+        except yaml.YAMLError:
+            return _strip_header(text)
+        if isinstance(raw, dict) and isinstance(raw.get("settings"), dict):
+            raw["settings"].pop("semantic_guard", None)
+        return raw
+    return _axes(current) != _axes(expected)
 
 
 def _strip_header(text: str) -> str:
@@ -610,8 +621,10 @@ def format_explain(mode: Dict[str, Any]) -> str:
         lines.append(f"    ! {item}")
 
     lines += ["", "  [ POLICY AXES ]"]
-    lines.append(f"    Enforcement    : {mode.get('default_mode', 'observe')}"
-                 f"  ({blocking} of {total} rules block)")
+    # default_mode is only the fallback for rules the mode does not select;
+    # printed as "Enforcement: observe" it read as "this mode doesn't block".
+    rest = "the rest observe" if mode.get("default_mode", "observe") == "observe" else "all enforce"
+    lines.append(f"    Blocking       : {blocking} of {total} rules  ({rest})")
     if egress.get("enabled"):
         allow = egress.get("allow") or []
         dest = ", ".join(str(a) for a in allow[:4]) + ("…" if len(allow) > 4 else "")

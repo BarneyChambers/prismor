@@ -270,7 +270,8 @@ def classify(
                          context=context))
 
     for m, secret_kind in _iter_secrets(text):
-        sm = Match("secret", m.group(0), m.start(), m.end(), context=context)
+        g = "secret" if "secret" in m.re.groupindex else 0
+        sm = Match("secret", m.group(g), m.start(g), m.end(g), context=context)
         sm.vendor = secret_kind
         out.append(sm)
 
@@ -312,6 +313,8 @@ SECRET_VENDORS: Dict[str, Tuple[str, ...]] = {
     "google": ("googleapis.com", "google.com", "firebaseio.com"),
     "slack": ("slack.com",),
     "gitlab": ("gitlab.com",),
+    "openai": ("openai.com",),
+    "anthropic": ("anthropic.com",),
     "jwt": (),          # bearer of unknown origin — vendor cannot be inferred
     "custom": (),
 }
@@ -322,6 +325,13 @@ _SECRET_PATTERNS: List[Tuple[re.Pattern, str]] = [
     (re.compile(r'\bAIza[0-9A-Za-z_\-]{35}'), "google"),
     (re.compile(r'\bxox[bpoar]-[0-9]+-[0-9]+-[0-9a-zA-Z]{24,}'), "slack"),
     (re.compile(r'\bglpat-[0-9a-zA-Z_\-]{20,}'), "gitlab"),
+    # OpenAI project/service/admin keys and the legacy sk-…T3BlbkFJ… form.
+    (re.compile(r'\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_\-]{40,}|\bsk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}'), "openai"),
+    (re.compile(r'\bsk-ant-(?:api|admin)\d{2}-[A-Za-z0-9_\-]{80,}'), "anthropic"),
+    # An AWS secret access key is 40 base64 chars with no prefix of its own, so
+    # it is only recognisable by the name it is assigned to. Only the value
+    # (group "secret") is the match.
+    (re.compile(r'(?i)aws_?secret_?access_?key["\']?\s*[:=]\s*["\']?(?P<secret>[A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])'), "aws"),
     (re.compile(r'\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'), "jwt"),
 ]
 

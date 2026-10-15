@@ -299,6 +299,16 @@ def tags_set(workspace: Path, tool: str, tags: List[str]) -> None:
     _save_policy_file(workspace, data)
     print(f"{_c('tagged', _GREEN)} {tool} -> [{', '.join(merged)}]")
     _org_managed_hint(workspace)
+    _disabled_note(workspace)
+
+
+def _disabled_note(workspace: Path) -> None:
+    """Tags and rules are inert while tool_tags is off; say so where they are
+    written, or a successful `tags set` / `rules add` reads as protection."""
+    if not _effective_tool_tags(workspace).get("enabled"):
+        print(_c("note: tool_tags is disabled here, so tags and tag rules have no effect yet. "
+                 "Turn it on with `prismor tags edit` (option 6) or "
+                 "settings.tool_tags.enabled: true in .prismor/policy.yaml.", _YELLOW))
 
 
 def _valid_tag(tag: str) -> bool:
@@ -341,7 +351,9 @@ def rules_list(workspace: Path) -> None:
     print(_c(f"{'#':>2s}  {'RULE':56s} {'ACTION':7s} SOURCE", _BOLD))
     for i, r in enumerate(rules):
         if r.source in ("incompatible", "default"):
-            expr = " with ".join(sorted(r.steps[0]))
+            # Every step: the default red/blue rule is two steps, and showing
+            # only the first made it read as "any untrusted read warns".
+            expr = " then ".join(" with ".join(sorted(st)) for st in r.steps)
             src = "legacy" if r.source == "incompatible" else "default"
         else:
             expr = r.source
@@ -349,7 +361,8 @@ def rules_list(workspace: Path) -> None:
         act_c = _RED if r.action == "block" else _YELLOW
         print(f"{i:2d}  {expr:56s} {_c(r.action, act_c):16s} {_c(src, _DIM)}")
     print(_c("\nadd:  prismor tags rules add \"untrusted_content then "
-             "critical_action -> block\"", _DIM))
+             "egress.offlist -> block\"", _DIM))
+    _disabled_note(workspace)
 
 
 def rules_add(workspace: Path, expr: str) -> None:
@@ -369,6 +382,7 @@ def rules_add(workspace: Path, expr: str) -> None:
     steps = " -> ".join("+".join(sorted(s)) for s in rule.steps)
     print(f"{_c('added', _GREEN)} [{rule.action}] {steps}")
     _org_managed_hint(workspace)
+    _disabled_note(workspace)
 
 
 def rules_rm(workspace: Path, which: str) -> None:
@@ -573,7 +587,7 @@ def tags_edit(workspace: Path) -> None:
         elif choice == "3":
             rules_list(workspace)
         elif choice == "4":
-            expr = input("rule (e.g. untrusted_content then critical_action"
+            expr = input("rule (e.g. untrusted_content then egress.offlist"
                          " -> block): ").strip()
             try:
                 rule = compile_rule(expr)

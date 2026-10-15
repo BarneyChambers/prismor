@@ -464,9 +464,14 @@ def test_failed_upstream_handshake_does_not_stall_tools_list(tmp_path, monkeypat
     gateway, sent = make_gateway(tmp_path, monkeypatch, [dead, stub("a")])
     gateway._dispatch(INIT)
     started = time.monotonic()
-    assert {t["name"] for t in list_tools(gateway, sent)} == {"a__echo"}
+    tools = {t["name"]: t for t in list_tools(gateway, sent)}
+    assert set(tools) == {"a__echo", "prismor_gateway_status"}
     assert time.monotonic() - started < 5
     assert not any(m.get("method") == "notifications/tools/list_changed" for m in sent)
+    # The client learns which server is down and why, not just "no tools".
+    assert "dead" in tools["prismor_gateway_status"]["description"]
+    gateway._handle_tools_call_safe(7, {"name": "prismor_gateway_status", "arguments": {}})
+    assert "dead: failed to start: exited" in sent[-1]["result"]["content"][0]["text"]
 
 
 # ── real stdio transport against the demo server ─────────────────────────────

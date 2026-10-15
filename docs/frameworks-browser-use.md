@@ -66,7 +66,7 @@ flowchart TD
 from prismor.browser_use import guard_controller, use_subject
 
 controller = Controller()
-guard_controller(controller)   # once, at startup — no bound subject
+guard_controller(controller, mode="enforce")   # once, at startup — no bound subject
 
 agent = Agent(task="...", llm=llm, controller=controller)
 

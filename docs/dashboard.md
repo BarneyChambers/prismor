@@ -94,6 +94,27 @@ token instead of getting a random one per start.
 | `GET/PUT /api/policy/egress` | Read / edit `settings.egress` (`{action: set|add|remove, …}`); hostnames are validated |
 | `PUT /api/policy/rules` | Toggle rule enable/mode from the Policy tab |
 | `GET /api/docs` | The docs shipped with this install — the list, one page (`?name=<file>.md`), or a search (`?q=…`) |
+| `GET /api/workspaces` | Registered workspaces, the dashboard's primary workspace, and enrollment status |
+| `GET /api/tokens` | Token usage and estimated cost (`?days`, or `?session=<id>` for one session) |
+| `GET /api/query-prompt` | A copy-paste prompt that teaches an agent to query the local store |
+| `GET /api/mcp-servers` | MCP servers: where each is declared, whether the gateway manages it, risk, and call/block counts |
+| `GET /api/extensions` | The extension ledger: skills, plugins, MCP servers and hooks that put instructions or code into an agent |
+| `GET /api/extensions/detail` | One extension (`?id=…`, `&history=1` for its change history) |
+| `GET /api/extensions/session` | Extensions active in one session (`?id=<session>`) |
+| `GET /api/files` | Files agents wrote (`?q=…` path filter) |
+| `GET /api/blame` | Agent sessions that wrote `?path=…` (`&line=N` for one line), with diffs |
+| `GET /api/friction` | Failures that recur across sessions (`?workspace=…&days=14`) |
+| `GET /api/sessions/<id>/dev` | What went wrong in a session and what it changed (`prismor rca` / `session --changes`) |
+| `GET /api/sessions/<id>/control` | A session's scoped rules and recent blocks |
+| `PATCH /api/sessions/<id>/control` | Edit a session's scope: `{action, workspace, …}` |
+| `POST /api/refresh` | Re-read the store (migrates per-workspace state first) |
+| `POST /api/extensions/approve` | Accept an extension after review (same as `prismor extensions approve`) |
+| `POST /api/tool-policy` | Deny / allow a tool tag for one agent or globally: `{scope, action, tool, agent?}` |
+| `POST /api/mcp-config` | Mirror roster and the per-agent override switch |
+| `PUT /api/policy/global` | Write `~/.prismor/policy.yaml`: `{yaml}` |
+| `PUT /api/policy/project` | Write a workspace's project policy: `{yaml, workspace}` |
+
+Every request must come from the dashboard's own origin (no CORS); when the dashboard is bound off loopback it also needs the dashboard's token.
 
 If you run `dashboard` before installing hooks anywhere, it warns that no workspaces
 are registered yet — install hooks in a project first to collect data.

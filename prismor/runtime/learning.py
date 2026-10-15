@@ -738,6 +738,9 @@ def track_false_positives(workspace: Path, threshold: int = 5) -> List[Dict[str,
                    GROUP_CONCAT(evidence, '|||') as evidences
             FROM dismissals
             WHERE session_id NOT IN ({_FIXTURE_SESSIONS_SQL})
+              -- observe mode surfaced the finding and nobody decided anything;
+              -- counting those turned every real catch into an FP candidate.
+              AND COALESCE(reason, '') != 'observe_surfaced'
             GROUP BY rule_id
             HAVING cnt >= ?
             ORDER BY cnt DESC
