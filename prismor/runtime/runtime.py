@@ -362,6 +362,13 @@ def evaluate_tool_call(
     _trace: Optional[List[Dict[str, Any]]] = [] if explain else None
     findings = engine.evaluate(event, _session_seq, session_id=session_id, subject=subject,
                                trace=_trace)
+    # A multi-file patch is one event with one `path`; every other file it
+    # touches gets the path rules too. Content is dropped so the content rules,
+    # already run above, do not fire twice.
+    for _extra in (meta.get("patch_paths") or [])[1:]:
+        findings.extend(engine.evaluate(
+            {**event, "path": _extra, "content": ""}, _session_seq,
+            session_id=session_id, subject=subject))
     perf.lap("policy_eval")
 
     # Integrity findings (memory guard, #154) bypass the regex rule engine

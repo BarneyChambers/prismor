@@ -2084,9 +2084,7 @@ def _normalize_copilot(payload: Dict[str, Any], session_id: str, workspace: Path
     if name in {"read", "view", "readfile", "read_file"}:
         return {**base, "type": "file_read", "path": path}
     if patch and "*** Begin Patch" in patch:
-        from prismor.runtime.transcripts.adapters.codex import _PATCH_PATH_RE
-        match = _PATCH_PATH_RE.search(patch)
-        return {**base, "type": "file_write", "path": match.group(1) if match else "", "content": patch}
+        return {**base, "type": "file_write", **_patch_target(base, patch), "content": patch}
     if name in {"write", "create", "edit", "writefile", "write_file", "editfile", "str_replace", "apply_patch"}:
         content = tool_args.get("file_text") or tool_args.get("new_str") or tool_args.get("content", "")
         return {**base, "type": "file_write", "path": path, "content": content}
@@ -2106,6 +2104,22 @@ def _normalize_copilot(payload: Dict[str, Any], session_id: str, workspace: Path
     if mcp_event is not None:
         return mcp_event
     return _unmapped_tool_event(base, payload)
+
+
+# A patch (Codex apply_patch, Copilot's patch tool) carries no path field: the
+# files live in its "*** Add File: <path>" style headers, plus "*** Move to:"
+# for a rename's destination.
+_PATCH_FILE_RE = re.compile(
+    r"^\*\*\*\s+(?:(?:Add|Update|Delete)\s+File|Move\s+to):\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _patch_target(base: Dict[str, Any], patch: str) -> Dict[str, Any]:
+    """`{"path": first file}`, with every file in ``metadata.patch_paths`` so
+    the runtime runs the path rules on each one, not just the first."""
+    paths = list(dict.fromkeys(_PATCH_FILE_RE.findall(patch or "")))
+    if len(paths) > 1:
+        base["metadata"]["patch_paths"] = paths
+    return {"path": paths[0] if paths else ""}
 
 
 def _normalize_codex(payload: Dict[str, Any], session_id: str, workspace: Path) -> Dict[str, Any]:
@@ -2132,10 +2146,15 @@ def _normalize_codex(payload: Dict[str, Any], session_id: str, workspace: Path) 
     if tool_name == "Read":
         return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
     if tool_name in {"Edit", "MultiEdit", "Write", "apply_patch"}:
+        path = tool_input.get("file_path") or tool_input.get("path", "")
+        if not path and tool_name == "apply_patch":
+            # Codex sends the patch in `command`; with no path every path rule
+            # (agent-config-tampering-path, secret-access, ...) was skipped.
+            path = _patch_target(base, str(tool_input.get("command") or ""))["path"]
         return {
             **base,
             "type": "file_write",
-            "path": tool_input.get("file_path") or tool_input.get("path", ""),
+            "path": path,
             # A plain single Edit call (as opposed to MultiEdit) has shape
             # {file_path, old_string, new_string} — no "edits" list and no
             # "content" key — so new_string must be its own fallback or the

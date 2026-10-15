@@ -476,7 +476,8 @@ rules:
       # `man mkfs`, `pm2 shutdown` while still catching real `sudo shutdown`,
       # `systemctl reboot`, `mkfs /dev/sda1`, `&& reboot`.
       - '(?:^|[\n;&|]\s*|\b(?:sudo|doas|systemctl)\s+)mkfs\b'
-      - 'dd\s+if=.*of=/dev/'
+      # A real device only: /dev/null, stdout and friends are sinks, not disks.
+      - 'dd\s+if=.*of=/dev/(?!(?:null|zero|stdout|stderr|tty|fd/)(?:\s|$))'
       - '(?:^|[\n;&|]\s*|\b(?:sudo|doas|systemctl)\s+)shutdown\b'
       - '(?:^|[\n;&|]\s*|\b(?:sudo|doas|systemctl)\s+)reboot\b'
       - 'launchctl\s+unload\b'
@@ -524,7 +525,8 @@ rules:
       - ':\(\)\s*\{.*\|.*&\s*\}\s*;'
       - 'while\s+true\s*;?\s*do\b'
       - '(?:^|[\n;&|(]\s*|\b(?:sudo|doas)\s+)yes\b[^\n;&|]*\|(?!\|)'
-      - 'dd\s+if=/dev/(zero|urandom)\b'
+      # Unbounded only: `count=` caps the run (`dd if=/dev/zero of=x count=1`).
+      - 'dd\s+if=/dev/(zero|urandom)\b(?![^\n;&|]*\bcount=)'
       - 'cat\s+/dev/urandom\b'
       # Command-position anchored so `npm run stress-test` / a commit message
       # mentioning "stress test" don't trip the stress(-ng) load-generator rule.
