@@ -329,7 +329,14 @@ def _run_memory(args) -> None:
         for fpath in args.file:
             try:
                 text = Path(fpath).read_text(encoding="utf-8", errors="replace")
-                findings = engine.check_text(text)
+                # Screen it the way SessionStart does: as a "memory" event,
+                # which is what the memory_poisoning rules match on. A "text"
+                # event reported "clean" on a line the session notice flagged.
+                from prismor.runtime.hooks import strip_prismor_managed
+                findings = engine.evaluate(
+                    {"type": "memory", "path": str(fpath), "content": strip_prismor_managed(text)}, 0)
+                findings += [f for f in engine.check_text(text)
+                             if f.get("ruleId") not in {g.get("ruleId") for g in findings}]
                 if findings:
                     print(f"\n{fpath}:")
                     for f in findings:
@@ -866,7 +873,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         info = _scope.resolve_scope(workspace)
         ident = _identity.load_identity()
         print(f"Workspace:  {workspace}")
-        print(f"  git remote: {info.get('remote') or '(none / not a git repo)'}")
+        _in_git = any((p / ".git").exists() for p in (Path(workspace).resolve(), *Path(workspace).resolve().parents))
+        print(f"  git remote: {info.get('remote') or ('(none — this git repo has no remote)' if _in_git else '(not a git repo)')}")
         if not ident:
             print("  scope:      local-only (this machine is not enrolled)")
             print("  → Local protection is active. Nothing is reported anywhere.")
@@ -1189,7 +1197,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command == "deps":
         from prismor.runtime.deps import scan_workspace as deps_scan
         feed = load_feed(repo_root)
-        result = deps_scan(workspace, feed)
+        result = deps_scan(workspace, feed, osv=not getattr(args, "offline", False))
 
         if getattr(args, "json", False):
             print(json.dumps(result, indent=2))
@@ -1213,6 +1221,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         feed_matches = result["feed_matches"]
         lockfile_issues = result["lockfile_issues"]
+        _src_label = {"feed": "advisory feed", "ioc": "IOC list", "osv": "OSV.dev"}
         integrity_issues = result.get("integrity_issues", [])
 
         if not feed_matches and not lockfile_issues and not integrity_issues:
@@ -1221,12 +1230,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             return
 
         if feed_matches:
-            print(f"  {_color('Feed matches:', _BOLD)}")
+            print(f"  {_color('Known vulnerable or malicious dependencies:', _BOLD)}")
             for match in feed_matches:
                 sev = match["severity"]
                 color = _RED if sev in ("critical", "high") else _YELLOW
                 print(f"    {_color(f'[{sev.upper()}]', color)}  {match['advisory_id']}: {match['title']}")
-                print(f"             affected: {match['affected']}")
+                print(f"             affected: {match['affected']}  (source: {_src_label.get(match.get('source'), match.get('source', 'feed'))})")
                 if match.get("action"):
                     print(f"             action: {match['action']}")
             print()
@@ -1373,6 +1382,10 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         print()
 
+        if getattr(args, "fix", False) and fixable == 0:
+            print(f"  {_color('Nothing to auto-fix:', _DIM)} none of these issues has an automatic fix.")
+            print()
+
         # Apply fixes if requested
         if getattr(args, "fix", False) and fixable > 0:
             print(f"  {_color('Applying fixes...', _BOLD)}")
@@ -1512,8 +1525,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         session_id = args.session_id or getattr(args, "session_id_pos", None)
         if not session_id:
             raise SystemExit("session: --session-id or a positional session id is required")
+        from prismor.runtime import devlog
+        session_id = devlog.resolve_session_id(session_id)
         if getattr(args, "changes", False):
-            from prismor.runtime import devlog
             emit(devlog.changes(session_id), as_json=args.json, formatter=devlog.format_changes)
             return
         session = get_session(workspace, session_id)
@@ -1527,7 +1541,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command in ("rca", "blame", "friction"):
         from prismor.runtime import devlog
         if args.command == "rca":
-            sid = args.session_id or next((s["sessionId"] for s in list_sessions(workspace, 1)), None)
+            sid = (devlog.resolve_session_id(args.session_id) if args.session_id
+                   else next((s["sessionId"] for s in list_sessions(workspace, 1)), None))
             if not sid:
                 raise SystemExit("rca: " + (_sessions_elsewhere_hint(workspace)
                                             or "no sessions recorded yet")
@@ -3818,8 +3833,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--json", action="store_true", help="Output raw JSON")
 
     # ── deps ──────────────────────────────────────────────────────────
-    deps_parser = subparsers.add_parser("deps", help="Check workspace dependencies against threat feed")
+    deps_parser = subparsers.add_parser(
+        "deps", help="Check workspace dependencies against OSV.dev, the advisory feed and the IOC list")
     deps_parser.add_argument("--workspace", help="Workspace path")
+    deps_parser.add_argument("--offline", action="store_true",
+                             help="Skip the OSV.dev lookup (feed + IOC list only)")
     deps_parser.add_argument("--json", action="store_true", help="Output raw JSON")
 
     # ── audit ──────────────────────────────────────────────────────────
@@ -3887,6 +3905,9 @@ def build_parser() -> argparse.ArgumentParser:
     attest_verify.add_argument("bundle", help="Path to a bundle JSON file")
     attest_verify.add_argument(
         "--pubkey", help="Pin verification to this base64 raw Ed25519 public key")
+    attest_verify.add_argument(
+        "--require-signature", action="store_true",
+        help="Fail an unsigned bundle (default: accept it when its content hash matches)")
     attest_verify.add_argument("--json", action="store_true", help="Machine-readable report")
     attest_coverage = attest_sub.add_parser(
         "coverage", help="Show framework-control coverage of the active policy")
@@ -5091,6 +5112,25 @@ def _dashboard_sparkline(day_counts: List[int]) -> str:
     return "".join(_BARS[min(int(c / peak * 8 + 0.5), 8)] for c in day_counts)
 
 
+def _spark_under(spark: str, labels: List[str]) -> str:
+    """Centre each bar under its day label ("Fri 9" and "Thu 15" differ in
+    width, so a fixed two-space gap drifted off the labels)."""
+    return "  ".join(bar.center(len(label)) for bar, label in zip(spark, labels))
+
+
+def _day_bucket(ts: str, now: datetime, days: int) -> Optional[int]:
+    """Index (0 = oldest) of the calendar day ``ts`` falls on in the last
+    ``days`` days, matching the day labels; None outside the window."""
+    try:
+        dt = datetime.fromisoformat(ts[:-1] + "+00:00" if ts.endswith("Z") else ts)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    bucket = days - 1 - (now.date() - dt.astimezone(now.tzinfo).date()).days
+    return bucket if 0 <= bucket < days else None
+
+
 def _sessions_in_window(
     workspace: Path, days: int
 ) -> List[Dict[str, Any]]:
@@ -5138,26 +5178,12 @@ def _print_dashboard(days: int = 7) -> None:
     global_day_counts: List[int] = [0] * days
     for ws in workspaces:
         for s in _sessions_in_window(ws, days):
-            ts = s.get("updatedAt") or s.get("startedAt") or ""
-            if not ts:
-                continue
-            try:
-                if ts.endswith("Z"):
-                    ts = ts[:-1] + "+00:00"
-                dt = datetime.fromisoformat(ts)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                age_days = (now - dt).days
-                bucket = days - 1 - age_days
-                if 0 <= bucket < days:
-                    global_day_counts[bucket] += s.get("findingsCount", 0)
-            except Exception:
-                pass
+            bucket = _day_bucket(s.get("updatedAt") or s.get("startedAt") or "", now, days)
+            if bucket is not None:
+                global_day_counts[bucket] += s.get("findingsCount", 0)
 
     spark = _dashboard_sparkline(global_day_counts)
-    # Pad each bar character to align under the 5-char day labels
-    spaced_spark = "  ".join(spark)
-    print(f"  {_color(spaced_spark, _YELLOW)}")
+    print(f"  {_color(_spark_under(spark, day_labels), _YELLOW)}")
     print()
 
     if not workspaces:
@@ -5201,21 +5227,9 @@ def _print_dashboard(days: int = 7) -> None:
         # Per-workspace sparkline for the days window
         ws_day_counts: List[int] = [0] * days
         for s in sessions:
-            ts = s.get("updatedAt") or s.get("startedAt") or ""
-            if not ts:
-                continue
-            try:
-                if ts.endswith("Z"):
-                    ts = ts[:-1] + "+00:00"
-                dt = datetime.fromisoformat(ts)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                age_days = (now - dt).days
-                bucket = days - 1 - age_days
-                if 0 <= bucket < days:
-                    ws_day_counts[bucket] += s.get("findingsCount", 0)
-            except Exception:
-                pass
+            bucket = _day_bucket(s.get("updatedAt") or s.get("startedAt") or "", now, days)
+            if bucket is not None:
+                ws_day_counts[bucket] += s.get("findingsCount", 0)
         ws_spark = _dashboard_sparkline(ws_day_counts)
 
         risk_str = _color(f"risk={latest_risk}/100", risk_color)
@@ -5228,7 +5242,7 @@ def _print_dashboard(days: int = 7) -> None:
         for check in _checks:
             if check["state"] != "ok":
                 print(f"    hook health: {check['agent']} ({check['scope']}): {check['detail']}")
-        print(f"    {_color(ws_spark, _YELLOW)}")
+        print(f"  {_color(_spark_under(ws_spark, day_labels), _YELLOW)}")
         print()
 
     # ── Footer ────────────────────────────────────────────────────────────
@@ -5360,7 +5374,11 @@ def _run_trail(args) -> None:
             print(f"  ⚠ {report['unverifiable']} signed record(s) not checked: the signature "
                   "backend is not installed. Hash chain and order were still verified. "
                   "To check signatures too: pip install 'prismor[signing]'")
-        if report["unsigned"]:
+        if report["unsigned"] and not report["signed"]:
+            # The default install: no `cryptography`, so nothing is signed.
+            print("  · no record is signed: install 'prismor[signing]' to sign new records. The hash "
+                  "chain catches edits and gaps, but anyone who can write the file can rebuild an unsigned chain.")
+        elif report["unsigned"]:
             print(f"  · {report['unsigned']} record(s) are unsigned (written before a device "
                   "signing key existed, or while signing was unavailable). The hash chain still covers them.")
         # A long tail of identical lines buries the summary; show a few, count the rest.
@@ -5496,9 +5514,25 @@ def _run_attest(args, workspace: Path, repo_root: Path) -> None:
             print(f"✗ cannot read bundle: {exc}")
             raise SystemExit(2)
         report = _attest.verify_bundle(bundle, pubkey_b64=getattr(args, "pubkey", None))
+        # A default install has no `cryptography`, so its bundles are unsigned
+        # and verify used to fail every one of them, untampered or not. An
+        # unsigned bundle whose hash matches is reported as exactly that (exit
+        # 0) unless a signature is demanded (--require-signature, --pubkey).
+        unsigned_ok = (report["content_hash_ok"] and not report["signed"]
+                       and not getattr(args, "require_signature", False)
+                       and not getattr(args, "pubkey", None))
+        passed = report["ok"] or unsigned_ok
         if getattr(args, "json", False):
-            print(json.dumps(report, indent=2))
-            raise SystemExit(0 if report["ok"] else 1)
+            print(json.dumps({**report, "unsigned_accepted": unsigned_ok}, indent=2))
+            raise SystemExit(0 if passed else 1)
+        if unsigned_ok:
+            print(f"⚠ unsigned bundle — schema {report.get('schema')}, "
+                  f"generated {str(report.get('generated_at'))[:19]}")
+            print("  integrity checked: content hash OK (catches accidental edits; anyone can "
+                  "re-hash a deliberate one)")
+            print("  signature absent: install prismor[signing] to sign bundles, "
+                  "then rebuild with `prismor attest`")
+            raise SystemExit(0)
         glyph = "✓" if report["ok"] else "✗"
         state = "verified" if report["ok"] else "FAILED"
         print(f"{glyph} attestation {state} — schema {report.get('schema')}, "
@@ -5519,6 +5553,8 @@ def _run_attest(args, workspace: Path, repo_root: Path) -> None:
         n_findings = len(bundle.get("audit_findings") or [])
         signed = "signed" if bundle.get("signature") else "UNSIGNED"
         print(f"Attestation bundle ({signed}) written to {out}")
+        if not bundle.get("signature"):
+            print("  unsigned: install prismor[signing] (adds `cryptography`) to sign bundles")
         print(f"  {n_agents} agents · {n_findings} audit findings · "
               f"trail anchor seq {(bundle.get('trail_checkpoint') or {}).get('seq')}")
         print(f"  re-verify with:  prismor attest verify {out}")
@@ -7339,7 +7375,7 @@ def format_tokens(payload: Dict[str, Any]) -> str:
     if offenders:
         lines.extend(["", "Biggest individual tool calls", "-" * 29])
         for row in offenders:
-            label = row["label"]
+            label = " ".join(str(row["label"]).split())  # a heredoc's newlines broke the table
             if len(label) > 60:
                 label = label[:57] + "..."
             lines.append(f"  {row['tool']:<12} {label:<60} {row['approxTokens']:>8,} tok")

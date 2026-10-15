@@ -54,9 +54,11 @@ def fetch_metadata(spec: PackageSpec, ecosystem: str) -> PackageMetadata:
     elif ecosystem in ("pip", "uv"):
         meta = _fetch_pypi(spec.name, ecosystem)
     else:
-        # go, cargo: public APIs are too complex for a 3-second call; skip.
+        # Only the latest version is resolved here: without it the OSV lookup
+        # has no version to filter by and would count every advisory the
+        # package ever had (`gem install rails` scored 100/100).
         meta = PackageMetadata(
-            name=spec.name, ecosystem=ecosystem, version=None,
+            name=spec.name, ecosystem=ecosystem, version=_latest_version(spec.name, ecosystem),
             age_days=None, maintainer_count=None,
             has_install_script=False, source="registry",
         )
@@ -78,6 +80,34 @@ def _http_get(url: str, timeout: int = 3) -> Optional[dict]:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
+
+
+# (url template, path to the latest version in the JSON response)
+_LATEST_VERSION_APIS = {
+    "cargo": ("https://crates.io/api/v1/crates/{name}", ("crate", "max_stable_version")),
+    "gem": ("https://rubygems.org/api/v1/gems/{name}.json", ("version",)),
+    "go": ("https://proxy.golang.org/{name}/@latest", ("Version",)),
+}
+
+
+def _latest_version(name: str, ecosystem: str) -> Optional[str]:
+    """Newest published version from the registry, or None (unsupported
+    ecosystem, network failure). Never raises."""
+    if ecosystem == "composer":
+        data = _http_get(f"https://repo.packagist.org/p2/{name.lower()}.json")
+        try:
+            return str(data["packages"][name.lower()][0]["version"]).lstrip("v")
+        except (KeyError, IndexError, TypeError):
+            return None
+    api = _LATEST_VERSION_APIS.get(ecosystem)
+    if not api:
+        return None
+    if ecosystem == "go":  # module proxy case-encoding: "A" -> "!a"
+        name = "".join(f"!{c.lower()}" if c.isupper() else c for c in name)
+    data = _http_get(api[0].format(name=name))
+    for key in api[1]:
+        data = data.get(key) if isinstance(data, dict) else None
+    return str(data).lstrip("v") if data else None
 
 
 def _age_days(date_str: str) -> Optional[int]:

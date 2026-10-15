@@ -50,6 +50,9 @@ TOOL_DIRS: dict[str, Path] = {
     "codex": Path.home() / ".codex",
     "antigravity": Path.home() / ".antigravity",
     "cursor": Path.home() / ".config" / "Cursor",
+    # Cursor keeps its MCP config (mcp.json, with server tokens) here, not
+    # under ~/.config/Cursor, which only holds editor state.
+    "cursor-mcp": Path.home() / ".cursor",
     "claude": Path.home() / ".claude",
     "trae": Path.home() / ".trae",
     "kilocode": Path.home() / ".kilocode",
@@ -321,6 +324,33 @@ def _fallback_scan(directory: Path) -> list[dict]:
     return findings
 
 
+_GIT_ID_KEY = re.compile(
+    r'"(?:sha|sha1|commit|commitsha|commit_sha|gitcommitsha|oid|head|tree|parent|revision|ref)"\s*:\s*"([0-9a-f]{40})"',
+    re.IGNORECASE,
+)
+
+
+def _is_git_object_id(finding: dict) -> bool:
+    """A 40-hex "secret" sitting in a ``"sha": "…"``-style JSON field is a git
+    commit id. gitleaks' sourcegraph-access-token rule accepts any 40-hex
+    string near the word "sourcegraph", so plugin marketplace caches produced
+    dozens of false findings."""
+    secret = str(finding.get("Secret") or "")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", secret):
+        return False
+    line = str(finding.get("Line") or "")
+    if secret not in line:
+        try:
+            with open(finding["File"], encoding="utf-8", errors="replace") as fh:
+                for n, text in enumerate(fh, 1):
+                    if n == int(finding.get("StartLine") or 0):
+                        line = text
+                        break
+        except (OSError, KeyError, ValueError):
+            return False
+    return any(m.group(1).lower() == secret.lower() for m in _GIT_ID_KEY.finditer(line))
+
+
 def _is_config_file(filepath: str) -> bool:
     """Check if a file is in the config allowlist (should not be redacted)."""
     name = Path(filepath).name
@@ -366,7 +396,7 @@ def scan(custom_dirs: Optional[list[str]] = None) -> list[dict]:
             findings = _scan_directory(gitleaks, directory)
         else:
             findings = _fallback_scan(directory)
-        all_findings.extend(findings)
+        all_findings.extend(f for f in findings if not _is_git_object_id(f))
 
     return all_findings
 

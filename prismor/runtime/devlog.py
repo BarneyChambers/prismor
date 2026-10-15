@@ -46,6 +46,28 @@ def _db() -> Optional[sqlite3.Connection]:
     return _connect_ro(prismor_home() / "prismor.db")
 
 
+def resolve_session_id(session_id: str) -> str:
+    """The full stored id for ``session_id`` or a unique prefix of one.
+    Raises SystemExit naming the problem when there is no match or several,
+    so a typo can't read as "Nothing went wrong" (rca on an empty record)."""
+    conn = _db()
+    if conn is None:
+        raise SystemExit(f"Session not found: {session_id} (no session store yet)")
+    try:
+        if conn.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)).fetchone():
+            return session_id
+        pat = session_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        hits = [r[0] for r in conn.execute(
+            "SELECT session_id FROM sessions WHERE session_id LIKE ? ESCAPE '\\' LIMIT 6", (pat,))]
+    finally:
+        conn.close()
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise SystemExit(f"Session not found: {session_id}  (list them with: prismor sessions)")
+    raise SystemExit(f"Session id {session_id!r} is ambiguous; it matches: " + ", ".join(hits[:5]))
+
+
 def _redact(obj: Any) -> Any:
     from prismor.runtime.query import _redact_rows
     rows = [{"v": json.dumps(obj, default=str)}]
@@ -236,12 +258,26 @@ def _call_diff(call: Dict[str, Any], result: Any = None) -> List[str]:
         return out
     if isinstance(result, dict) and result.get("type") == "create":
         return ["@@ new file"] + ["+" + l for l in str(result.get("content") or "").splitlines()]
-    return _diff(_edit_pairs(call))
+    lines = _diff(_edit_pairs(call))
+    if call["tool"] in ("Write", "NotebookEdit") and lines:
+        # an overwrite: what it replaced was never recorded
+        lines = [_OLD_UNKNOWN] + (lines[1:] if lines[0] == "@@" else lines)
+    return lines
+
+
+_OLD_UNKNOWN = "@@ previous content not recorded"
 
 
 def _diff_stats(lines: List[str]) -> Dict[str, Any]:
+    """``removedUnknown``: the diff rewrote a file whose old text was never
+    recorded (a Write, a `cat > f`), so "−0" would be a guess shown as a fact."""
     return {"added": sum(l[:1] == "+" for l in lines), "removed": sum(l[:1] == "-" for l in lines),
+            "removedUnknown": any(l == _OLD_UNKNOWN or l.startswith("@@ written from the shell") for l in lines),
             "diff": lines[:DIFF_MAX], "truncated": len(lines) > DIFF_MAX}
+
+
+def _removed(stats: Dict[str, Any]) -> str:
+    return "~" if stats.get("removedUnknown") and not stats["removed"] else str(stats["removed"])
 
 
 def rca(session_id: str) -> Dict[str, Any]:
@@ -331,7 +367,7 @@ def changes(session_id: str) -> Dict[str, Any]:
     asks = [p["text"].strip().splitlines()[0][:200] for p in meta.get("prompts", []) if p["text"].strip()]
     md = ["## Summary", *([f"- {a}" for a in asks[:8]] or ["- (no prompts recorded)"]),
           "", "## Files changed",
-          *([f"- `{f}` (+{_diff_stats(diffs[f])['added']} −{_diff_stats(diffs[f])['removed']})"
+          *([f"- `{f}` (+{_diff_stats(diffs[f])['added']} −{_removed(_diff_stats(diffs[f]))})"
              for f, _ in files.most_common()] or ["- none"])]
     tests = list(dict.fromkeys(filter(None, (_runs_tests(str(c["input"].get("command") or c["detail"]))
                                              for c in calls if c["tool"] == "Bash" and not c["error"]))))
@@ -620,7 +656,7 @@ def _diff_text(lines: List[str], indent: str = "  ") -> List[str]:
 def format_changes(r: Dict[str, Any]) -> str:
     out = [r["prDescription"]]
     for f in r["files"]:
-        out += ["", f"{f['path']}  +{f['added']} −{f['removed']}"] + _diff_text(f["diff"])
+        out += ["", f"{f['path']}  +{f['added']} −{_removed(f)}"] + _diff_text(f["diff"])
         if f.get("truncated"):
             out.append("  …")
     if r["commands"]:
@@ -634,7 +670,7 @@ def format_blame(r: Dict[str, Any]) -> str:
         return head + "\nNo agent write to this " + ("line" if r.get("line") else "file") + " is on record."
     out = [head]
     for w in r["writes"]:
-        out += ["", f"{w['ts'][:19]}  {w['agent'] or 'agent'}  session {w['sessionId']}  +{w['added']} −{w['removed']}",
+        out += ["", f"{w['ts'][:19]}  {w['agent'] or 'agent'}  session {w['sessionId']}  +{w['added']} −{_removed(w)}",
                 f"  asked: {_clip(' '.join(w['prompt'].split()), 160) or '(no prompt recorded)'}"]
         out += _diff_text(w["diff"][:20], "    ") + (["    …"] if len(w["diff"]) > 20 else [])
     return "\n".join(out)

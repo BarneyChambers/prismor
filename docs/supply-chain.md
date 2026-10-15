@@ -74,6 +74,23 @@ Each package is scored additively. IOC matches bypass the threshold and force a 
 
 **Verdicts:** `< 30` allow · `30–59` warn · `≥ 60` block
 
+**Known vulnerabilities (OSV.dev).** The version being installed is checked
+against OSV: +50 critical, +30 high, +15 medium, +5 low, at most three
+advisories. Without a pinned version, the registry's latest version is used
+(npm, PyPI, crates.io, RubyGems, Packagist and the Go proxy). When no version
+can be resolved (Maven), only malicious-package advisories count, since every
+historical advisory would otherwise score a current, patched package 100/100.
+
+**Malicious packages block in every mode.** An install that matches the IOC
+list or an OSV/GitHub malware advisory (`MAL-*`, CWE-506 "is malware") is the
+safety floor, like `curl | bash`: the hook blocks it whatever `default_mode`
+says, including under `prismor setup --recommended`. Merely vulnerable
+versions follow the policy mode (a warning unless you enforce the rule).
+
+`prismor deps` runs the same OSV lookup over the exact versions in your
+manifests and lockfiles (`--offline` skips it) and names the source of each
+match: OSV.dev, the signed advisory feed, or the bundled IOC list.
+
 ---
 
 ## Supported Ecosystems

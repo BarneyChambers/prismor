@@ -842,14 +842,70 @@ def check_against_ioc(deps: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     return matches
 
 
+# Versions OSV can match exactly. A range (^1.2, >=2, cargo's bare "1.0" which
+# means ^1.0) has no single version to ask about, so it is left to the
+# floating-range check instead of being guessed at.
+def _osv_exact_version(dep: Dict[str, Any]) -> Optional[str]:
+    v = str(dep.get("version", "")).strip()
+    eco = dep.get("ecosystem")
+    if eco == "pip":
+        m = re.match(r"^===?\s*([0-9][\w.\-+!]*)$", v)
+        return m.group(1) if m else None
+    if eco == "npm":
+        return v if re.match(r"^[0-9]+\.[0-9]+\.[0-9]+[\w.\-+]*$", v) else None
+    if eco == "go":
+        return v[1:] if re.match(r"^v[0-9]+\.[0-9]+\.[0-9]+", v) else None
+    if eco == "cargo":
+        m = re.match(r"^=\s*([0-9]+\.[0-9]+\.[0-9]+[\w.\-+]*)$", v)
+        return m.group(1) if m else None
+    return None
+
+
+def check_against_osv(deps: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """Match exact dependency versions against OSV.dev (the same lookup the
+    install gate uses). The signed feed carries no dependency_vulnerability
+    advisories, so without this `prismor deps` could not flag a plain CVE such
+    as lodash 4.17.4. Fails open: no network means no OSV matches."""
+    try:
+        from supplychain.scoring.osv_lookup import fetch_vulns_batch
+    except Exception:
+        return []
+    keyed = {}
+    for dep in deps:
+        ver = _osv_exact_version(dep)
+        if ver and dep.get("name"):
+            keyed[(dep["name"], dep["ecosystem"], ver)] = dep
+    if not keyed:
+        return []
+    matches: List[Dict[str, Any]] = []
+    for key, vulns in fetch_vulns_batch(list(keyed)).items():
+        dep = keyed.get(key)
+        for v in vulns:
+            matches.append({
+                "advisory_id": v["id"],
+                "severity": "critical" if v.get("malicious") else str(v.get("severity", "medium")).lower(),
+                # osv_lookup titles are "<id>: <summary>"; the renderer adds the id.
+                "title": (v.get("title") or v["id"]).removeprefix(f"{v['id']}: "),
+                "affected": f"{key[0]}@{key[2]}",
+                "action": ("Remove this package: it is a known malicious release." if v.get("malicious")
+                           else "Upgrade to a version outside the advisory's affected range."),
+                "matched_deps": [dep],
+                "source": "osv",
+            })
+    return matches
+
+
 def scan_workspace(
     workspace: Path,
     feed: Dict[str, Any],
+    osv: bool = False,
 ) -> Dict[str, Any]:
     """Full workspace dependency scan.
 
     Returns {manifests, dependencies, feed_matches, lockfile_issues,
-    integrity_issues, floating_ranges}.
+    integrity_issues, floating_ranges}. Each feed match carries a ``source``:
+    ``feed`` (signed advisory feed), ``ioc`` (bundled IOC list) or ``osv``
+    (OSV.dev, only when ``osv=True``; needs the network).
     """
     manifests = find_manifests(workspace)
     lockfile_map = _read_npm_lockfile(workspace)
@@ -870,6 +926,14 @@ def scan_workspace(
         if key not in _seen:
             feed_matches.append(m)
             _seen.add(key)
+    for m in feed_matches:
+        m.setdefault("source", "feed")
+    if osv:
+        for m in check_against_osv(all_deps):
+            key = (m.get("advisory_id"), m["matched_deps"][0].get("name"))
+            if key not in _seen:
+                feed_matches.append(m)
+                _seen.add(key)
     lockfile_issues = check_lockfile_presence(workspace)
     integrity_issues = check_lockfile_integrity(workspace)
     floating_ranges = check_floating_ranges(workspace, lockfile_map)

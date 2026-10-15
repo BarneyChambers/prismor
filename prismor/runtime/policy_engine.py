@@ -3010,9 +3010,12 @@ class PolicyEngine:
             "id": prefixed_id,
             "severity": severity,
             "category": "dependency_risk",
+            # The scorer's own verdict word is left out: whether this blocks is
+            # decided by `mode` below, and "(score 80/100, block)" printed next
+            # to a WARN badge read as a contradiction.
             "title": (
-                f"Risky {ecosystem} install: {spec.raw} "
-                f"(score {verdict.score}/100, {verdict.verdict})"
+                f"{'Known malicious' if has_ioc else 'Risky'} {ecosystem} install: {spec.raw} "
+                f"(score {verdict.score}/100)"
             ),
             "evidence": _truncate(evidence),
             "eventIndex": index,
@@ -3024,7 +3027,11 @@ class PolicyEngine:
             # override exists here, so inherit the device override (if any)
             # or the policy's default_mode, exactly as a YAML rule without an
             # explicit `mode` would.
-            "mode": self.device_mode or self.default_mode,
+            # A known-malicious package (IOC list, OSV MAL-* record) is the
+            # safety floor, like `curl | bash`: it enforces whatever the
+            # default mode, so `--recommended` blocks `npm install crossenv`.
+            # Ordinary vulnerable versions keep following the policy's mode.
+            "mode": "enforce" if has_ioc else (self.device_mode or self.default_mode),
         }
 
     def _check_execution_targets(

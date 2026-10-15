@@ -98,4 +98,5 @@ def test_claude_patch_wins_over_text_diff():
     call = {"tool": "Write", "input": {"content": "whole new file"}}
     assert devlog._call_diff(call, patch) == ["@@ -4,1 +4,1 @@", "-x = 1", "+x = 2"]
     assert devlog._call_diff(call, {"type": "create", "structuredPatch": [], "content": "a\nb"}) == ["@@ new file", "+a", "+b"]
-    assert devlog._call_diff(call, None) == ["@@", "+whole new file"]  # no result: text fallback
+    # No result: text fallback, headed so "−0" isn't read as "nothing was removed".
+    assert devlog._call_diff(call, None) == ["@@ previous content not recorded", "+whole new file"]
