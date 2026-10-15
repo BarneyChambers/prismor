@@ -1043,21 +1043,30 @@ def main(argv: Optional[List[str]] = None) -> None:
         mode = args.mode
         cli_path = getattr(args, "cli_path", None)
         if mode == "hybrid":
-            from prismor.runtime.semantic_guard_v2 import SemanticGuardV2
+            from prismor.runtime.semantic_guard_v2 import SemanticGuardV2, from_config
             provider = getattr(args, "provider", None)
-            model = args.model
-            if not provider:
-                # Same judge the hooks use here: the workspace policy's choice.
+            if provider:
+                guard = SemanticGuardV2(cli_path=cli_path, model=args.model, provider=provider)
+            else:
+                # Same judge the hooks use here: the workspace policy's choice,
+                # else $PRISMOR_SEMANTIC_PROVIDER. A CLI judge is allowed because
+                # this command was asked to judge.
                 try:
                     # Aliased: a bare `PolicyEngine` here would make the name
                     # local to this whole function and break every other branch.
                     from prismor.runtime.policy_engine import PolicyEngine as _Engine
-                    _sg = _Engine(workspace=Path.cwd()).semantic_guard_config or {}
-                    provider = str(_sg.get("provider") or "")
-                    model = model or str(_sg.get("model") or "")
+                    _sg = dict(_Engine(workspace=Path.cwd()).semantic_guard_config or {})
                 except Exception:
-                    provider = ""
-            guard = SemanticGuardV2(cli_path=cli_path, model=model, provider=provider or "")
+                    _sg = {}
+                if str(_sg.get("mode", "hybrid")).lower() == "auto":
+                    _sg["mode"] = "hybrid"
+                _over = {"cli_path": cli_path} if cli_path else {}
+                if args.model:
+                    _over["model"] = args.model
+                guard = from_config(_sg, **_over)
+                if guard is None:  # the policy says heuristics only
+                    mode = "heuristic"
+        if mode == "hybrid":
             result = guard.analyze(text)
             payload = {
                 "mode": guard.mode,
@@ -3519,6 +3528,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         if result.returncode == 0:
             print(f"Updated to prismor {latest}. Restart your shell or agent to use the new version.")
+            # The new code is on disk now; a fresh interpreter runs it, so the
+            # agent guidance setup wrote follows the upgrade.
+            subprocess.run(
+                [sys.executable, "-c",
+                 "from prismor.runtime.setup_wizard import refresh_guidance as r\n"
+                 "for line in r(): print('Refreshed agent guidance in ' + line)"],
+                check=False,
+            )
         else:
             sys.stderr.write("pip upgrade failed — check the output above.\n")
             raise SystemExit(result.returncode)
@@ -3772,7 +3789,7 @@ def build_parser() -> argparse.ArgumentParser:
     sem_parser.add_argument("--cli-path", help="Override the path to the Claude/Codex CLI subagent")
     sem_parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "api", "prismor"],
+        choices=["claude", "codex", "api", "prismor", "typesafe"],
         help="Which login judges the uncertain zone; default: the workspace policy's "
              "settings.semantic_guard.provider",
     )
@@ -4353,7 +4370,7 @@ def build_parser() -> argparse.ArgumentParser:
     tags_rules_p.add_argument("rules_action", nargs="?", default="list",
                               choices=["list", "add", "rm"])
     tags_rules_p.add_argument("expr", nargs="?",
-                              help='Rule expression (add) or index/text (rm), e.g. "untrusted_content then critical_action -> block"')
+                              help='Rule expression (add) or index/text (rm), e.g. "untrusted_content then egress.offlist -> block"')
     tags_rules_p.add_argument("--workspace", help="Workspace path")
 
     tags_prov_p = tags_sub.add_parser(
@@ -4728,11 +4745,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.add_argument(
         "--judge",
-        choices=["claude", "codex", "api", "prismor"],
+        choices=["heuristic", "claude", "codex", "typesafe", "api", "prismor"],
         default=None,
-        help="Which login judges uncertain events in the semantic layer: claude (Claude Code CLI), "
-             "codex (Codex CLI), api (litellm model + provider key), prismor (hosted judge on this "
-             "device's enrollment). Default: heuristics only "
+        help="Which model judges text in the semantic layer: heuristic (no LLM), claude (Claude Code "
+             "CLI) or codex (Codex CLI) for uncertain events only, typesafe ($TYPESAFE_API_KEY), api "
+             "(OpenAI/Gemini/Anthropic key, or any litellm model), prismor (hosted judge on this "
+             "device's enrollment). Unset: nothing is written, and the hooks use an API judge when "
+             "a provider key is in the environment, else heuristics "
              "(non-interactive only; $PRISMOR_JUDGE)",
     )
     setup_parser.add_argument(
@@ -5578,6 +5597,12 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
         except Exception as exc:
             add("warn", "detection layers", f"could not summarize coverage: {exc}")
 
+    from prismor.runtime.semantic_guard import last_judge_error
+    _je = last_judge_error()
+    if _je:
+        _ago = max(0, int(time.time() - float(_je.get("at") or 0)))
+        add("warn", "llm judge", f"last call failed {_ago // 60}m ago and fell back to heuristics: {_je.get('error')}")
+
     # 3–4. Enrollment + remote policy signature.
     ident = None
     try:
@@ -5858,11 +5883,17 @@ def _print_status_overview(workspace: Path) -> None:
         print(f"  {_color('Codex cloak:', _GREEN)} block-only; use `prismor cloak run -- <command>` for placeholders")
 
     # Rules
+    blocking = None
     try:
         engine = PolicyEngine(workspace=workspace)
-        print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active")
+        from prismor.runtime.policy_engine import _SELF_PROTECTION_RULE_IDS
+        blocking = sum(1 for r in engine.rules
+                       if r.id not in _SELF_PROTECTION_RULE_IDS and engine._resolve_mode(r) == "enforce")
+        print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active, {blocking} block")
     except Exception:
         engine = None
+    if mode == "enforce" and blocking == 0:
+        print(f"  {_color('Note:', _YELLOW)}        {_color('enforce, but no rules are opted in to block: nothing is stopped yet', _YELLOW)}")
 
     _print_status_quota(engine)
 
@@ -5887,10 +5918,12 @@ def _print_status_overview(workspace: Path) -> None:
     # Next-step nudge — one action, picked by current state
     print()
     if not agents_with_hooks:
-        print(f"  {_color('Next:', _CYAN)} prismor setup   (or scripted: prismor setup --non-interactive --mode observe)")
+        print(f"  {_color('Next:', _CYAN)} prismor setup   (or scripted: prismor setup --non-interactive --mode enforce --recommended)")
     elif mode == "observe":
         print(f"  {_color('Tip:', _DIM)}  observe mode logs only. Switch with:")
         print(f"        prismor setup --mode enforce --recommended   (picks the rules that block)")
+    elif mode == "enforce" and blocking == 0:
+        print(f"  {_color('Next:', _CYAN)} prismor setup --mode enforce --recommended   (pick the rules that block)")
     elif sessions and sessions[0].get("findingsCount", 0) > 0:
         print(f"  {_color('Next:', _CYAN)} prismor sessions --findings-only")
     else:

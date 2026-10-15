@@ -341,9 +341,10 @@ def _subsystem_steps(
             "This is a tag-sequence rule (settings.tool_tags.rules), not a policy "
             "rule, so `prismor allow` cannot relax it.",
             "1. See the rules and why tools carry each tag: prismor tags rules  /  prismor tags list",
-            "2. Untag the tool that should not count (prismor tags set <tool> ...), "
-            "or set `settings.tool_tags.inference_enabled: false` so plain reads and "
-            "commands are not tagged by event type.",
+            "2. Untag the tool that should not count. Where `prismor tags list` shows its "
+            "TIER as explicit: prismor tags rm <tool> <tag>. Where it shows inference: set "
+            "`settings.tool_tags.inference_enabled: false` so plain reads and commands are "
+            "not tagged by event type.",
             "3. Or drop the rule: prismor tags rules rm <index>",
             "Tags accumulate for the whole session, so start a fresh session afterwards.",
         ]

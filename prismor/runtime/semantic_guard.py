@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 
@@ -274,13 +276,114 @@ def default_model() -> str:
     if os.environ.get("OPENAI_API_KEY"):
         return "gpt-4o-mini"
     if os.environ.get("GEMINI_API_KEY"):
-        return "gemini/gemini-2.0-flash"
+        return "gemini/gemini-3.5-flash"
     return ""
+
+
+def _post_json(url: str, body: Dict, headers: Dict[str, str]) -> Dict:
+    import urllib.request
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", **headers})
+    with urllib.request.urlopen(req, timeout=30) as resp:  # fixed provider hosts  # nosec B310
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def direct_route(model: str) -> Optional[str]:
+    """Which provider a model id goes to without litellm, if any."""
+    prefix, _, m = model.rpartition("/") if "/" in model else ("", "", model)
+    if prefix == "gemini":
+        return "gemini"
+    if prefix == "anthropic" or (not prefix and m.startswith("claude-")):
+        return "anthropic"
+    if (prefix == "openai" or (not prefix and re.match(r"(gpt-|o\d|chatgpt-)", m))) and not (
+            os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")):
+        return "openai"
+    return None
+
+
+def _complete_direct(system: str, user: str, model: str) -> Optional[str]:
+    """One plain HTTPS call for OpenAI, Gemini and Anthropic model ids.
+
+    ``import litellm`` costs about 11s on a small host, and a hook is a fresh
+    process every time, so on the hook path that import alone made every tool
+    call wait ~15s. These three providers are one JSON POST each. Returns None
+    for anything else (or a custom OpenAI base URL), which keeps litellm.
+    """
+    route = direct_route(model)
+    m = model.split("/", 1)[1] if "/" in model else model
+    if route == "gemini" and (key := os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        data = _post_json(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
+            {"systemInstruction": {"parts": [{"text": system}]},
+             "contents": [{"role": "user", "parts": [{"text": user}]}],
+             "generationConfig": {"maxOutputTokens": 2048, "responseMimeType": "application/json"}},
+            {"x-goog-api-key": key})
+        parts = ((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+        return "".join(p.get("text", "") for p in parts)
+    if route == "anthropic" and (key := os.environ.get("ANTHROPIC_API_KEY")):
+        data = _post_json("https://api.anthropic.com/v1/messages",
+                          {"model": m, "max_tokens": 512, "system": system,
+                           "messages": [{"role": "user", "content": user}]},
+                          {"x-api-key": key, "anthropic-version": "2023-06-01"})
+        return "".join(b.get("text", "") for b in data.get("content") or [] if b.get("type") == "text")
+    if route == "openai" and (key := os.environ.get("OPENAI_API_KEY")):
+        # max_completion_tokens, no temperature: what reasoning models accept,
+        # and older chat models take it too.
+        data = _post_json("https://api.openai.com/v1/chat/completions",
+                          {"model": m, "max_completion_tokens": 2048,
+                           "messages": [{"role": "system", "content": system},
+                                        {"role": "user", "content": user}]},
+                          {"Authorization": f"Bearer {key}"})
+        return data["choices"][0]["message"].get("content") or ""
+    return None
+
+
+def note_judge_error(provider: str, why: str) -> None:
+    """Record why a judge fell back to the heuristic score.
+
+    The fallback used to be silent, so a retired model id (404) quietly turned
+    the judge off. The latest error is kept for `prismor doctor`; the hook's
+    stderr (which lands in the agent transcript) gets it only when it changes,
+    not on every tool call.
+    """
+    home = Path(os.environ.get("PRISMOR_HOME") or Path.home() / ".prismor").expanduser()
+    path = home / "cache" / "judge-error.json"
+    msg = f"{provider}: {why}"[:300]
+    try:
+        prev = json.loads(path.read_text(encoding="utf-8")).get("error")
+    except Exception:
+        prev = None
+    if prev != msg:
+        sys.stderr.write(f"[prismor] judge ({provider}) fell back to heuristics: {why}\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"error": msg, "at": time.time()}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def last_judge_error() -> Optional[Dict]:
+    home = Path(os.environ.get("PRISMOR_HOME") or Path.home() / ".prismor").expanduser()
+    try:
+        return json.loads((home / "cache" / "judge-error.json").read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def clear_judge_error() -> None:
+    home = Path(os.environ.get("PRISMOR_HOME") or Path.home() / ".prismor").expanduser()
+    try:
+        (home / "cache" / "judge-error.json").unlink()
+    except OSError:
+        pass
 
 
 def _complete(system: str, user: str, model: str) -> str:
     if _LLM_FN is not None:
         return _LLM_FN(system, user)
+    direct = _complete_direct(system, user, model)
+    if direct is not None:
+        return direct
     import litellm  # optional dep: pip install "prismor[semantic]"
     litellm.suppress_debug_info = True
     resp = litellm.completion(
@@ -314,6 +417,7 @@ def _api_analyze(text: str, model: str = "", system: str = "", user: str = "") -
             raise RuntimeError(f"no model configured (set {DEFAULT_MODEL_ENV} or settings.semantic_guard.model)")
         raw = _complete(system or _SYSTEM_PROMPT, user or f"Analyze this text:\n\n{text[:4000]}", model)
         data = parse_verdict(raw)
+        clear_judge_error()
         return SemanticRisk(
             risk_score=float(data.get("risk_score", 0.0)),
             category=str(data.get("category", "unknown")),
@@ -324,6 +428,7 @@ def _api_analyze(text: str, model: str = "", system: str = "", user: str = "") -
             latency_ms=(time.perf_counter_ns() - t0) / 1e6,
         )
     except Exception as e:
+        note_judge_error(f"api {model or '-'}", f"{type(e).__name__}: {e}")
         result = _heuristic_analyze(text)
         result.reason = f"[API fallback due to {type(e).__name__}: {e}] {result.reason}"
         result.latency_ms = (time.perf_counter_ns() - t0) / 1e6

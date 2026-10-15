@@ -199,3 +199,64 @@ def test_verdict_is_cached_across_processes(no_keys, tmp_path, monkeypatch):
     for _ in range(2):
         SemanticGuardV2(cli_path=cli2, provider="claude").analyze(UNCERTAIN + " again")
     assert calls.read_text().count("y") == 2
+
+
+def test_heuristic_choice_is_written_and_keeps_keys_out(tmp_path, monkeypatch):
+    """"Heuristics only" must mean no LLM even when a provider key is set."""
+    from prismor.runtime.setup_wizard import _write_judge_setting
+    from prismor.runtime import judge_audit
+    from prismor.runtime.semantic_guard_v2 import from_config
+    import yaml
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-real")
+    monkeypatch.delenv("PRISMOR_SEMANTIC_PROVIDER", raising=False)
+    _write_judge_setting(tmp_path, "heuristic", "")
+    cfg = yaml.safe_load((tmp_path / ".prismor" / "policy.yaml").read_text())["settings"]["semantic_guard"]
+    assert cfg == {"mode": "heuristic"}
+    assert from_config(cfg) is None
+    with pytest.raises(judge_audit.JudgeNotConfigured):
+        judge_audit.build_guard(cfg)
+    # switching to a real judge drops the heuristic marker
+    _write_judge_setting(tmp_path, "typesafe", "jev-latest")
+    cfg = yaml.safe_load((tmp_path / ".prismor" / "policy.yaml").read_text())["settings"]["semantic_guard"]
+    assert cfg == {"provider": "typesafe", "model": "jev-latest"}
+
+
+def test_env_provider_reaches_every_entry_point(monkeypatch):
+    from prismor.runtime import judge_audit
+    from prismor.runtime.semantic_guard_v2 import from_config
+    monkeypatch.setenv("PRISMOR_SEMANTIC_PROVIDER", "typesafe")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ts-test-not-real")
+    assert from_config({})._provider == "typesafe"
+    assert judge_audit.build_guard({})._provider == "typesafe"
+    # a policy that names its judge wins over the env default
+    assert from_config({"provider": "codex"})._provider == "codex"
+
+
+@pytest.mark.parametrize("model, route", [
+    ("gpt-4o-mini", "openai"), ("o4-mini", "openai"), ("openai/gpt-5.4-mini", "openai"),
+    ("gemini/gemini-3.5-flash", "gemini"), ("claude-haiku-4-5-20251001", "anthropic"),
+    ("anthropic/claude-sonnet-5-5", "anthropic"), ("bedrock/anthropic.claude-x", None),
+    ("ollama/llama3", None),
+])
+def test_common_providers_skip_litellm(monkeypatch, model, route):
+    from prismor.runtime.semantic_guard import direct_route
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
+    assert direct_route(model) == route
+
+
+def test_custom_openai_base_keeps_litellm(monkeypatch):
+    from prismor.runtime.semantic_guard import direct_route
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:9/v1")
+    assert direct_route("gpt-4o-mini") is None
+
+
+def test_judge_error_is_recorded_once_and_cleared(tmp_path, monkeypatch, capsys):
+    from prismor.runtime import semantic_guard as sg
+    monkeypatch.setenv("PRISMOR_HOME", str(tmp_path))
+    sg.note_judge_error("api gemini/x", "HTTPError 404")
+    sg.note_judge_error("api gemini/x", "HTTPError 404")
+    assert capsys.readouterr().err.count("fell back to heuristics") == 1
+    assert "404" in sg.last_judge_error()["error"]
+    sg.clear_judge_error()
+    assert sg.last_judge_error() is None

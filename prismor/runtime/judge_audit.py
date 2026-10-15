@@ -137,17 +137,19 @@ def judge_text(raw: Dict[str, Any], workspace: Optional[Path]) -> str:
 
 
 def build_guard(cfg: Dict[str, Any]):
-    """The judge the hooks use, told to judge every text (no heuristic gate)."""
-    from prismor.runtime.semantic_guard_v2 import SemanticGuardV2
+    """The judge the hooks use, told to judge every text (no heuristic gate).
 
-    return SemanticGuardV2(
-        cli_path=cfg.get("cli_path") or None,
-        model=str(cfg.get("model") or ""),
-        allow_cli=str(cfg.get("mode", "auto")).lower() == "hybrid",
-        provider=str(cfg.get("provider") or "").lower(),
-        low_threshold=0.0,
-        high_threshold=2.0,
-    )
+    Raises JudgeNotConfigured when the policy says heuristics only: then no model was
+    chosen, and an API key that happens to be in the environment is not
+    consent to send tool calls to that provider.
+    """
+    from prismor.runtime.semantic_guard_v2 import from_config
+
+    guard = from_config(cfg, low_threshold=0.0, high_threshold=2.0)
+    if guard is None:
+        raise JudgeNotConfigured("settings.semantic_guard is heuristics only, so no model was chosen; "
+                                 "pick one with `prismor setup` or settings.semantic_guard.provider")
+    return guard
 
 
 def run(

@@ -220,8 +220,9 @@ def _extract_json_object(raw: str) -> Optional[str]:
 
 def _judge_note(provider: str, why: str) -> None:
     """A judge that fell back to the heuristic score used to do so silently;
-    the hook's stderr lands in the agent transcript, so say why."""
-    sys.stderr.write(f"[prismor] judge ({provider}) fell back to heuristics: {why}\n")
+    say why (once per distinct error) and keep it for `prismor doctor`."""
+    from prismor.runtime.semantic_guard import note_judge_error
+    note_judge_error(provider, why)
 
 
 def _parse_verdict(stdout: str, t0: int) -> Optional[SemanticRisk]:
@@ -929,3 +930,36 @@ if __name__ == "__main__":
         "llm": r.llm.to_dict() if r.llm else None,
         "final": r.final.to_dict(),
     }, indent=2))
+
+
+def from_config(cfg: Optional[Dict], **overrides: Any) -> Optional["SemanticGuardV2"]:
+    """The judge a policy's ``settings.semantic_guard`` describes, or None when
+    it says heuristics only.
+
+    One constructor for the hooks, ``prismor semantic-check`` and ``prismor
+    audit judge``, so they cannot disagree on which provider (and whose key)
+    gets the text. The policy names the judge; $PRISMOR_SEMANTIC_PROVIDER is the
+    operator's default when it does not, and a policy ``model`` belongs to the
+    policy's provider, not to that one.
+    """
+    cfg = cfg or {}
+    mode = str(cfg.get("mode", "hybrid")).lower()
+    if mode not in ("auto", "hybrid"):
+        return None
+    env_provider = os.environ.get("PRISMOR_SEMANTIC_PROVIDER", "").strip().lower()
+    from_env = not cfg.get("provider") and bool(env_provider)
+    kw: Dict[str, Any] = dict(
+        cli_path=cfg.get("cli_path") or None,
+        model="" if from_env else str(cfg.get("model") or ""),
+        # `auto` is the default and screens every tool call, so it never
+        # spawns the CLI subagent; `hybrid` is the explicit opt-in to it.
+        allow_cli=(mode == "hybrid"),
+        provider=env_provider if from_env else str(cfg.get("provider") or "").lower(),
+        # Unset: the guard picks from the judge's cost (0 for a fast judge,
+        # the narrow band for a CLI one).
+        low_threshold=(float(cfg["low_threshold"]) if cfg.get("low_threshold") is not None else None),
+        high_threshold=float(cfg.get("high_threshold", 1.0)),
+    )
+    kw.update(overrides)
+    return SemanticGuardV2(**kw)
+

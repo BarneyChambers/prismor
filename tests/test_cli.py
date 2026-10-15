@@ -369,7 +369,32 @@ class TestSkillInstall(unittest.TestCase):
             _install_skill(Path(ws))
             ok, detail = _install_skill(Path(ws))
             self.assertTrue(ok)
-            self.assertEqual(detail, "already present")
+            self.assertEqual(detail, "up to date")
+
+    def test_install_skill_refreshes_unedited_and_keeps_edited(self):
+        import hashlib
+        import tempfile
+        from prismor.runtime.setup_wizard import _install_skill
+        with tempfile.TemporaryDirectory() as ws:
+            skill = Path(ws) / ".claude" / "skills" / "immunity-agent"
+            _install_skill(Path(ws))
+            bundled = (skill / "SKILL.md").read_text()
+            # Unedited copy from an older release (stamp matches it) refreshes.
+            (skill / "SKILL.md").write_text("old guidance\n")
+            (skill / ".prismor-bundled").write_text(hashlib.sha256(b"old guidance\n").hexdigest())
+            self.assertEqual(_install_skill(Path(ws)), (True, "refreshed"))
+            self.assertEqual((skill / "SKILL.md").read_text(), bundled)
+            # A copy edited after install is kept.
+            (skill / "SKILL.md").write_text(bundled + "my note\n")
+            ok, detail = _install_skill(Path(ws))
+            self.assertTrue(detail.startswith("kept"))
+            self.assertIn("my note", (skill / "SKILL.md").read_text())
+            # Legacy copy with no stamp: refreshed, old one saved.
+            (skill / ".prismor-bundled").unlink()
+            ok, detail = _install_skill(Path(ws))
+            self.assertIn("SKILL.md.bak", detail)
+            self.assertIn("my note", (skill / "SKILL.md.bak").read_text())
+            self.assertEqual((skill / "SKILL.md").read_text(), bundled)
 
 
     def test_install_skill_runs_without_claude_agent(self):
@@ -433,6 +458,33 @@ class TestWriteAgentContext(unittest.TestCase):
         content = (self.ws / ".cursorrules").read_text()
         self.assertIn("# My existing rules", content)
         self.assertIn("prismor status", content)
+
+    def test_block_written_beside_cloak_section(self):
+        """The cloak section mentions Prismor; the Security block must still land."""
+        from prismor.runtime.setup_wizard import _upsert_security_block
+        md = self.ws / "CLAUDE.md"
+        md.write_text("## Secrets (Prismor Cloak)\n\nUse secret placeholders.\n")
+        self.assertEqual(_upsert_security_block(md), "appended")
+        content = md.read_text()
+        self.assertIn("## Secrets (Prismor Cloak)", content)
+        self.assertIn("## Security (Prismor)", content)
+        self.assertIn("don't reword and retry", content)
+        self.assertEqual(_upsert_security_block(md), "up to date")
+
+    def test_legacy_block_is_replaced_not_duplicated(self):
+        from prismor.runtime.setup_wizard import _upsert_security_block
+        md = self.ws / "AGENTS.md"
+        md.write_text("# Repo\n\n## Security (Prismor)\n\nold text\n\n## Build\n\nmake\n")
+        self.assertEqual(_upsert_security_block(md), "refreshed")
+        content = md.read_text()
+        self.assertNotIn("old text", content)
+        self.assertEqual(content.count("## Security (Prismor)"), 1)
+        self.assertIn("## Build\n\nmake", content)
+        self.assertTrue(content.startswith("# Repo"))
+        # Edited managed block is refreshed in place on the next run.
+        md.write_text(content.replace("prismor status", "prismor statusXX"))
+        self.assertEqual(_upsert_security_block(md), "refreshed")
+        self.assertEqual(md.read_text(), content)
 
     def test_claude_only_skips_cursor_and_windsurf(self):
         from prismor.runtime.setup_wizard import _write_agent_context
