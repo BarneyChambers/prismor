@@ -237,7 +237,9 @@ def test_mirror_on_creates_missing_files(tmp_path, monkeypatch):
     settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
     assert set(settings["permissions"]["deny"]) == set(mirror.NATIVE_TOOLS_TO_DISABLE)
     assert mirror_cli.mirror_off(tmp_path) == 0
-    assert json.loads((tmp_path / ".claude" / "settings.json").read_text()) == {}
+    # Files `on` created are removed again, not left behind as `{}`.
+    assert not (tmp_path / ".claude" / "settings.json").exists()
+    assert not (tmp_path / ".mcp.json").exists()
 
 
 def test_mirror_off_when_never_on_is_a_noop(tmp_path, capsys):

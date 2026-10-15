@@ -70,9 +70,11 @@ def load_feed(repo_root: Optional[Path] = None) -> Dict[str, Any]:
     if result.status in (MISMATCH, MISSING) and not (
         result.status == MISSING and os.environ.get("PRISMOR_FEED_ALLOW_UNSIGNED") == "1"
     ):
+        # MISSING also covers a garbled .sig, so don't print the bare word.
         _warn_once(resolved, result,
                    "advisory feed signature %s (%s) for %s; refusing to use the feed",
-                   result.status, result.detail, resolved)
+                   "does not match" if result.status == MISMATCH else "is missing or unreadable",
+                   result.detail, resolved)
         sig["trusted"] = False
         return {"version": None, "advisories": [], "_signature": sig}
 

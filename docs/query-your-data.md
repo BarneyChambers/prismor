@@ -159,8 +159,12 @@ FROM evasion_attempts ORDER BY detected_at DESC LIMIT 20
 ```sql
 SELECT proposed_at, status, confidence, support_count,
        json_extract(rule_json, '$.id') AS rule_id
-FROM candidate_rules ORDER BY proposed_at DESC;
+FROM candidate_rules ORDER BY proposed_at DESC
+```
 
+`prismor query` runs one statement at a time, so the dismissals are a second query:
+
+```sql
 SELECT rule_id, count(*) AS dismissed FROM dismissals GROUP BY 1 ORDER BY 2 DESC
 ```
 

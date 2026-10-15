@@ -276,7 +276,7 @@ def default_model() -> str:
     if os.environ.get("OPENAI_API_KEY"):
         return "gpt-4o-mini"
     if os.environ.get("GEMINI_API_KEY"):
-        return "gemini/gemini-3.5-flash"
+        return "gemini/gemini-flash-latest"  # 2.0/2.5-flash 404 for new keys
     return ""
 
 

@@ -8,10 +8,19 @@ and only in interactive (TTY) sessions so CI/scripts never see it.
 from __future__ import annotations
 
 
+_SERVER_COMMANDS = frozenset({
+    "proxy", "mcp-gateway", "eval-server", "inference-hook", "dashboard", "serve", "hook-dispatch",
+})
+
+
 def maybe_show() -> None:
     import sys
 
     if not sys.stdout.isatty():
+        return
+    # A server's first line should be its own ("listening on ..."), not a
+    # setup nudge. Not marked as shown, so the next ordinary command greets.
+    if _SERVER_COMMANDS & set(getattr(sys, "orig_argv", [])[1:4]):
         return
 
     from pathlib import Path

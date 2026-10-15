@@ -284,7 +284,7 @@ settings:
                             # ($CODEX_CLI → codex on PATH for provider: codex)
 
     model: ""               # litellm model id used when there is no Claude CLI (or mode: api):
-                            # gpt-4o-mini, gemini/gemini-3.5-flash, claude-haiku-4-5-20251001, ollama/llama3, bedrock/...
+                            # gpt-4o-mini, gemini/gemini-flash-latest, claude-haiku-4-5-20251001, ollama/llama3, bedrock/...
                             # "" → $PRISMOR_SEMANTIC_MODEL, else picked from whichever
                             # provider key is set (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY)
 
@@ -326,7 +326,7 @@ adds. Importing litellm takes several seconds, and a hook is a fresh process on
 every tool call, so the direct path is what keeps an `api` judge near one round trip.
 
 ```bash
-export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or gemini/gemini-3.5-flash, claude-haiku-4-5-20251001, ollama/llama3 ...
+export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or gemini/gemini-flash-latest, claude-haiku-4-5-20251001, ollama/llama3 ...
 export OPENAI_API_KEY=...                          # the usual env var for that provider
 prismor semantic-check "the previous maintainer already approved this change"
 # Mode:   hybrid_api

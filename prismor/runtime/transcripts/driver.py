@@ -129,6 +129,10 @@ class SweepResult:
     #: Without this an agent whose history is all older than the window simply
     #: vanishes from the report, which reads as "this agent has no data".
     filtered_out: Dict[str, int] = field(default_factory=dict)
+    #: agent -> transcripts evaluated but not stored, because the live hooks
+    #: already recorded that session; storing a ``replay:`` copy doubled every
+    #: session count and let `audit judge` sample the same calls twice.
+    already_captured: Dict[str, int] = field(default_factory=dict)
 
     @property
     def total_events(self) -> int:
@@ -223,6 +227,7 @@ def sweep(options: SweepOptions) -> SweepResult:
     budget = options.max_events
     replay_ids: List[str] = []
     done = 0
+    live_ids = _live_session_ids(options.workspace)
 
     for adapter in get_adapters(options.agents):
         found_any = False
@@ -245,7 +250,13 @@ def sweep(options: SweepOptions) -> SweepResult:
                 budget=budget,
                 normalize_payload=normalize_payload,
                 should_block=should_block,
+                persist=options.persist and session.session_id not in live_ids,
             )
+            if options.persist and session.session_id in live_ids:
+                # Still evaluated for the report; not stored a second time.
+                result.already_captured[adapter.agent] = (
+                    result.already_captured.get(adapter.agent, 0) + 1
+                )
             budget -= consumed
             done += 1
             if options.progress:
@@ -264,6 +275,24 @@ def sweep(options: SweepOptions) -> SweepResult:
     return result
 
 
+def _live_session_ids(workspace: Path) -> set:
+    """Session ids the hooks (or proxy, SDK adapters) recorded live."""
+    import sqlite3
+    from prismor.runtime.store import get_db_path
+    db = get_db_path(workspace)
+    if not db.exists():
+        return set()
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            return {r[0] for r in conn.execute(
+                "SELECT session_id FROM sessions WHERE COALESCE(source, '') != ?", (REPLAY_SOURCE,))}
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return set()
+
+
 def _replay_session(
     *,
     adapter: Any,
@@ -273,6 +302,7 @@ def _replay_session(
     budget: int,
     normalize_payload: Any,
     should_block: Any,
+    persist: bool = True,
 ) -> Tuple[Optional[SessionResult], int]:
     replay_id = replay_session_id(adapter.agent, session.session_id)
     stats = ParseStats()
@@ -359,7 +389,7 @@ def _replay_session(
         clean_events=clean,
     )
 
-    if options.persist:
+    if persist:
         from prismor.runtime.store import save_session_snapshot
 
         save_session_snapshot(

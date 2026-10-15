@@ -159,6 +159,7 @@ def verify_bundle(
         "schema": bundle.get("schema"),
         "generated_at": bundle.get("generated_at"),
         "signing_key_id": bundle.get("signing_key_id"),
+        "signed": bool(bundle.get("signature")),
         "content_hash_ok": False,
         "signature_ok": False,
         "errors": [],

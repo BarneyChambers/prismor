@@ -39,9 +39,9 @@ agent = Agent(
 
 Use `make_tool_hook(subject="user:alice", mode="enforce", ...)` instead of
 the bare `prismor_tool_hook` to customize subject/workspace/mode. A denied
-call raises `RuntimeError` by default (Agno surfaces this to the model as a
-tool error); pass `raise_on_block=True` (via `make_tool_hook`) to raise
-`PrismorBlocked` instead for a hard stop. `mode="observe"` is log-only.
+call returns the denial as the tool's result by default, so the model reads why (no
+error is logged for an expected block); pass `raise_on_block=True` (via `make_tool_hook`)
+to raise `PrismorBlocked` instead for a hard stop. `mode="observe"` is log-only.
 
 `subject` (a `Subject`, `"user:alice"`-style string, or `None`) scopes
 policy, IAM profile selection, and telemetry to the end-user.

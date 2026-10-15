@@ -29,7 +29,7 @@ from google.adk.agents import LlmAgent
 from prismor.google_adk import make_before_tool_callback
 
 agent = LlmAgent(
-    model="gemini-2.0-flash",  # or a LiteLlm-wrapped model, e.g. openai/gpt-4o-mini
+    model="gemini-flash-latest",  # or a LiteLlm-wrapped model, e.g. openai/gpt-4o-mini
     name="ops",
     tools=[run_shell],
     before_tool_callback=make_before_tool_callback(subject="user:alice", mode="enforce"),
