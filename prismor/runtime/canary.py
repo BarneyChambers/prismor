@@ -230,6 +230,40 @@ def check_path_is_canary(path: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def check_command_for_canary(command: str, cwd: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """The canary a shell command touches (`cat`, `head`, `cp`, ...), or None.
+
+    A canary read through the shell is the same reconnaissance as one through
+    a Read tool; only checking file events let `cat <canary>` read it silently.
+    """
+    if not command:
+        return None
+    entries = _load_registry()
+    if not entries:
+        return None
+    home = str(Path.home())
+    text = command.replace("${HOME}", home).replace("$HOME", home)
+    import shlex
+    try:
+        tokens = shlex.split(text, posix=True)
+    except ValueError:
+        tokens = text.split()
+    base = Path(cwd).expanduser() if cwd else Path.cwd()
+    for tok in tokens:
+        tok = tok.split("=", 1)[-1] if tok.startswith("-") else tok
+        if "/" not in tok and "." not in tok:
+            continue
+        p = Path(tok).expanduser()
+        try:
+            resolved = str((p if p.is_absolute() else base / p).resolve())
+        except (OSError, ValueError):
+            continue
+        for e in entries:
+            if e["path"] == resolved:
+                return e
+    return None
+
+
 # ── Webhook beacon ─────────────────────────────────────────────────────────
 
 def beacon(entry: Dict[str, Any], event: str, context: Optional[Dict[str, Any]] = None) -> bool:

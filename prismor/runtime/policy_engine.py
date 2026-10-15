@@ -949,6 +949,36 @@ class CompiledRule:
         return None
 
 
+def _rule_hits(rule: "CompiledRule", text: str) -> bool:
+    if rule.condition is not None:
+        return rule.evaluate_condition([text]) is not None
+    return rule.patterns.search(text) is not None
+
+
+def _last_good_path(path: Path) -> Path:
+    return path.with_name(f".{path.stem}.last-good{path.suffix}")
+
+
+def _remember_last_good(path: Path) -> None:
+    """Keep a copy of a project policy that parsed, for _load_last_good."""
+    try:
+        text = path.read_bytes()
+        good = _last_good_path(path)
+        if not good.exists() or good.read_bytes() != text:
+            good.write_bytes(text)
+    except OSError:
+        pass
+
+
+def _load_last_good(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        good = _last_good_path(path)
+        raw = _load_yaml(good) if good.exists() else None
+    except Exception:
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
 class AllowlistEntry:
     """A compiled allowlist entry that suppresses findings.
 
@@ -964,7 +994,7 @@ class AllowlistEntry:
     carve-out visible in the same list.
     """
 
-    __slots__ = ("id", "rule_ids", "patterns", "raw_patterns", "reason", "type", "expires")
+    __slots__ = ("id", "rule_ids", "patterns", "raw_patterns", "reason", "type", "expires", "match")
 
     def __init__(self, raw: Dict[str, Any]) -> None:
         self.id: str = raw["id"]
@@ -981,6 +1011,17 @@ class AllowlistEntry:
         self.raw_patterns: List[str] = [str(p) for p in raw["patterns"]]
         joined = _alternation(raw["patterns"])
         self.patterns: re.Pattern[str] = re.compile(joined, re.IGNORECASE)
+        # `match: exact` (what `prismor allow` writes): against a shell
+        # command a pattern must be the whole command, or one whole statement
+        # of it — never a substring. A substring allow of
+        # `chmod -R 777 ./scratch` also passed `chmod -R 777 ./scratchX /etc`.
+        # Paths and other fields keep `search`; absent keeps `search` too.
+        self.match: str = "exact" if str(raw.get("match", "")).lower() == "exact" else "search"
+
+    def covers(self, text: str) -> bool:
+        if self.match == "exact":
+            return self.patterns.fullmatch(text.strip()) is not None
+        return self.patterns.search(text) is not None
 
     def applies_to(self, rule_id: str) -> bool:
         if self.expires and self.expires < _now_iso_z():
@@ -1031,6 +1072,9 @@ class PolicyEngine:
         # than raised: an exception here used to crash hook-dispatch with exit 1,
         # which agents treat as "allow" - one typo switched enforcement off.
         self.project_policy_error: Optional[str] = None
+        # True when project_policy_error is set and the last valid copy of the
+        # file is enforced in its place (see _load_last_good).
+        self.project_policy_fallback: bool = False
         self.outputs: List[Dict[str, Any]] = []
         self.semantic_guard_config: Dict[str, Any] = {}
         self.sandbox_config: Dict[str, Any] = {}
@@ -1326,17 +1370,27 @@ class PolicyEngine:
                 override_raw = _load_yaml(override_path)
                 if override_raw is not None and not isinstance(override_raw, dict):
                     raise ValueError("the top level must be a mapping (version:, rules:, settings:)")
-            except Exception as exc:  # malformed YAML or shape: skip the layer, say so
+            except Exception as exc:  # malformed YAML or shape: fall back, say so
                 override_raw = None
                 detail = " ".join(str(exc).split())[:240]
                 self.project_policy_error = f"{override_path}: {detail}"
+                # Skipping the layer dropped the mode's own protections (egress
+                # default-deny, opted-in rules) while the floor kept blocking,
+                # so a typo quietly weakened the policy. Keep enforcing the last
+                # version that parsed instead.
+                override_raw = _load_last_good(override_path)
+                self.project_policy_fallback = override_raw is not None
+                kept = ("The last version that parsed is still enforced"
+                        if override_raw is not None else
+                        "No earlier valid version exists, so only built-in and org rules apply")
                 if self.project_policy_error not in _WARNED_PROJECT_ERRORS:  # once per process
                     _WARNED_PROJECT_ERRORS.add(self.project_policy_error)
                     sys.stderr.write(
-                        f"[prismor] {override_path} is invalid and was ignored ({detail}). "
-                        "Built-in and org rules still apply. Fix it, then check with: "
-                        f"prismor policy validate {override_path}\n"
+                        f"[prismor] {override_path} is invalid ({detail}). {kept}. "
+                        f"Fix it, then check with: prismor policy validate {override_path}\n"
                     )
+            else:
+                _remember_last_good(override_path)
             if override_raw is not None:
                 self._apply_override(override_raw, rules_by_id, allowlist_raw, settings, "project")
 
@@ -1622,6 +1676,10 @@ class PolicyEngine:
                 dequoted_cache["command"] = [dq for dq in spellings if dq]
             return dequoted_cache["command"]
 
+        _dry_run = False
+        if event_type == "shell":
+            from prismor.runtime.egress import _only_prismor_dry_runs
+            _dry_run = _only_prismor_dry_runs(str(event.get("command") or ""))
         for rule in _perf.timed_rules(self.rules, findings):
             matched_via_mcp_alias = False
             # A synthetic "text" event has no rules of its own; route it through
@@ -1647,6 +1705,10 @@ class PolicyEngine:
                 check_fields = _MCP_ALIAS_DEFAULT_FIELDS
             else:
                 check_fields = _DEFAULT_FIELDS.get(event_type, [])
+            if _dry_run and "command" in check_fields:
+                # `prismor check "<cmd>"` only names a command (AGENTS.md tells
+                # agents to run it); matching its argument blocked the check.
+                continue
             matched_evidence = None
             folded_evidence = None
             evasion = None
@@ -1758,7 +1820,7 @@ class PolicyEngine:
             # Check allowlist. An explaining caller asks for the suppressed
             # ones too, tagged with the entry that swallowed them; the default
             # stays exactly as before for the enforcement path.
-            _allow = self.allowlist_match(rule.id, matched_evidence)
+            _allow = self.allowlist_match(rule.id, matched_evidence, rule, event_type == "shell")
             if _allow is not None and trace:
                 trace[-1]["fired"] = False
                 trace[-1]["suppressed_by"] = _allow.id
@@ -2036,12 +2098,19 @@ class PolicyEngine:
         # If the agent is reading a registered canarytoken path, raise a
         # CRITICAL finding — canaries are fake credentials planted as honey
         # tokens, so any read is by definition unauthorized reconnaissance.
-        if event_type in ("file_read", "file_write"):
-            _path = field_values.get("path", "")
+        if event_type in ("file_read", "file_write", "shell"):
+            _path = field_values.get("path", "") if event_type != "shell" else event.get("command", "")
             if _path:
                 try:
-                    from prismor.runtime.canary import check_path_is_canary, beacon
-                    hit = check_path_is_canary(_path.split("\n", 1)[0])
+                    from prismor.runtime.canary import (
+                        beacon, check_command_for_canary, check_path_is_canary,
+                    )
+                    if event_type == "shell":
+                        _cwd = (event.get("metadata") or {}).get("cwd") or (
+                            str(self.workspace) if self.workspace else None)
+                        hit = check_command_for_canary(str(_path), _cwd)
+                    else:
+                        hit = check_path_is_canary(_path.split("\n", 1)[0])
                     if hit:
                         finding_id = f"canary-access-{index}"
                         prefixed_id = f"{session_id}:{finding_id}" if session_id else finding_id
@@ -3434,7 +3503,10 @@ class PolicyEngine:
     def _is_allowlisted(self, rule_id: str, evidence: str) -> bool:
         return self.allowlist_match(rule_id, evidence) is not None
 
-    def allowlist_match(self, rule_id: str, evidence: str) -> Optional["AllowlistEntry"]:
+    def allowlist_match(
+        self, rule_id: str, evidence: str,
+        rule: Optional["CompiledRule"] = None, shell: bool = False,
+    ) -> Optional["AllowlistEntry"]:
         """The allowlist entry suppressing this finding, or None.
 
         Returning the entry rather than a bool is what lets a reader see *which*
@@ -3450,8 +3522,25 @@ class PolicyEngine:
             if entry.type == "veto" and entry.applies_to(rule_id) and entry.patterns.search(evidence):
                 return None
         for entry in self.allowlists:
-            if entry.type == "allow" and entry.applies_to(rule_id) and entry.patterns.search(evidence):
+            if entry.type != "allow" or not entry.applies_to(rule_id):
+                continue
+            if rule is None or not shell:
+                if entry.patterns.search(evidence):
+                    return entry
+                continue
+            if entry.match == "exact" and entry.covers(evidence):
                 return entry
+            # A shell command is allowed only if every statement the rule
+            # still hits is itself covered: `<allowed>; <anything else>` used
+            # to ride through on the allowed half's substring match.
+            from prismor.runtime.data_boundary import _split_segments
+            segments = [s for s in _split_segments(evidence) if s.strip()]
+            if not any(entry.covers(s) for s in segments):
+                continue
+            residual = "\n".join(s for s in segments if not entry.covers(s))
+            if residual and _rule_hits(rule, residual):
+                continue
+            return entry
         return None
 
     @property
@@ -4612,6 +4701,7 @@ def export_effective_policy(engine: "PolicyEngine") -> Dict[str, Any]:
                 "rule_ids": sorted(entry.rule_ids),
                 "patterns": list(entry.raw_patterns),
                 "reason": entry.reason,
+                **({"match": "exact"} if entry.match == "exact" else {}),
             }
             for entry in sorted(engine.allowlists, key=lambda e: e.id)
         ],
