@@ -88,6 +88,10 @@ For the Skill, curl, and git-clone alternatives, plus PEP 668 systems and secret
 - 🤖 [Hermes Agent Cloaking](docs/hermes.md) covers Hermes-specific secret cloaking with pip entry-point auto-discovery, filesystem install, and pre_gateway_dispatch paste guard
 - ☁️ [Hosted Agent VMs](docs/cloud-agents.md) governs agents that run on a machine you never log into (Claude Code on the web, Cursor cloud agents, Copilot coding agent, OpenHands Cloud, Codex cloud, Replicas): the platform's setup script installs the binary, and `install-hooks --portable` writes a hook config that is safe to commit
 - 🧠 [Semantic Guard](docs/semantic-guard.md): opt-in hybrid layer that adds an LLM-assisted intent check for paraphrased prompt-injection attempts the regex rules cannot catch
+- 🚧 [Data Boundary](docs/data-boundary.md) decides what may be sent where: real emails, phones, SSNs, cards, IBANs and secrets are screened against the destination's trust tier, so an agent following a third-party setup guide can't ship your data to a service you never approved
+- 🧑‍🤝‍🧑 [Subagents](docs/subagents.md) enforces the same policy inside Claude Code subagents, refuses approval prompts a background subagent can't ask for, and tells you in one line what happened inside each one
+- 🔎 [Dev Insights](docs/dev-insights.md): `prismor rca`, `blame`, `friction` and `session --changes` answer where an agent run went wrong, who wrote a line, and what agents keep tripping over
+- ⏸️ [Pause and Login](docs/pause-and-login.md): `prismor pause` stops blocking without going dark; `prismor login` connects the hosted judge
 - 🪤 [Canary](docs/canary.md) plants honeytoken credential files that trip a CRITICAL finding the moment an agent reads them, catching recon behavior
 - 🪪 [IAM](docs/iam.md) gives each agent a named identity and least-privilege permission profile when several agents share a workspace
 - 🧩 [Framework Agents](docs/frameworks-overview.md) guards production agents (OpenAI Agents SDK, LangChain/LangGraph in Python and JS, CrewAI, browser-use, Pydantic AI, AutoGen Core, Agno, Semantic Kernel, Google ADK, BeeAI, Claude Agent SDK, Vercel AI SDK, Mastra) with one call — wrap each request in `use_subject("user:alice")` and a multi-tenant agent gets per-user attribution, per-user IAM profiles, and per-user suspension
@@ -402,7 +406,7 @@ If you only run one scope, the other one's hooks (if installed) keep firing. Run
 
 A running session has already loaded its hook config — uninstalling mid-session won't take effect until you start a new session.
 
-If `prismor uninstall-hooks` reports success but hooks are still firing, you're likely running a stale install — e.g. a `pipx`-installed copy that's an out-of-date snapshot of a dev checkout. Check `which immunity` and, if it resolves into a `pipx` venv, reinstall from the current source (`pipx install --force <path-or-package>`) before re-running the uninstall. As a last resort, hand-edit the hooks config file directly.
+If `prismor uninstall-hooks` reports success but hooks are still firing, you're likely running a stale install — e.g. a `pipx`-installed copy that's an out-of-date snapshot of a dev checkout. Check `which prismor` and, if it resolves into a `pipx` venv, reinstall from the current source (`pipx install --force <path-or-package>`) before re-running the uninstall. As a last resort, hand-edit the hooks config file directly.
 
 ### 2. Soft-disable: observe mode + dry-run
 

@@ -12,7 +12,7 @@ See also: [docs/sdk-integration.md](sdk-integration.md)
 
 Everything here is **opt-in**. On a plain install, `prismor/runtime/enterprise/*` is the
 **client** side and a guarded no-op: `is_enrolled()` returns False and every
-control-plane path short-circuits. Local protection — the 63 default rules in
+control-plane path short-circuits. Local protection — the 90+ default rules in
 `prismor/runtime/default_policy.yaml` — is always on, enrolled or not.
 
 ## Connection lifecycle at a glance

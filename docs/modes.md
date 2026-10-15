@@ -32,7 +32,7 @@ rule-by-rule picker only if you choose `custom`.
 | | `dev-safe` | `trusted-workspace` | `regulated-airgap` |
 |---|---|---|---|
 | **Intent** | Known developer destinations only | Broad autonomy, guarded at the edges | No network, no shell |
-| **Coverage** | 31% (25/80 rules) | 34% (27/80 rules) | 100% (80/80 rules) |
+| **Coverage** | 29% (26/91 rules) | 31% (28/91 rules) | 100% (91/91 rules) |
 | **Friction** | 9% | 9% | 90% |
 | **Enforcement** | observe default | observe default | enforce, all rules |
 | **Egress** | default deny, ~35 dev hosts | default deny, ~35 dev hosts | default deny, nothing allowed |

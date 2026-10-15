@@ -83,7 +83,7 @@ prismor dashboard   # opens http://127.0.0.1:7070 in your browser
 
 ## Detection coverage
 
-Prismor ships with 56 rules covering the [OWASP Top 10 for LLM Applications](https://genai.owasp.org/llm-top-10/):
+Prismor ships with 90+ rules (`prismor policy show` lists them) covering the [OWASP Top 10 for LLM Applications](https://genai.owasp.org/llm-top-10/):
 
 | Category | Severity | What it catches |
 |---|---|---|

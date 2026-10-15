@@ -2,84 +2,72 @@
 
 There are two independent kinds of coverage for LLM application frameworks and libraries, and it's easy to conflate them:
 
-1. **Runtime hook adapters** (`adapters/`, documented in [docs/frameworks-overview.md](docs/frameworks-overview.md)) — Prismor wraps the framework's own tool-execution surface *inside your running application* (e.g. `tool.func` in LangChain, `InterventionHandler.on_send` in AutoGen Core) so a call can actually be evaluated and blocked before it runs. Same enforcement pipeline as the coding-agent hooks in [AGENT_INTEGRATIONS.md](AGENT_INTEGRATIONS.md), different attach point.
-2. **Supply-chain coverage** (`supplychain/`) — NVD advisory tracking and typosquat protection for the package itself, evaluated at `pip install` / `npm install` time. This exists regardless of whether a runtime adapter exists, and applies even to frameworks with no programmable hook surface at all.
-
-This file tracks coverage against the 25 frameworks/platforms Langfuse lists as integrations on their docs site, split across both layers.
-
-_Last updated: 2026-07-24._
+1. **Runtime adapters** (`adapters/`, documented in [docs/frameworks-overview.md](docs/frameworks-overview.md)): Prismor wraps the framework's own tool-execution point *inside your running application* (for example `tool.func` in LangChain, `InterventionHandler.on_send` in AutoGen Core), so a call is evaluated and can be blocked before it runs. It is the same policy pipeline as the coding-agent hooks in [AGENT_INTEGRATIONS.md](AGENT_INTEGRATIONS.md), attached at a different point.
+2. **Supply-chain coverage** (`supplychain/`): checks on the package itself when it is installed through `prismor supplychain <pm> install`. This applies whether or not a runtime adapter exists, including to frameworks with no programmable hook surface at all.
 
 ---
 
-## Runtime adapter coverage
+## Runtime adapters
 
-Per [docs/frameworks-overview.md](docs/frameworks-overview.md) (merged 2026-07-24, PR #216 on top of #212/#213/#215), Prismor ships 14 framework adapters total. Of the 25 in scope here, **5 have a full runtime adapter**:
+Prismor ships 13 framework adapters. The Python ones are inside the `prismor` package (each extra only pulls in the framework; `prismor[frameworks]` installs all of them). The TypeScript ones are separate npm packages.
 
-| Framework | Adapter | Hook point | Install |
+| Framework | Language | Install | Guard |
 |---|---|---|---|
-| LangChain / LangGraph | `adapters/langchain` (+ JS via `prismor-warden` npm) | `tool.func` / `tool.invoke` before execution | `pip install "prismor[langchain]"` / `npm install prismor-warden` |
-| CrewAI | `adapters/crewai` | `tool.func` → `tool._run` → `tool.run` before execution | `pip install "prismor[crewai]"` |
-| AutoGen Core (Microsoft) | `adapters/autogen-core` | `InterventionHandler.on_send` before a `FunctionCall` reaches a `ToolAgent` | `pip install "prismor[autogen-core]"` |
-| Vercel AI SDK | `prismor-warden` (npm) | `tool.execute` before the tool body runs | `npm install prismor-warden` |
-| Mastra | `adapters/mastra` (`prismor-mastra` npm) | `tool.execute` before the tool body runs | `npm install prismor-mastra` |
+| OpenAI Agents SDK | Python | `pip install "prismor[openai-agents]"` | `guard_agent(agent)` |
+| LangChain / LangGraph | Python | `pip install "prismor[langchain]"` | `guard_tools([...])` |
+| CrewAI | Python | `pip install "prismor[crewai]"` | `guard_tools([...])` |
+| browser-use | Python | `pip install "prismor[browser-use]"` | `guard_controller(controller)` |
+| Pydantic AI | Python | `pip install "prismor[pydantic-ai]"` | `guard_toolsets([...])` |
+| AutoGen Core (Microsoft) | Python | `pip install "prismor[autogen-core]"` | `PrismorInterventionHandler(...)` |
+| Agno | Python | `pip install "prismor[agno]"` | `tool_hooks=[prismor_tool_hook]` |
+| Semantic Kernel (Microsoft) | Python | `pip install "prismor[semantic-kernel]"` | `add_filter(..., make_filter(...))` |
+| Google ADK | Python | `pip install "prismor[google-adk]"` | `before_tool_callback=make_before_tool_callback(...)` |
+| BeeAI Framework | Python | `pip install "prismor[beeai]"` | `guard_tool(tool)` / `guard_tools([...])` |
+| Claude Agent SDK | Python | `pip install "prismor[claude-agent-sdk]"` | `hooks={"PreToolUse": [prismor_hook_matcher(...)]}` |
+| Vercel AI SDK, LangChain JS / LangGraph JS | TypeScript | `npm install prismor-warden` | `prismorTools(tools)` / `prismorLangChainTools([...])` |
+| Mastra | TypeScript | `npm install prismor-mastra` | `prismorTool(name, tool)` |
 
-Prismor also has adapters for 9 frameworks outside the original 25 (OpenAI Agents SDK, browser-use, Pydantic AI, Agno, Semantic Kernel, Google ADK, BeeAI, Claude Code Agent SDK) — not tracked in this file since they weren't in scope, see the overview doc.
+Anything else can call `prismor eval-server` over HTTP (`POST /v1/evaluate`); see [docs/decision-contract.md](docs/decision-contract.md). Default modes differ between adapters, so pass the mode explicitly; each framework's page has the details.
 
-**Note on naming:** `AutoGen Core` (`autogen-core` pip package, the adapter target) and classic `AutoGen`/`pyautogen` (the older Microsoft package, still widely installed) are different packages. The adapter covers the former; supply-chain typosquat protection below covers the latter — both matter.
-
----
-
-## Supply-chain-only coverage (the other 20)
-
-For everything without a runtime adapter, coverage is two mechanisms in `supplychain/`:
-
-- **NVD advisory tracking** (`pipeline/fetch_nvd_intel.py` `KEYWORDS`) — pulls known CVEs mentioning the name into `advisories/immunity-feed.json`; `prismor supplychain <pm> install <pkg>` scores against that feed.
-- **Typosquat protection** (`supplychain/scoring/typosquat.py` `POPULAR_PACKAGES`) — flags a Levenshtein-distance-1/2 near-miss of a real, popular package name.
-
-| Framework | NVD keyword | Typosquat (pip/pypi) | Typosquat (npm) | Advisory feed entries today |
-|---|---|---|---|---|
-| LlamaIndex | ✅ | — | — | ✅ |
-| AutoGen (classic, `pyautogen`) | ✅ | ✅ `pyautogen` | — | none yet |
-| smolagents | ✅ | ✅ `smolagents` | — | ✅ (sandbox escape) |
-| Langfuse | ✅ | ✅ `langfuse` | ✅ `langfuse` | none yet |
-| Haystack | ✅ | ✅ `haystack-ai` | — | none yet |
-| LiteLLM | — (advisory feed only) | — | — | ✅ (SSRF) |
-| Instructor | ✅ | ✅ `instructor` | — | none yet |
-| DSPy | ✅ | ✅ `dspy` | — | none yet |
-| Mirascope | ✅ | ✅ `mirascope` | — | none yet |
-| Ollama | ✅ | ✅ `ollama` | — | none yet |
-| Amazon Bedrock | ✅ | — (SDK surface, not a standalone package) | — | none yet |
-| Flowise | ✅ | — | — | ✅ (cross-tenant secret exposure) |
-| Langflow | ✅ | ✅ `langflow` | — | none yet |
-| Dify | ✅ | — (typically self-hosted, not pip/npm installed) | — | ✅ (SSRF, RCE) |
-| OpenWebUI | ✅ | — (typically self-hosted) | — | ✅ (SSRF) |
-| Promptfoo | ✅ | ✅ `promptfoo` | — | none yet |
-| LobeChat | ✅ | — (self-hosted app) | — | none yet |
-| Vapi | ✅ | — (hosted platform, no installable package) | — | none yet |
-| Inferable | ✅ | — | — | none yet |
-| Gradio | ✅ | ✅ `gradio` | — | none yet |
-| Goose | ✅ | — (ships as a binary, not pip/npm) | — | none yet |
-
-CrewAI, LangChain, and Mastra also carry supply-chain coverage on top of their adapters (`crewai`, `langchain`, and note below on Mastra) — the two layers are independent and additive, not redundant.
-
-**Deliberately not added:** `ai` (Vercel AI SDK's npm package name) and `@mastra/core` are **not** typosquat-protected. Both normalize to a 2–4 character comparison string (`ai`, `core`) after scope-stripping, and the distance-1 threshold used for short names would flag large numbers of unrelated legitimate packages. That trades a narrow, unproven threat for a broad false-positive source — revisit with a name-specific carve-out if a real incident targets either package.
+**Note on naming:** `AutoGen Core` (the `autogen-core` package, which the adapter targets) and classic `AutoGen` / `pyautogen` (the older Microsoft package, still widely installed) are different packages. The adapter covers the former; supply-chain typosquat checks cover the latter.
 
 ---
 
-## What changed in this pass
+## Supply-chain coverage for frameworks without an adapter
 
-Before this pass, `pipeline/fetch_nvd_intel.py` tracked only `LangChain`, `LlamaIndex`, `OpenAI`, `Anthropic`, `CrewAI`, `AutoGPT`, `Vanna`; `typosquat.py` protected only `langchain` (pip/npm), `openai`, `anthropic` (pip). This pass:
+For frameworks with no runtime adapter, coverage comes from two mechanisms in `supplychain/` and `pipeline/`:
 
-- Added NVD keyword tracking for all 20 frameworks in the supply-chain-only table above that had none.
-- Added typosquat protection for the subset with a real, installable pip package name and low false-positive risk (12 of the 20 — see table).
-- Did **not** touch `adapters/` or `docs/frameworks-overview.md` — the 5 frameworks with real hook adapters already had that coverage before this pass; this pass only added the supply-chain layer where it was missing.
+- **Vulnerability lookups at install time.** `prismor supplychain <pm> install <pkg>` checks the version being installed against OSV and the signed IOC feed. `pipeline/fetch_nvd_intel.py` also tracks NVD CVEs for the names in its `KEYWORDS` list.
+- **Typosquat checks** (`supplychain/scoring/typosquat.py`): an install name that is a near-miss of a popular package is flagged.
+
+| Framework | NVD keyword | Typosquat target (PyPI) |
+|---|---|---|
+| LlamaIndex | ✅ | ✅ `llama-index` |
+| AutoGen (classic) | ✅ | ✅ `pyautogen` |
+| smolagents | ✅ | ✅ `smolagents` |
+| Haystack | ✅ | ✅ `haystack-ai` |
+| LiteLLM | — | ✅ `litellm` |
+| Instructor | ✅ | ✅ `instructor` |
+| DSPy | ✅ | ✅ `dspy` |
+| Mirascope | ✅ | ✅ `mirascope` |
+| Ollama | ✅ | ✅ `ollama` |
+| Amazon Bedrock | ✅ | ✅ `boto3` |
+| Langflow | ✅ | ✅ `langflow` |
+| Promptfoo | ✅ | ✅ `promptfoo` |
+| Gradio | ✅ | ✅ `gradio` |
+| Flowise, Dify, OpenWebUI, LobeChat | ✅ | — (usually self-hosted, not installed with pip/npm) |
+| Vapi, Inferable | ✅ | — (hosted platforms) |
+| Goose | ✅ | — (ships as a binary) |
+
+CrewAI, LangChain and Mastra have supply-chain coverage on top of their adapters; the two layers are independent.
+
+**Deliberately not added:** `ai` (the Vercel AI SDK's npm package name) and `@mastra/core` are not typosquat targets. Both reduce to a 2–4 character comparison string (`ai`, `core`) after the scope is stripped, and checking names that short would flag many unrelated legitimate packages.
 
 ---
 
 ## Sources
 
-- [docs/frameworks-overview.md](docs/frameworks-overview.md) — authoritative for runtime adapter coverage.
-- `pipeline/fetch_nvd_intel.py` — NVD keyword list.
-- `advisories/immunity-feed.json` — resulting CVE entries.
-- `supplychain/scoring/typosquat.py` — `POPULAR_PACKAGES`.
-- `supplychain/scoring/engine.py` — risk-scoring rules referencing specific incidents (e.g. LiteLLM backdoor comment).
+- [docs/frameworks-overview.md](docs/frameworks-overview.md): authoritative for runtime adapter coverage.
+- `pipeline/fetch_nvd_intel.py`: the NVD keyword list.
+- `supplychain/scoring/typosquat.py`: popular-package lists per ecosystem.
+- `supplychain/scoring/engine.py`: risk-scoring rules.

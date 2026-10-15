@@ -18,7 +18,7 @@ There are two shapes:
 - **Top-level commands** — `prismor status`, `prismor audit`, `prismor check …`
 - **Domains** that take an action — `prismor cloak add …`, `prismor canary plant …`
 
-`prismor` is a deprecated drop-in alias for `prismor`; it forwards everything
+`immunity` is a deprecated drop-in alias for `prismor`; it forwards everything
 unchanged and prints a migration notice. Use `prismor`.
 
 ---
@@ -39,65 +39,79 @@ unchanged and prints a migration notice. Use `prismor`.
 ```
 prismor
 │
-├─ Onboarding & lifecycle
+├─ Get started
 │   ├─ setup                  Interactive onboarding wizard (TUI)
+│   ├─ status [--all]         Health check (this workspace / all workspaces)
+│   ├─ doctor                 Health-check every subsystem (hooks, policy, signature, telemetry)
+│   ├─ discover [section]     Sweep host for ungoverned agents, MCP servers, keys (--fix to govern them)
+│   ├─ dashboard              Local web dashboard (127.0.0.1:7070, opens browser)
+│   ├─ login                  Connect this machine to the Prismor API (hosted judge)
+│   ├─ update                 Self-update check / upgrade
+│   ├─ docs [name]            Print a bundled doc page, or list them
 │   ├─ install-hooks          Wire Prismor hooks into an agent/IDE
 │   ├─ uninstall-hooks        Remove hooks
-│   ├─ update                 Self-update check / upgrade
-│   └─ status [--all]         Health check (this workspace / all workspaces)
+│   └─ surfaces               Which enforcement surfaces (hooks, mirror, gateway) are active
 │
-├─ Runtime protection (policy engine)
+├─ Day to day
 │   ├─ check                  Pre-check a command or path against policy
 │   ├─ allow <rule>           Make an exception to a rule that blocked you
+│   ├─ pause / pause-hard     Suspend local enforcement (24h / until resume); observe stays on
+│   ├─ resume                 Resume enforcement
 │   ├─ unlock / lock          Open/close the agent self-edit window (password)
-│   ├─ semantic-check         Hybrid LLM prompt-injection guard
-│   ├─ sandbox <action>       status · check · run — Docker command sandbox
-│   ├─ eval-server            HTTP evaluation endpoint for non-Python adapters
-│   ├─ proxy                  LLM policy proxy — screens model traffic and proposed tool calls
-│   ├─ proxy                  LLM proxy — screens model traffic and proposed tool calls
-│   ├─ inference-hook <action> serve · test · secret — Claude Inference Hooks AI security server
-│   ├─ egress <action>        show · report · test · allow · deny · mode · request — network egress policy
-│   ├─ mirror <action>        on · off · status · passthrough — governed built-ins over MCP
-│   ├─ mode <action>          list · explain · apply · show — whole-posture templates
-│   └─ policy <action>        init · validate · show · edit · test
+│   └─ mode <action>          list · explain · apply · show — whole-posture templates
 │
-├─ Visibility (audit & forensics)
+├─ Policy & scoping
+│   ├─ policy <action>        init · validate · show · export · edit · test
+│   ├─ tags <action>          list · set · rm · rules · provenance · edit · lint · test
+│   ├─ scope <action>         Session-scoped, task-specific rules
+│   ├─ iam <action>           Named agent identities / permission profiles
+│   ├─ egress <action>        show · report · test · allow · deny · mode · request — network egress policy
+│   ├─ agents <action>        Named agent instances — list · show · set (kill-switch, mode, IAM)
+│   └─ learn                  Mine session history for new rules
+│
+├─ Secrets
+│   ├─ cloak <action>         install · add · list · remove · status · run · pattern
+│   ├─ sweep                  Find & vault leaked secrets on disk
+│   └─ canary <action>        Plant & manage honeytoken tripwires
+│
+├─ Scanning & audit
 │   ├─ audit                  Full posture audit (--fix to remediate)
 │   ├─ audit judge            LLM judge reviews a sample of ALLOWED calls after the fact
 │   ├─ scan                   Scan MCP servers & skills for risk
-│   ├─ extensions <action>    list · why · approve · wrap-hooks — what puts instructions or code into the agent
 │   ├─ deps                   Check project deps vs. threat feed
+│   ├─ skills <action>        audit · approve — installed SKILL.md baselines
+│   ├─ extensions <action>    list · why · approve · wrap-hooks — what puts instructions or code into the agent
+│   ├─ memory <action>        status · trust · verify · scan · approve · sign · unsign — instruction-file integrity
+│   ├─ semantic-check         Hybrid LLM prompt-injection guard
+│   └─ supplychain <action>   npm/pip/pnpm/uv/cargo/go/gem/composer/mvn install gate · harden
+│
+├─ Enforcement surfaces
+│   ├─ mirror <action>        on · off · status · passthrough — governed built-ins over MCP
+│   ├─ mcp-gateway [action]   serve · install · uninstall — one MCP connector in front of all servers
+│   ├─ proxy                  LLM/A2A proxy — screens model traffic and proposed tool calls
+│   ├─ elevenlabs <action>    status · connect · disconnect — ElevenLabs voice agents via the proxy
+│   ├─ sandbox <action>       status · check · run — Docker command sandbox
+│   ├─ inference-hook <action> serve · test · secret — Claude Inference Hooks AI security server
+│   └─ eval-server            HTTP evaluation endpoint for non-Python adapters
+│
+├─ Sessions & evidence
+│   ├─ sessions / session     List / show stored sessions (session <id> --changes: files touched)
 │   ├─ analyze / ingest       Run the engine over a JSONL session
 │   ├─ ingest --discover      Reconstruct past agent activity from on-disk transcripts
-│   ├─ sessions / session     List / show stored sessions
+│   ├─ tokens                 Token usage and estimated cost
 │   ├─ trail <action>         verify · show · checkpoint — signed audit trail
-│   ├─ attest [verify|coverage]  Signed evidence bundle + framework coverage
-│   ├─ discover [section]     Sweep host for ungoverned agents, MCP servers, keys (--fix to govern them)
-│   ├─ status --all           Terminal overview of all workspaces
-│   └─ dashboard              Local web dashboard (127.0.0.1:7070, opens browser)
+│   ├─ attest [verify|coverage]  Evidence bundle + framework coverage
+│   ├─ query                  Read-only SQL over the local session store
+│   ├─ rca [session]          What went wrong in a session
+│   ├─ blame <path[:line]>    Which agent session wrote this file or line
+│   └─ friction               Failures that recur across sessions, as AGENTS.md lines
 │
-├─ Secret prevention
-│   ├─ cloak <action>         install · add · list · remove · status · pattern
-│   └─ sweep                  Find & vault leaked secrets on disk
-│
-├─ Identity & scoping
-│   ├─ iam <action>           Named agent identities / permission profiles
-│   ├─ agents <action>        Named agent instances — list · show · set (kill-switch, mode, IAM)
-│   ├─ scope <action>         Session-scoped, task-specific rules
-│   └─ canary <action>        Plant & manage honeytoken tripwires
-│
-├─ Adaptive defense
-│   └─ learn                  Mine session history for new rules
-│
-├─ Enterprise / org
-│   ├─ enroll <token>         Enroll this machine against your org's control plane
-│   ├─ enroll-status          Show enrollment + applied policy version
-│   ├─ workspace <action>     Show/set whether this workspace is org-managed or personal
-│   ├─ exempt <action>        Request an admin exemption for this repo
-│   └─ logout                 Un-enroll (remove device identity + cached policy)
-│
-└─ Supply chain
-    └─ supplychain <action>   npm/pip/pnpm/uv/cargo/go install gate · harden
+└─ Org enrollment
+    ├─ enroll <token>         Enroll this machine against your org's control plane
+    ├─ enroll-status          Show enrollment + applied policy version
+    ├─ workspace <action>     Show/set whether this workspace is org-managed or personal
+    ├─ exempt <action>        Request an admin exemption for this repo
+    └─ logout                 Un-enroll (remove device identity + cached policy)
 ```
 
 ---
@@ -106,11 +120,13 @@ prismor
 
 | Command | Key flags | Description |
 |---|---|---|
-| `prismor setup [DIR]` | `--non-interactive`, `--mode`, `--enforce-rules`, `--recommended`, `--agents`, `--cloak/--no-cloak`, `--judge <claude\|codex\|api>`, `--judge-model` | Interactive wizard (or scripted with flags / `PRISMOR_MODE`, `PRISMOR_CLOAK`, `PRISMOR_JUDGE`, `PRISMOR_JUDGE_MODEL` env vars). Picks mode, chooses which rules block, selects agents, enables cloaking, picks which login judges uncertain events (see [Semantic Guard](semantic-guard.md)), and optionally sets an unlock password. See [Choosing what blocks](#choosing-what-blocks). |
+| `prismor setup [DIR]` | `--non-interactive`, `--mode`, `--enforce-rules`, `--recommended`, `--agents`, `--cloak/--no-cloak`, `--judge <claude\|codex\|api\|prismor>`, `--judge-model` | Interactive wizard (or scripted with flags / `PRISMOR_MODE`, `PRISMOR_CLOAK`, `PRISMOR_JUDGE`, `PRISMOR_JUDGE_MODEL` env vars). Picks mode, chooses which rules block, selects agents, enables cloaking, picks which login judges uncertain events (see [Semantic Guard](semantic-guard.md)), and optionally sets an unlock password. See [Choosing what blocks](#choosing-what-blocks). |
 | `prismor install-hooks` | `--agent <name\|all>` (required), `--mode <observe\|enforce>`, `--scope <project\|user>`, `--portable` | Writes hook config for the chosen agent so Prismor sees tool calls. Without hooks, nothing is monitored. `--portable` writes a command with no machine-specific paths, so the file can be committed and cloned onto a hosted agent's VM — see [cloud-agents.md](cloud-agents.md). |
 | `prismor uninstall-hooks` | `--agent <name\|all>`, `--scope` | Removes Prismor hooks for an agent. For `claude`/`all`, this also removes cloaking hooks (`prismor cloak install`) — secrets are no longer protected at the tool boundary until you reinstall with `prismor cloak install`. |
 | `prismor status` | `--workspace`, `--all`, `--days N` | Health check: hooks, mode, cloak state, latest session, and the single next action. Run this first every session. `--all` shows every registered workspace. |
 | `prismor doctor` | `--json`, `--self-test` | Inspect hook configuration, launcher files, policy, enrollment, telemetry, and chain state. Optionally probe recognized dispatchers. Exits non-zero when a check fails. |
+| `prismor surfaces` | — | Which enforcement surface governs each agent on this machine (hooks, MCP mirror, gateway), and which agents nothing governs. |
+| `prismor login` | `--no-browser`, `--label`, `--api-base`, `--force`, `--set-judge` | Sign in and connect this machine to the Prismor API, which gives you the hosted semantic judge (1,000 free verdicts a month). `--set-judge` also sets `semantic_guard.provider: prismor` for this workspace. See [Semantic Guard](semantic-guard.md). |
 | `prismor update` | `--check` | Check for (or install) a newer prismor release. |
 | `prismor info` | `--workspace` | _Deprecated_ alias of `status`. |
 
@@ -193,13 +209,13 @@ Coverage and rule counts are **computed from the live ruleset** by `prismor mode
 list`, not hardcoded here — they move as rules are added. Friction is likewise
 **measured**, not estimated: `tests/test_modes.py` runs a benign corpus of
 ordinary developer commands through each compiled mode and pins the declared
-`friction_index` to the share it interrupts. The figures below are from an
-80-rule policy.
+`friction_index` to the share it interrupts. The figures below are from a
+91-rule policy.
 
 | | `dev-safe` | `trusted-workspace` | `regulated-airgap` |
 |---|---|---|---|
-| **Rules blocking** | 25/80 | 27/80 | 80/80 |
-| **Coverage** | 31% | 34% | 100% |
+| **Rules blocking** | 26/91 | 28/91 | 91/91 |
+| **Coverage** | 29% | 31% | 100% |
 | **Friction** | 9% | 9% | 90% |
 | **Intended for** | daily development | trusted internal repos | regulated / PII |
 
@@ -338,10 +354,13 @@ outside all of this, the same as every other Prismor control.
 | Command | Key flags | Description |
 |---|---|---|
 | `prismor check "<value>"` | `--type <command\|read\|write>`, `--explain`, `--from-log`, `--suggest-allowlist` | Dry-run a command or file path against the active policy. Returns ALLOW / WARN / BLOCK + reason without executing. Exit `2`=block, `1`=warn, `0`=clean. |
-| `prismor semantic-check [TEXT]` | `--mode <hybrid\|heuristic\|api>`, `--provider <claude\|codex\|api>`, `--json`, `--cli-path` | Run the semantic prompt-injection guard on text or stdin. See [Semantic Guard](semantic-guard.md). |
+| `prismor semantic-check [TEXT]` | `--mode <hybrid\|heuristic\|api>`, `--provider <claude\|codex\|api\|prismor>`, `--model`, `--json`, `--cli-path` | Run the semantic prompt-injection guard on text or stdin. See [Semantic Guard](semantic-guard.md). |
 | `prismor allow <rule>` | `--pattern`, `--expires`, `--observe`, `--off`, `--yes`, `--reason`, `--list`, `--undo`, `--workspace` | Make an exception to a rule that blocked you, narrowest first. With no `--pattern` it uses the text of the most recent block for that rule. `--observe` keeps the rule but stops it blocking; `--off` disables it for the workspace (needs `--yes`). Refuses self-protection rules, refuses to turn a floor rule off, and refuses everything where an org's signed policy governs. See [Making exceptions](#making-exceptions). |
 | `prismor unlock` | `--for`, `--status`, `--set-password`, `--system-password`, `--forget`, `--workspace` | Open a short window (default 3 minutes) in which the agent may edit Prismor's own policy. Asks for your unlock password; needs a terminal. `--system-password` verifies against your operating-system account instead of storing a Prismor one. |
 | `prismor lock` | — | Close the self-edit window early. |
+| `prismor pause` | `--for DURATION` (default `24h`), `--reason` | Suspend local enforcement: tool calls are still screened and logged (observe), but nothing blocks. Auto-resumes after `--for` (`30m`, `2h`, `1d`). The reason is shown in the console next to the device. Agents cannot run it. See [Pause and resume](pause-and-login.md). |
+| `prismor pause-hard` | `--reason` | Same as `pause`, with no auto-resume: enforcement stays off until `prismor resume`. |
+| `prismor resume` | — | Resume enforcement after `pause` / `pause-hard`. |
 | `prismor policy init` | `--workspace` | Scaffold `.prismor/policy.yaml`. |
 | `prismor policy show` | `--workspace` | Print active rules after merging defaults + project overrides. |
 | `prismor policy export` | `--json`, `--output PATH`, `--workspace` | Print the effective merged policy as stable, sorted JSON — patterns already resolved and disabled rules dropped — for non-Python consumers and for committing/diffing. |
@@ -358,6 +377,8 @@ outside all of this, the same as every other Prismor control.
 | `prismor mirror off` | `--workspace` | Undo exactly what `on` did — the agent uses its native tools again from the next session. |
 | `prismor mirror status` | `--workspace` | Where the mirror is configured, whether it is governing / passing through / paused, its tool roster, live gateway processes. |
 | `prismor mirror passthrough <on\|off>` | `--workspace` | Runtime switch, no restart: `on` runs mirrored built-ins ungoverned (logged, not blocked or redacted). `prismor pause` does the same for hooks + gateway together, with auto-resume. |
+| `prismor mcp-gateway [serve]` | `--config` (default `~/.prismor/mcp-gateway.json`), `--upstream`, `--server name=<url\|command>`, `--mode <observe\|enforce>` (default observe), `--namespace <plain\|none>`, `--mirror`, `--workspace`, `--session-id`, `--identity-issuer`/`--identity-audience`/`--identity-jwks`/`--identity-mode`/`--identity-user-claim`/`--identity-team-claim`/`--identity-roles-claim` | One stdio MCP server in front of every server in `--config`. Each `tools/call` is policy-evaluated before it is forwarded, and each response is injection-scanned before the model sees it. Tools are namespaced `<server>__<tool>`. See [MCP Gateway](mcp-gateway.md). |
+| `prismor mcp-gateway install` | `--all`, `--mode` | Move this workspace's `.mcp.json` servers behind the gateway (backup kept). `--all` migrates every MCP config on the machine (Claude Desktop, Cursor, VS Code, …). `uninstall` restores the backup. |
 | `prismor egress migrate` | `--workspace` | Convert a legacy warn-only `settings.egress_allowlist` into an enforceable `settings.egress`. |
 | `prismor egress request <host>` | `--reason` (required), `--workspace` | Enrolled devices: ask your org's admins to allow a host. Lands in the console under Policy → Requests; approving adds it to the egress allowlist of the policy governing your device. See [Network Isolation](network-isolation.md#when-your-agent-is-blocked-request-access). |
 | `prismor tags list` | `--last N`, `--workspace` | Tools seen in recent sessions + resolved tags + which tier resolved them (explicit / `_meta` / default / inference). See [Tool Tags](tool-tags.md). |
@@ -372,12 +393,6 @@ outside all of this, the same as every other Prismor control.
 | Command | Key flags | Description |
 |---|---|---|
 | `prismor eval-server` | `--port` (default 7071), `--host` (default 127.0.0.1), `--workspace`, `--api-key`, `--identity-issuer`/`--identity-audience`/`--identity-jwks`/`--identity-mode` ([identity verification](identity-verification.md)) | HTTP evaluation endpoint (`POST /v1/evaluate`) so non-Python adapters (Vercel AI SDK, anything HTTP) get the same policy pipeline. See [Frameworks overview](frameworks-overview.md) and [Vercel AI SDK](frameworks-vercel-ai.md). |
-
-### proxy
-
-| Command | Key flags | Description |
-|---|---|---|
-| `prismor proxy` | `--port` (default 7080), `--host` (default 127.0.0.1), `--mode observe\|enforce`, `--workspace`, `--config`, `--session-id`, `--agent-name` | Policy proxy for model traffic. Point an agent at it with `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`; the outbound prompt is screened and cloak-masked, and every `tool_use` in the response is evaluated as the tool call it is. See [the LLM proxy](llm-proxy.md). |
 
 ### proxy
 
@@ -413,8 +428,11 @@ Full policy model, rule schema, and the default rule list: [Prismor](prismor-run
 |---|---|---|
 | `prismor audit` | `--fix`, `--json`, `--workspace` | Posture audit across hooks, policy, cloak, permissions, feed, network, supply chain. `--fix` applies safe remediations. |
 | `prismor audit judge` | `--since 24h`, `--sample 0.05`, `--max 50`, `--dry-run`, `--json`, `--workspace` | Has the configured LLM judge review a deterministic sample of tool calls the rules ALLOWED, after the fact, from the local store. Results go to the `judge_audit` table; flagged calls are printed and sent as one content-free `judge_audit` record each. Never blocks. Exits 2 when no judge is configured. See [Semantic Guard](semantic-guard.md#auditing-allowed-calls). |
-| `prismor scan` | `--agent`, `--json` | Scan installed MCP servers and skills for dangerous patterns. See [Skill Scanner](skill-scanner.md). |
+| `prismor scan` | `--agent`, `--scope <all\|project\|user>`, `--json`, `--workspace` | Scan installed MCP servers and skills for dangerous patterns. See [Skill Scanner](skill-scanner.md). |
 | `prismor extensions [list\|why\|approve\|wrap-hooks\|unwrap-hooks]` | `--kind`, `--json`, `--workspace` | Inventory of skills, plugins, third-party hooks and MCP servers with origin, installer, capabilities and the documents they caused to be fetched. See [Extension Ledger](extensions.md). |
+| `prismor skills audit` | `--json`, `--workspace` | Scan every installed `SKILL.md`: what it instructs, its TOFU baseline, remote fetches. Exit `1` if a skill is new, changed or flagged. The `immunity-agent` skill that setup installs shows as `bundled` while it matches the packaged copy. |
+| `prismor skills approve <file>` | `--workspace` | Accept a new or changed skill after you have reviewed it. |
+| `prismor memory <status\|trust\|verify\|scan\|approve\|sign\|unsign>` | — | Instruction-file integrity for CLAUDE.md, AGENTS.md and friends: TOFU baselines (`trust`, `approve` after a reviewed change), read-only `verify`, content `scan` for memory-poisoning directives, and Ed25519 `sign`/`unsign` (requires `PRISMOR_MEMORY_SIGNED_MODE=1`). See [Memory integrity](memory-integrity.md). |
 | `prismor deps` | `--json`, `--workspace` | Cross-reference project dependencies against the signed IOC feed + lockfile integrity. See [Supply Chain](supply-chain.md). |
 | `prismor analyze [FILE]` | `--input`, `--json`, `--sarif` | Run the engine over a JSONL session (or the most recent one). SARIF output feeds GitHub Code Scanning. |
 | `prismor ingest --input <file>` | `--session-id`, `--agent` | Analyze a single pre-normalized JSONL session and store it in the local DB. |
@@ -423,11 +441,15 @@ Full policy model, rule schema, and the default rule list: [Prismor](prismor-run
 | `prismor ingest --discover --show <rule>` | — | List the individual tool calls behind one rule id. |
 | `prismor ingest --discover --export-corpus <dir>` | — | Write redacted, labelled rule fixtures (positives + negatives) from real usage. |
 | `prismor sessions` | `--findings-only`, `--global`, `--limit`, `--json` | List stored sessions, optionally only flagged ones, optionally across all workspaces. |
-| `prismor session <id>` | `--json` | Drill into one session's tool-call trace + findings. |
+| `prismor session <id>` | `--json`, `--changes` | Drill into one session's tool-call trace + findings. `--changes` lists the files it wrote (as diffs), the commands it ran, and a drafted PR description. See [Dev insights](dev-insights.md). |
+| `prismor rca [session]` | `--workspace`, `--json` | What went wrong in a session (default: the latest): the first failure with the calls before it, retry loops, reverted edits. See [Dev insights](dev-insights.md). |
+| `prismor blame <path[:line]>` | `--workspace`, `--json` | Which agent session wrote this file or line, and what that session was asked. |
+| `prismor friction` | `--days`, `--all`, `--workspace`, `--json` | Failures that recur across sessions, grouped by command and printed as AGENTS.md lines. |
+| `prismor tokens` | `--session ID`, `--hours N` (default 24), `--all`, `--workspace`, `--json` | Token usage and where it is going; `--session` gives one session's usage and estimated cost (Claude Code, Codex). |
 | `prismor trail verify` | `--pubkey`, `--json` | Verify the signed audit trail end-to-end: recompute hashes, prev-hash linkage, seq gaps, Ed25519 signatures. Exit non-zero on anything but a clean chain. See [Signed Audit Trail](audit-trail.md). |
 | `prismor trail show` | `--last N` | Render recent audit-trail records (verdict, agent, tool, input). |
 | `prismor trail checkpoint` | `--out FILE` | Export a signed chain-head checkpoint for anchoring outside the machine. |
-| `prismor attest` | `--out FILE`, `--workspace` | Build a signed evidence bundle: posture findings, agent inventory, and the trail anchor in one Ed25519-signed file. See [Attestation Bundle](attestation-bundle.md). |
+| `prismor attest` | `--out FILE`, `--workspace` | Build an evidence bundle (Ed25519-signed when `prismor[signing]` is installed; unsigned otherwise, and `attest verify` then fails): posture findings, agent inventory, and the trail anchor in one file. See [Attestation Bundle](attestation-bundle.md). |
 | `prismor attest verify <bundle>` | `--pubkey`, `--json` | Re-verify a bundle's content hash and signature. `--pubkey` pins an out-of-band signer key. Exit non-zero on failure. |
 | `prismor attest coverage` | `--json`, `--workspace` | Show which compliance-framework controls the active policy covers (OWASP LLM/Agentic, NIST AI RMF, EU AI Act). |
 | `prismor discover [all\|agents\|mcp\|keys]` | `--fix`, `--yes`, `--fix-mode`, `--json`, `--report`, `--no-file-scan`, `--fail-on-shadow`, `--workspace` | Sweep this host for the AI surface running outside Prismor's coverage (shadow AI): agents without hooks, MCP servers not routed through the gateway, and provider keys not registered with Cloak. Ends with a coverage score. Pass a section to limit the report; `--fail-on-shadow` exits 1 for CI; `--report` sends the inventory to your organization console for the fleet-wide Shadow AI view (enrolled devices only, and a no-op otherwise). `--fix` governs what it found — hooks the unmanaged agents, moves MCP servers behind the gateway (any config declaring `mcpServers`/`servers`, not just the workspace's), imports dotenv keys into Cloak — printing the plan and asking first (`--yes` to skip the prompt, `--fix-mode enforce` to install in enforce). Without `--fix` it is read-only; credential-shaped values in MCP URLs and argv are redacted before they reach output. On an enrolled device each reported finding also carries whether it is fixable and the command that fixes it, so the console can show what is actionable today. See [Host discovery](attestation-bundle.md#host-discovery). |
@@ -514,8 +536,8 @@ Deep dive: [Connecting to the platform](connecting-to-the-platform.md) · [Polic
 |---|---|
 | `prismor supplychain npm install <pkg>` | Score `<pkg>` (age, maintainers, install scripts, IOC match) and block if dangerous before npm runs. |
 | `prismor supplychain pip install <pkg>` | Same gate for PyPI. |
-| `prismor supplychain <pnpm\|yarn\|uv\|cargo\|go> …` | Same gate per ecosystem. Non-install commands pass through transparently. |
-| `prismor supplychain harden [--dry-run] [PATH]` | Write hardening settings (`ignore-scripts`, `save-exact`, pinned fetch) into package-manager configs. |
+| `prismor supplychain <pnpm\|yarn\|uv\|cargo\|go\|gem\|bundle\|composer\|mvn> …` | Same gate per ecosystem (`gem install`, `bundle add`, `composer require`, `mvn dependency:get`). Non-install commands pass through transparently. |
+| `prismor supplychain harden [--dry-run] [PATH]` | Write hardening settings into package-manager configs: npm `ignore-scripts`, `save-exact`, `audit`; Yarn `--ignore-scripts` / `enableScripts: false`; pip `no-input`; Cargo `[net]` retry and `git-fetch-with-cli`. |
 
 Scoring table, IOC feed, ecosystem support: [Supply Chain](supply-chain.md).
 
