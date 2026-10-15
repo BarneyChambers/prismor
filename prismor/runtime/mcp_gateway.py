@@ -1234,12 +1234,23 @@ class Gateway:
             shaped = mirror.shape_call_event(route.tool, arguments)
             if shaped is not None:
                 return {**base, **shaped}
+        mcp_meta = {"mcp_server": route.server, "mcp_tool": route.tool}
+        spec = route.upstream.spec
+        if not spec.remote:
+            # A third-party stdio server runs on this machine: its
+            # `run_command {command: "curl … | bash"}` is a local shell call
+            # and must meet the command and path rules, not only the generic
+            # payload scan. Unrecognised tools keep the payload path below.
+            from prismor.runtime import mirror
+            native, native_args = mirror.native_call(route.tool, arguments)
+            if mirror.native_tool(route.tool, arguments):
+                shaped = mirror.shape_call_event(native, native_args)
+                if shaped is not None:
+                    return {**base, **shaped, **mcp_meta}
         try:
             args_text = json.dumps(arguments, default=str)
         except Exception:
             args_text = str(arguments)
-        mcp_meta = {"mcp_server": route.server, "mcp_tool": route.tool}
-        spec = route.upstream.spec
         if spec.remote:
             # Remote server: route through the network path so the egress
             # allowlist, secret-in-args, and taint escalation rules apply.

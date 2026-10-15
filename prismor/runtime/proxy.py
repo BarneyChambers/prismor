@@ -163,42 +163,9 @@ READ_TIMEOUT = 600
 #: ``Screen.evaluate`` for why it is not once per event.
 SNAPSHOT_DEBOUNCE = 1.0
 
-# A model's tools are whatever the caller named them. Claude's are ``Bash`` and
-# ``Read``; an OpenAI-style agent calls the same thing ``bash``, ``shell`` or
-# ``run_command`` with ``cmd`` or an argv list. Matched only on the exact native
-# names, a proposed ``cat ~/.ssh/id_rsa`` fell through to the generic payload
-# path and no command rule ever saw a command.
-_PROPOSED_ALIASES = {
-    **{n: "Bash" for n in ("bash", "shell", "sh", "terminal", "exec", "run", "run_command", "run_shell_command",
-                           "execute_command", "execute_shell", "shell_command", "local_shell", "container.exec")},
-    **{n: "Read" for n in ("read", "read_file", "cat_file", "view_file", "open_file")},
-    **{n: "Write" for n in ("write", "write_file", "create_file", "save_file")},
-    **{n: "Edit" for n in ("edit", "edit_file", "str_replace", "replace_in_file")},
-    **{n: "WebFetch" for n in ("webfetch", "web_fetch", "fetch", "fetch_url", "http_get", "browse")},
-    "glob": "Glob", "grep": "Grep",
-}
-
-
 def _native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
-    """(native tool, native-keyed args) for a proposed call, so the mirror's
-    shaper -- and with it every hook rule -- applies to it."""
-    tool = _PROPOSED_ALIASES.get(str(tool_name or "").strip().lower(), tool_name)
-    if not isinstance(arguments, dict):
-        return tool, arguments
-    args = dict(arguments)
-    if tool == "Bash":
-        cmd = args.get("command", args.get("cmd", args.get("script")))
-        if isinstance(cmd, list):
-            import shlex
-            cmd = shlex.join(str(c) for c in cmd)
-        args["command"] = "" if cmd is None else str(cmd)
-    elif tool in ("Read", "Write", "Edit"):
-        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file") or "")
-        if tool == "Write":
-            args.setdefault("content", args.get("text") or args.get("contents") or "")
-    elif tool == "WebFetch":
-        args.setdefault("url", args.get("uri") or args.get("href") or "")
-    return tool, args
+    from prismor.runtime import mirror
+    return mirror.native_call(tool_name, arguments)
 
 
 # ── config ───────────────────────────────────────────────────────────────────

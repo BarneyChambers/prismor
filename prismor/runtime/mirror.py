@@ -356,6 +356,67 @@ def mirror_tool_definitions(workspace: Optional[Path] = None) -> List[Dict[str, 
 # by injection rules instead of shell rules, and every command rule silently
 # stops applying.
 
+# A model's (or an MCP server's) tools are whatever their author named them.
+# Claude's are ``Bash`` and ``Read``; an OpenAI-style agent calls the same thing
+# ``bash``, ``shell``, ``run_command`` or (Codex) ``exec_command``, with ``cmd``
+# or an argv list. Matched only on exact native names, a proposed
+# ``curl … | bash`` fell through to the generic payload path and no command rule
+# ever saw a command. Shared by the LLM proxy and the MCP gateway.
+_TOOL_ALIASES = {
+    **{n: "Bash" for n in ("bash", "shell", "sh", "terminal", "exec", "run", "run_command", "run_shell",
+                           "run_shell_command", "exec_command", "execute_command", "execute_shell",
+                           "shell_command", "local_shell", "container.exec", "run_terminal_cmd")},
+    **{n: "Read" for n in ("read", "read_file", "cat_file", "view_file", "open_file")},
+    **{n: "Write" for n in ("write", "write_file", "create_file", "save_file")},
+    **{n: "Edit" for n in ("edit", "edit_file", "str_replace", "replace_in_file")},
+    **{n: "WebFetch" for n in ("webfetch", "web_fetch", "fetch", "fetch_url", "http_get", "browse")},
+    "glob": "Glob", "grep": "Grep",
+}
+_SHELLISH_NAME = re.compile(r"shell|exec|command|terminal|bash|cmd")
+_COMMAND_KEYS = ("command", "cmd", "script")
+
+
+def native_tool(tool_name: str, arguments: Any = None) -> Optional[str]:
+    """The native tool (``Bash``/``Read``/…) a foreign tool name stands for, or None.
+
+    Exact aliases first, then a conservative fallback: a name that sounds like a
+    shell (``ssh_exec``, ``run_terminal_command``) AND arguments carrying a
+    command string is treated as ``Bash``. Both halves are required, so an
+    ``execute_sql(query=…)`` or a ``command_palette()`` is left alone.
+    """
+    name = str(tool_name or "").strip().lower()
+    for candidate in (name, name.rsplit(".", 1)[-1], name.rsplit("__", 1)[-1]):
+        if candidate in _TOOL_ALIASES:
+            return _TOOL_ALIASES[candidate]
+    if (isinstance(arguments, dict) and _SHELLISH_NAME.search(name)
+            and any(isinstance(arguments.get(k), (str, list)) and arguments.get(k)
+                    for k in _COMMAND_KEYS)):
+        return "Bash"
+    return None
+
+
+def native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
+    """(native tool, native-keyed args) for a foreign call, so ``shape_call_event``
+    -- and with it every hook rule -- applies to it. Unknown tools pass through."""
+    tool = native_tool(tool_name, arguments) or tool_name
+    if not isinstance(arguments, dict):
+        return tool, arguments
+    args = dict(arguments)
+    if tool == "Bash":
+        cmd = next((args[k] for k in _COMMAND_KEYS if args.get(k) is not None), None)
+        if isinstance(cmd, list):
+            import shlex
+            cmd = shlex.join(str(c) for c in cmd)
+        args["command"] = "" if cmd is None else str(cmd)
+    elif tool in ("Read", "Write", "Edit"):
+        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file") or "")
+        if tool == "Write":
+            args.setdefault("content", args.get("text") or args.get("contents") or "")
+    elif tool == "WebFetch":
+        args.setdefault("url", args.get("uri") or args.get("href") or "")
+    return tool, args
+
+
 def shape_call_event(tool: str, arguments: Any) -> Optional[Dict[str, Any]]:
     """Native-shaped PreToolUse body for a mirrored tool, or None if unknown."""
     args = arguments if isinstance(arguments, dict) else {}
