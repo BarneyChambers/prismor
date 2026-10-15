@@ -136,8 +136,8 @@ Per-agent matrix (only one `--agent` value per invocation, or `all`):
 | Claude Code | `claude` | `.claude/settings.json` |
 | Cursor | `cursor` | `.cursor/hooks.json` |
 | Windsurf | `windsurf` | `.windsurf/hooks.json` |
-| OpenClaw | `openclaw` | `~/.openclaw/config.json` |
-| Hermes | `hermes` | `~/.hermes/config.json` |
+| OpenClaw | `openclaw` | `.openclaw/extensions/prismor/` (plugin module) |
+| Hermes Agent | `hermes` | `.hermes/plugins/prismor/` (plugin; project scope needs `HERMES_ENABLE_PROJECT_PLUGINS=1`, so prefer `--scope global`) |
 | GitHub Copilot CLI | `copilot` | `.github/hooks/prismor.json` |
 | Codex (OpenAI) | `codex` | `.codex/hooks.json` |
 | Grok Build (xAI) | `grok` | `.grok/hooks/prismor.json` |
@@ -186,9 +186,9 @@ Optional: cloaking for secret prevention (Claude Code and Hermes today):
 prismor cloak install --workspace .
 prismor cloak add stripe_key      # reads value from stdin, never shell history
 
-# Hermes (pip-installed Hermes auto-discovers via entry-points; this is the
-# explicit filesystem install for non-pip setups):
-prismor cloak install --agent hermes --workspace .
+# Hermes (user scope: Hermes ignores project plugins unless
+# HERMES_ENABLE_PROJECT_PLUGINS=1 is set):
+prismor cloak install --agent hermes --scope global
 
 # Both at once:
 prismor cloak install --agent all --workspace .

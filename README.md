@@ -84,8 +84,8 @@ For the Skill, curl, and git-clone alternatives, plus PEP 668 systems and secret
 - [Claude Inference Hooks](docs/inference-hook.md) makes Prismor the AI security server behind Claude Enterprise: Anthropic sends every governed prompt from claude.ai, Claude Code and Cowork to `prismor inference-hook serve`, which runs your policy on the transcript and answers allow/deny before the model runs — signed requests (Standard Webhooks), fail-closed, shadow mode, nothing to install on user devices. `prismor inference-hook test` sends signed sample frames to check the wiring
 - 🏷️ [Tool Tags](docs/tool-tags.md) classify tools by capability (read, write, network, exec) so a rule can say "nothing that reads private data may also reach the network" instead of naming every tool one by one — MCP tools self-declare via `_meta`, and `prismor tags` lists, tests, and lints the rule expressions
 - 🔐 [Sweep and Cloak](docs/sweep-and-cloak.md) covers secret prevention at tool boundaries, practical setup, best practices, threat model, and cleanup for leaked secrets
-- 🦞 [OpenClaw Integration](docs/openclaw.md) covers runtime hooks, prompt-injection scanning, and project or user-scope setup for OpenClaw
-- 🤖 [Hermes Agent Cloaking](docs/hermes.md) covers Hermes-specific secret cloaking with pip entry-point auto-discovery, filesystem install, and pre_gateway_dispatch paste guard
+- 🦞 [OpenClaw Integration](docs/openclaw.md) covers the OpenClaw plugin that screens every tool call, and project or global setup
+- 🤖 [Hermes Agent Integration](docs/hermes.md) covers the Hermes policy plugin, secret cloaking (decloak at execution, output scrubbing, paste guard) and how Hermes enables plugins
 - ☁️ [Hosted Agent VMs](docs/cloud-agents.md) governs agents that run on a machine you never log into (Claude Code on the web, Cursor cloud agents, Copilot coding agent, OpenHands Cloud, Codex cloud, Replicas): the platform's setup script installs the binary, and `install-hooks --portable` writes a hook config that is safe to commit
 - 🧠 [Semantic Guard](docs/semantic-guard.md): opt-in hybrid layer that adds an LLM-assisted intent check for paraphrased prompt-injection attempts the regex rules cannot catch
 - 🪤 [Canary](docs/canary.md) plants honeytoken credential files that trip a CRITICAL finding the moment an agent reads them, catching recon behavior
@@ -385,8 +385,8 @@ prismor uninstall-hooks --agent all --scope project      # every supported agent
 | Claude Code | `<workspace>/.claude/settings.json` | `~/.claude/settings.json` |
 | Cursor | `<workspace>/.cursor/hooks.json` | `~/.cursor/hooks.json` |
 | Windsurf | `<workspace>/.windsurf/hooks.json` | `~/.codeium/windsurf/hooks.json` |
-| OpenClaw | `<workspace>/.openclaw/plugins.json` | `~/.openclaw/config.json` |
-| Hermes | `<workspace>/.hermes/plugins.json` | `~/.hermes/config.json` |
+| OpenClaw | `<workspace>/.openclaw/extensions/prismor/` | `~/.openclaw/extensions/prismor/` |
+| Hermes | `<workspace>/.hermes/plugins/prismor/` (needs `HERMES_ENABLE_PROJECT_PLUGINS=1`) | `~/.hermes/plugins/prismor/` |
 | Codex | `<workspace>/.codex/hooks.json` | `~/.codex/hooks.json` |
 | Copilot | `<workspace>/.github/hooks/prismor.json` | `~/.copilot/hooks/prismor.json` |
 | Grok Build | `<workspace>/.grok/hooks/prismor.json` | `~/.grok/hooks/prismor.json` |

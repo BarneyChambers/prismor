@@ -1,171 +1,87 @@
-# Hermes Agent Cloaking Integration
+# Hermes Agent Integration
 
-**Status:** ✅ Shipped (v1.6.0)
+Prismor governs [Hermes Agent](https://hermes-agent.nousresearch.com) (Nous Research) with two Python plugins that Hermes loads into its own process:
 
-Prismor's secret cloaking layer is available for [Hermes Agent](https://hermes-agent.nousresearch.com) (Nous Research's AI agent platform). This doc covers setup, architecture, and behavior.
+| Plugin | Installed by | What it does |
+|---|---|---|
+| `prismor` | `prismor install-hooks --agent hermes` | Runs every tool call through the Prismor policy engine before it executes, records the result afterwards, and screens each user turn. |
+| `prismor-cloak` | `prismor cloak install --agent hermes` | Secret cloaking: blocks raw secrets in tool calls, substitutes `@@SECRET:<name>@@` placeholders at execution time, and scrubs real values out of tool output. |
 
----
-
-## Overview
-
-Hermes Agent supports two plugin discovery mechanisms for Python plugins:
-
-1. **pip entry point** — when `prismor` is pip-installed, Hermes auto-discovers the `prismor-cloak` plugin via the `hermes_agent.plugins` entry-point group defined in `pyproject.toml`. No filesystem setup needed.
-
-2. **Filesystem install** — `prismor cloak install --agent hermes` copies the plugin files to `~/.hermes/plugins/prismor-cloak/` and enables it in Hermes' `config.yaml`.
-
-Both paths run the same code: the filesystem plugin's `__init__.py` is a verbatim copy of `prismor.runtime.cloaking.hermes_plugin_entry`, kept self-contained so it loads even when Hermes cannot import `prismor` (a test fails if the two drift).
+Both were verified live against Hermes Agent v0.19.0.
 
 ---
 
-## Setup
+## How Hermes loads plugins
 
-```bash
-# Option A: pip install + auto-discovery (recommended)
-pip install prismor
+Hermes loads a plugin directory (`plugin.yaml` + `__init__.py` with `register(ctx)`) from:
 
-# Register your first secret
-prismor cloak add stripe_key
-```
+- `~/.hermes/plugins/<name>/` (or `$HERMES_HOME/plugins/`), and
+- `./.hermes/plugins/<name>/` only when `HERMES_ENABLE_PROJECT_PLUGINS=1` is set in the environment Hermes runs in.
 
-```bash
-# Option B: explicit filesystem install
-pip install prismor
-prismor cloak install --agent hermes --scope user
-```
+Either way a plugin loads only when its name is listed under `plugins.enabled` in `~/.hermes/config.yaml`. Prismor's installers add the name there (creating `config.yaml` if it does not exist, never rewriting one it cannot parse).
 
-```bash
-# Install for both Claude Code + Hermes in one command
-prismor cloak install --agent all
-```
-
-### Verify
-
-```bash
-prismor cloak status
-```
-
-Expected output:
-
-```
-CLOAKING
-──────────────────────────────────────────────────
-Claude Code:    installed
-Config:         ~/.claude/settings.json
-Events:         UserPromptSubmit, PreToolUse, PostToolUse
-Hermes Agent:   installed
-Plugin dir:     ~/.hermes/plugins/prismor-cloak/
-Hooks:          pre_tool_call, transform_terminal_output, transform_tool_result, pre_gateway_dispatch
-Secrets dir:    ~/.prismor/secrets/
-Registered:     1 placeholder(s)
-```
-
-### Uninstall
-
-```bash
-prismor cloak uninstall --agent hermes
-prismor cloak uninstall --agent all    # removes both
-```
+After installing, both commands ask Hermes (`hermes plugins list`) whether it will load the plugin. If it will not, they say `NOT active` and why, instead of `Installed`.
 
 ---
 
-## Architecture
+## Policy hooks
 
-```mermaid
-flowchart TD
-    subgraph Hermes["HERMES AGENT"]
-        direction LR
-        Gateway["Gateway\n(Telegram)"] --> Agent["Agent\n(LLM)"] --> Tools["Tools\n(shell/fs)"]
-        Gateway --> GwHook["pre_gateway_dispatch"]
-        Agent --> ToolHook["pre_tool_call"]
-        Tools --> OutHook["transform_terminal_out"]
-    end
-
-    GwHook --> PasteGuard["Paste guard\nDetect raw secrets in user prompts\nAuto-vault"]
-    ToolHook --> Decloak["Decloak\nSubstitute @@SECRET@@ → real value\nat exec time"]
-    OutHook --> Scrub["Scrub output\nReplace real values with\nplaceholders before model"]
+```bash
+prismor install-hooks --agent hermes --scope global --mode observe   # ~/.hermes/plugins/prismor/
+prismor install-hooks --agent hermes --scope global --mode enforce
 ```
 
-### Hooks
+`--scope project` writes `./.hermes/plugins/prismor/` instead; Hermes then needs `HERMES_ENABLE_PROJECT_PLUGINS=1`.
 
-| Hook | Phase | What it does |
-|------|-------|-------------|
-| `pre_gateway_dispatch` | Before any user message reaches the LLM | Detects raw secrets in pasted prompts, auto-vaults them, replaces with `@@SECRET:auto_xxx@@`, re-sends sanitized prompt |
-| `pre_tool_call` | Before a tool executes | Substitutes `@@SECRET:name@@` with real value; detects and blocks raw secrets in tool arguments, auto-vaults them |
-| `transform_terminal_output` | After shell command output | Scans stdout/stderr for raw secret values, replaces them with `@@SECRET:name@@` before the model sees the result |
-| `transform_tool_result` | After any tool result | Same scrub logic as transform_terminal_output but covers all tool result types |
+The plugin registers three Hermes hooks and sends each to `prismor hook-dispatch --agent hermes`:
+
+| Hermes hook | Prismor event | Effect |
+|---|---|---|
+| `pre_tool_call` | `PreToolUse` | In enforce mode a blocked call returns `{"action": "block"}`; the model receives Prismor's reason and the unblock steps as the tool result. |
+| `post_tool_call` | `PostToolUse` | Records the result. Calls Prismor already blocked are skipped. |
+| `pre_llm_call` | `UserPromptSubmit` | Screens the user's message. Hermes cannot stop a turn from this hook, so a flagged message is reported to the model as context telling it not to act on it. |
+
+Hermes tool names map to Prismor event types: `terminal` and `execute_code` are shell commands, `read_file` is a file read, `write_file` and `patch` are file writes (the path is taken from a V4A patch when needed), and `web_extract` / `web_search` / `browser_navigate` are network calls.
+
+If the Prismor hook crashes or takes longer than 60 seconds, Hermes logs a warning and runs the call. That matches how Hermes treats every plugin error.
+
+Check it with:
+
+```bash
+hermes plugins list --plain --no-bundled   # "enabled  user  1.0.0  prismor"
+prismor sessions                            # sessions show agent=hermes
+```
+
+Remove it with `prismor uninstall-hooks --agent hermes --scope global`.
 
 ---
 
-## Everyday Use
+## Secret cloaking
 
-The flow is fully automatic — you mostly do nothing:
-
-- **Paste a secret into Telegram** → the `pre_gateway_dispatch` hook detects it, vaults it, and re-sends the sanitized version. The agent only sees `@@SECRET:auto_xxxx@@`.
-- **The agent emits a raw secret in a command** → `pre_tool_call` denies the call, vaults the value, and tells the agent to use the placeholder.
-- **The agent uses a placeholder** → `pre_tool_call` substitutes the real value at execution time; `transform_terminal_output` scrubs it back out of the output.
-- **You can bypass the paste guard** by prefixing the message with `!!allow `.
-
----
-
-## Integration Details
-
-### Plugin Discovery
-
-Hermes discovers the plugin via two mechanisms:
-
-```mermaid
-flowchart TD
-    Install["pip install prismor"] --> Discover["Hermes auto-discovers\nentry_point 'hermes_agent.plugins'"]
-    Discover -->|"Prefer this"| Entry["prismor.runtime.cloaking.hermes_plugin_entry"]
-    Discover -->|"If not found (e.g. dev install)"| Manifest
-
-    subgraph FS["Filesystem fallback — ~/.hermes/plugins/prismor-cloak/"]
-        Manifest["plugin.yaml"] --> Init["__init__.py"]
-    end
+```bash
+prismor cloak install --agent hermes --scope global   # ~/.hermes/plugins/prismor-cloak/
+prismor cloak add stripe_key                          # value read from stdin / hidden prompt
 ```
 
-### Entry Point
+The default `--scope project` writes `./.hermes/plugins/prismor-cloak/`, which Hermes loads only with `HERMES_ENABLE_PROJECT_PLUGINS=1`.
 
-Registered in `pyproject.toml`:
+| Hermes hook | What it does |
+|---|---|
+| `pre_gateway_dispatch` | A raw secret pasted into a gateway message (Telegram, etc.) is vaulted and the message is dropped with the placeholder form; prefix the message with `!!allow ` to send it anyway. |
+| `pre_tool_call` | A raw secret in tool arguments is vaulted and the call is blocked with the placeholder to use instead. A placeholder that is not registered is blocked. |
+| `tool_execution` middleware | Substitutes registered placeholders with their values in the copy of the arguments that actually executes. The transcript, policy hooks and approvals only ever see the placeholder. |
+| `transform_terminal_output`, `transform_tool_result` | Replace any registered secret value in the output with its placeholder before the model sees it. |
 
-```toml
-[project.entry-points."hermes_agent.plugins"]
-prismor-cloak = "prismor.runtime.cloaking.hermes_plugin_entry:register"
-```
+Decloaking needs Hermes' `tool_execution` middleware. On a Hermes too old to have it, calls that use a placeholder are blocked with a message saying so, rather than run with the literal placeholder.
 
-### Plugin Manifest
+`prismor cloak status` shows whether the plugin directory is installed; `prismor cloak uninstall --agent hermes --scope global` removes it.
 
-```yaml
-# prismor/runtime/cloaking/hermes-plugin/plugin.yaml
-name: prismor-cloak
-version: 1.0.0
-kind: standalone
-hooks:
-  - pre_tool_call
-  - post_tool_call
-  - transform_terminal_output
-  - transform_tool_result
-  - pre_gateway_dispatch
-```
+### pip entry point
+
+`pyproject.toml` also declares a `hermes_agent.plugins` entry point (`prismor-cloak`). Hermes only sees it when `prismor` is installed into Hermes' own virtualenv, and it still has to be listed in `plugins.enabled`. The filesystem install above is the supported path.
 
 ### Code
 
-- `prismor/runtime/cloaking/hermes_plugin_entry.py` — shared `register()` function consumed by both pip discovery and filesystem install
-- `prismor/runtime/cloaking/hermes_installer.py` — `install()`/`uninstall()`/`status()` for filesystem-level setup (copies plugin files, enables in Hermes config, sets env vars)
-- `prismor/runtime/cloaking/hermes-plugin/__init__.py` — self-contained copy of `hermes_plugin_entry.py` for the filesystem install path
-- `prismor/runtime/cloaking/hermes-plugin/plugin.yaml` — plugin manifest with hook declarations
-
----
-
-## Test Plan
-
-- [x] pip install → Hermes auto-discovers `prismor-cloak` entry point
-- [x] `prismor cloak install --agent hermes` → filesystem install succeeds
-- [x] `prismor cloak status` → shows Hermes as `installed`
-- [x] `pre_gateway_dispatch` hook detects and auto-vaults pasted Stripe/OpenAI/AWS keys
-- [x] `pre_tool_call` hook substitutes `@@SECRET:stripe_key@@` → real value at exec time
-- [x] `transform_terminal_output` scrubs real values from tool output
-- [x] `!!allow ` prefix bypasses paste guard
-- [x] `prismor cloak uninstall --agent hermes` → clean removal
-- [x] Agent sees `@@SECRET:auto_xxx@@` not the raw pasted secret
+- `prismor/runtime/hooks.py`: the generated `prismor` policy plugin (`_HERMES_PLUGIN_PY`) and its installer.
+- `prismor/runtime/cloaking/hermes_plugin_entry.py`: the cloaking plugin. `hermes-plugin/__init__.py` is a verbatim copy so the filesystem plugin loads without importing `prismor`; `tests/test_hermes_plugin_sync.py` fails if they drift.
+- `prismor/runtime/cloaking/hermes_installer.py`: `install()` / `uninstall()` / `status()` for the cloaking plugin.

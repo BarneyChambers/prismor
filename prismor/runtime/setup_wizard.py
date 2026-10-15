@@ -1418,14 +1418,15 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
     for agent in agents:
         def _install_hook(a: str = agent):
             try:
-                install_hooks(
+                results = install_hooks(
                     repo_root=_REPO_ROOT,
                     workspace=target,
                     agent=a,
                     scope=scope,
                     mode=mode,
                 )
-                return True, ""
+                warning = next((r["loadWarning"] for r in results if r.get("loadWarning")), "")
+                return (False, f"written but not active: {warning}") if warning else (True, "")
             except Exception as e:
                 return False, str(e)[:200]
         _spinner_run(f"Installing {agent} hooks", _install_hook)
