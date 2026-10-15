@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [1.61.5] — 2026-10-15
+
 ### Security
 - **`prismor allow` patterns matched anywhere in a command.** After `prismor allow destructive-command --pattern 'chmod -R 777 ./scratch'`, both `chmod -R 777 /etc; echo chmod -R 777 ./scratch` and `chmod -R 777 ./scratchXX /etc` passed. Entries written by `prismor allow`, `--suggest-allowlist` and the block message now carry `match: exact`: against a shell command the pattern must be the whole command or one whole statement of it. Every allowlist, old ones included, now lets a compound command through only when no statement outside the allowed one still trips the rule. Path and other non-shell evidence keeps substring matching.
 - **Codex `apply_patch` skipped every path rule.** Codex sends the patch in `tool_input.command` with no path field, so the event had an empty path and `agent-config-tampering-path`, `secret-access` and the rest never ran; a Codex session could write `.prismor/policy.yaml`. The path now comes from the patch headers (`*** Add/Update/Delete File:`, `*** Move to:`), and every file in a multi-file patch gets the path rules (Copilot's patch tool too). Supersedes the hook half of #439.
