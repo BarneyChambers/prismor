@@ -113,3 +113,17 @@ def test_a2a_safe_message_passes(monkeypatch, tmp_path):
                                 parts=prompt_parts(body))
     decision = screen.evaluate(event, None)
     assert screen.blocking(decision) is None
+
+
+def test_unvaulted_vendor_key_in_a2a_datapart_is_masked(tmp_path):
+    """Field test: a realistic sk-proj key nobody had vaulted rode an outbound
+    DataPart to the remote agent unmasked."""
+    import copy
+    key = "sk-" + "proj-" + "Qw7" * 20
+    body = {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": {
+        "role": "user", "parts": [{"kind": "data", "data": {"config": {"api_key": key}}}]}}}
+    for mode in ("observe", "enforce"):
+        screen = proxy_mod.Screen(workspace=tmp_path, mode=mode, session_id="s", agent_name="t")
+        sent = copy.deepcopy(body)
+        proxy_mod._mask_in_place(sent, screen.redact)
+        assert key not in json.dumps(sent), mode
