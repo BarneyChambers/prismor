@@ -82,6 +82,18 @@ def redact_text(
                 text = redacted
         except Exception:
             pass
+    else:
+        # Vendor-shaped credentials (sk-proj-…, ghp_…, AKIA…) are secrets
+        # whether or not anyone vaulted them, so they are masked with the
+        # cloak layer -- observe, paused and all -- not only under enforce.
+        try:
+            from prismor.runtime.data_boundary import classify, redact_command
+            ms = [m for m in classify(text, context="body")
+                  if m.kind == "secret" and not m.synthetic]
+            if ms:
+                text, _ = redact_command(text, ms)
+        except Exception:
+            pass
 
     return text, text != original
 

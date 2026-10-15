@@ -97,6 +97,16 @@ def _local_settings_path(workspace: Path) -> Path:
     return Path(workspace) / ".claude" / "settings.local.json"
 
 
+def _unlink_if_empty(path: Path, key: str = "mcpServers") -> None:
+    """Remove a file `on` created once `off` has emptied it."""
+    try:
+        data = _load_json(path)
+        if not data or data == {key: {}}:
+            path.unlink()
+    except Exception:
+        pass
+
+
 def _approve_project_server(workspace: Path, server: str) -> Tuple[bool, str]:
     """Record that ``server`` is approved for ``workspace``.
 
@@ -545,6 +555,11 @@ def mirror_on(workspace: Path, *, mode: str = "enforce",
     for warn in _coherence_warnings(workspace, entry):
         print(f"  {_c('warning', _YELLOW)}   {warn}")
 
+    # Which files `on` brings into existence, so `off` can take them away
+    # again instead of leaving `{}` behind.
+    created = sorted(set((existing or {}).get("files_created") or [])
+                     | {str(p) for p in (mcp_path, settings_path) if not p.exists()})
+
     # 1. MCP server entry.
     try:
         mcp = _load_json(mcp_path)
@@ -639,6 +654,7 @@ def mirror_on(workspace: Path, *, mode: str = "enforce",
         "deny_added": sorted(set(prior_added) | set(added)),
         "allow_added": sorted(set((existing or {}).get("allow_added") or []) | set(allow_added)),
         "approved_in_claude_state": bool(approved and approve_note == "approved"),
+        "files_created": created,
         "at": time.time(),
     })
 
@@ -743,6 +759,8 @@ def mirror_off(workspace: Path, *, agent: str = "claude") -> int:
             if rec.get("approved_in_claude_state"):
                 if _unapprove_project_server(workspace, server):
                     extra_notes.append(f"server approval for {server} removed from settings.local.json")
+            for made in rec.get("files_created") or []:
+                _unlink_if_empty(Path(made), key)
             _write_record(workspace, None)
 
         if removed_server or removed_deny or rec:

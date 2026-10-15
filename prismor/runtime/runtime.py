@@ -115,9 +115,32 @@ def _apply_rule_exemptions(
     return out
 
 
+_OBSERVE_WARNED: set = set()
+
+
+def _warn_observe_adapter(framework: str, findings: List[Dict[str, Any]]) -> None:
+    """Say once, loudly, that an SDK guard is only watching.
+
+    The openai-agents, langchain, crewai and browser-use guards default to
+    observe, so their literal quickstarts let `curl … | bash` run while the
+    docs said every tool was "policy-checked". Printed at the first call that
+    enforce would have refused, which is the moment it matters.
+    """
+    if framework in _OBSERVE_WARNED:
+        return
+    if not any(str(f.get("action") or "").lower() == "block" for f in findings):
+        return
+    _OBSERVE_WARNED.add(framework)
+    sys.stderr.write(
+        f"[prismor] {framework} guard is in OBSERVE mode — tools are not blocked, this "
+        "call would have been. Pass mode=\"enforce\" to block.\n")
+
+
 def _block_reason(finding: Dict[str, Any]) -> str:
     parts = [f"[{finding.get('severity', 'high')}] {finding.get('title', 'blocked')}"]
-    if finding.get("evidence"):
+    # Scoped-agent and IAM findings carry the title sentence again as their
+    # evidence; printing both showed every deny reason twice.
+    if finding.get("evidence") and str(finding["evidence"]) not in parts[0]:
         parts.append(str(finding["evidence"]))
     if finding.get("remediation"):
         parts.append(f"Recommended fix: {finding['remediation']}")
@@ -825,6 +848,8 @@ def evaluate_tool_call(
             "subject_source": subject.source if subject else None,
             "decided_by": (blocking or {}).get("ruleId"),
         }
+    if blocking is None and mode == "observe" and meta.get("framework"):
+        _warn_observe_adapter(str(meta["framework"]), findings)
     return Decision(
         allow=blocking is None,
         findings=findings,

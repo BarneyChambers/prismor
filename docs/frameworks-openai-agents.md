@@ -35,8 +35,10 @@ def run_shell(command: str) -> str:
     ...
 
 agent = Agent(name="ops", tools=[run_shell])
-guard_agent(agent)          # every tool now policy-checked
+guard_agent(agent, mode="enforce")   # every tool now policy-checked and blocked on a deny
 ```
+
+> **Pass `mode="enforce"` to block.** The default is `mode="observe"`: every call is checked and logged, but nothing is refused, and the guard prints one `OBSERVE mode` warning the first time it lets through a call enforce would have blocked.
 
 To guard a single tool or a plain callable, use
 `prismor_guard(tool, subject="user:alice")`. A denied call raises `PrismorBlocked`
@@ -53,7 +55,7 @@ once with no bound subject, then set the user per request:
 ```python
 from prismor.openai import use_subject
 
-guard_agent(agent)                       # once, at startup
+guard_agent(agent, mode="enforce")       # once, at startup
 
 with use_subject("user:alice"):          # in your per-request handler
     Runner.run_sync(agent, prompt)       # alice's policy + IAM apply

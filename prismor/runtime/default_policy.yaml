@@ -308,7 +308,7 @@ settings:
     cli_path: ""             # override path to the claude/codex CLI; "" auto-discovers
     model: ""                # litellm model id for the LLM layer when no claude CLI
                              # (or mode: api), e.g. gpt-4o-mini, ollama/llama3,
-                             # gemini/gemini-2.0-flash. "" -> $PRISMOR_SEMANTIC_MODEL,
+                             # gemini/gemini-flash-latest. "" -> $PRISMOR_SEMANTIC_MODEL,
                              # else picked from whichever provider key is set.
                              # Keep it small: this runs per uncertain event.
     # low_threshold:         # heuristic < this -> allow without asking the judge.

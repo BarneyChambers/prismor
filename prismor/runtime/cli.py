@@ -1941,6 +1941,14 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "prismor memory approve"
             )
 
+        if _session_ctx_ok:
+            try:
+                from prismor.runtime import mirror as _mirror
+                _start_ctx.append(_mirror.instruction_context(workspace, args.agent))
+            except Exception:
+                pass
+            _start_ctx = [c for c in _start_ctx if c]
+
         # Extensions are instruction files and code too: skills, plugins, third-
         # party hooks, MCP servers, mostly installed by a command no hook ever
         # saw. At SessionStart, sync the ledger (which writes anything new or
@@ -2462,6 +2470,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             return
 
         if subcmd == "check":
+            if getattr(args, "stray", None):
+                sys.stderr.write(
+                    "prismor sandbox check takes no command: it checks that Docker is ready.\n"
+                    "  Run a command in the sandbox:   prismor sandbox run -- <command>\n"
+                    "  Pre-check it against policy:    prismor check '<command>'\n")
+                raise SystemExit(2)
             report = _sandbox.status_report(cfg)
             ready = report["docker"].get("cli_found") and report["docker"].get("server_reachable")
             if ready:
@@ -3926,7 +3940,10 @@ def build_parser() -> argparse.ArgumentParser:
     sandbox_status = sandbox_sub.add_parser("status", help="Show sandbox configuration and Docker readiness")
     sandbox_status.add_argument("--json", action="store_true", help="Output raw JSON")
 
-    sandbox_sub.add_parser("check", help="Check whether the Docker sandbox backend is available")
+    sandbox_check = sandbox_sub.add_parser("check", help="Check whether the Docker sandbox backend is available")
+    # Accepted only to answer it: `sandbox check "cmd"` reads naturally, and
+    # argparse's reply to a stray argument was the whole top-level usage.
+    sandbox_check.add_argument("stray", nargs="*", help=argparse.SUPPRESS)
 
     sandbox_on = sandbox_sub.add_parser("on", help="Turn the sandbox on for this workspace")
     sandbox_on.add_argument("--workspace", help="Workspace path")

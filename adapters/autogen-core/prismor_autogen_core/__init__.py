@@ -127,11 +127,16 @@ class PrismorInterventionHandler(DefaultInterventionHandler):
             # and converted into a failed FunctionExecutionResult fed back to
             # the model -- the conversation continues with the denial visible
             # to the model, same UX as the other adapters' default behavior.
-            raise ToolException(
+            exc = ToolException(
                 call_id=message.id,
                 content=f"⛔ Prismor blocked this tool call: {reason}",
                 name=message.name,
             )
+            # ToolException is a dataclass over BaseException, so str(exc) is
+            # empty and the caller loop's f"Error: {result}" handed the model a
+            # bare "Error: ". args is what str() renders.
+            exc.args = (exc.content,)
+            raise exc
         return message
 
     async def on_response(self, message: Any, *, sender: Any, recipient: Any) -> Any:

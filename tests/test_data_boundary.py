@@ -500,3 +500,28 @@ def test_tag_rule_redact_action_yields_modify(tmp_path, monkeypatch):
                     "metadata": {"tool_name": "Bash"}}, 2, session_id=sid)
     tag = [x for x in f if x["ruleId"].startswith("tag-rule:")]
     assert tag and tag[0]["action"] == "modify" and tag[0]["transform"] == "pii_redact"
+
+
+def test_unprefixed_and_new_vendor_secrets_are_redacted():
+    """Field test: an unvaulted OpenAI project key left the A2A lane unmasked,
+    and a 40-char AWS secret access key reached the model through the mirror.
+    Keys are assembled here so no literal credential sits in the repo."""
+    from prismor.runtime.redaction import redact_text
+    openai_key = "sk-" + "proj-" + "Ab3" * 20
+    anthropic_key = "sk-" + "ant-api03-" + "Zq9_" * 25
+    aws_secret = "wJalrXUtnFEMI/K7MDENG/" + "bPxRfiCY" + "EXAMPLEKEYZ"[:10]
+    assert len(aws_secret) == 40
+    text = (f'key={openai_key}\nANTHROPIC={anthropic_key}\n'
+            f'aws_secret_access_key = {aws_secret}\nregion = us-east-1')
+    out, changed = redact_text(text)
+    assert changed
+    for raw in (openai_key, anthropic_key, aws_secret):
+        assert raw not in out
+    # Only the value is masked: the reader still sees which setting it was.
+    assert "aws_secret_access_key = [REDACTED" in out
+    assert "region = us-east-1" in out
+    # A bare 40-char string with no AWS name nearby is not a secret.
+    assert redact_text("commit " + "a" * 40)[1] is False
+    # Masked with the cloak layer too, i.e. in observe mode and while paused.
+    out_observe, _ = redact_text(f"token: {openai_key}", data_boundary=False)
+    assert openai_key not in out_observe

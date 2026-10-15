@@ -740,3 +740,15 @@ class HttpTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_server_gives_the_judge_a_budget_inside_the_turn_timeout(monkeypatch):
+    """A judge slower than the turn timeout made the fail posture decide, so a
+    regex-caught injection was allowed under --fail-open."""
+    from prismor.runtime import inference_hook_server as srv
+    monkeypatch.delenv("PRISMOR_SEMANTIC_BUDGET_MS", raising=False)
+    srv._budget_judge(3.0)
+    assert os.environ["PRISMOR_SEMANTIC_BUDGET_MS"] == "1200"
+    monkeypatch.setenv("PRISMOR_SEMANTIC_BUDGET_MS", "250")
+    srv._budget_judge(3.0)
+    assert os.environ["PRISMOR_SEMANTIC_BUDGET_MS"] == "250"     # operator's choice wins
