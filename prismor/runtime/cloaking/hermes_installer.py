@@ -25,7 +25,15 @@ logger = logging.getLogger(__name__)
 
 _PLUGIN_NAME = "prismor-cloak"
 _MARKER = "prismor-cloak"
-_BUNDLED_PLUGIN_DIR = Path(__file__).resolve().parent / "hermes-plugin"
+# A source checkout keeps the plugin next to this file; the wheel can't ship a
+# hyphenated non-package directory there, so it is force-included under
+# prismor/runtime/data/cloaking/ instead (pyproject.toml).
+_BUNDLED_PLUGIN_DIR = next(
+    (d for d in (Path(__file__).resolve().parent / "hermes-plugin",
+                 Path(__file__).resolve().parent.parent / "data" / "cloaking" / "hermes-plugin")
+     if d.is_dir()),
+    Path(__file__).resolve().parent / "hermes-plugin",
+)
 
 
 def _hermes_home() -> Path:
@@ -73,10 +81,12 @@ def _write_yaml_config(path: Path, data: dict) -> None:
 
 def _enable_plugin_in_config(name: str) -> bool:
     """Add a plugin name to Hermes' plugins.enabled list. Returns True if modified."""
+    # A missing config.yaml is created: Hermes merges it over its defaults, and
+    # without plugins.enabled it loads no user plugin at all.
     config_path = _hermes_config_path()
     config = _read_yaml_config(config_path)
-    if not config:
-        return False
+    if not config and config_path.exists():
+        return False  # unreadable or empty: never overwrite the user's file
     plugins = config.get("plugins")
     if not isinstance(plugins, dict):
         plugins = {}
@@ -129,13 +139,6 @@ def install(
         shutil.rmtree(target_dir)
     shutil.copytree(_BUNDLED_PLUGIN_DIR, target_dir)
 
-    vault_dir = target_dir.parent.parent.parent / "auto_vault"
-    vault_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        vault_dir.chmod(0o700)
-    except PermissionError:
-        pass
-
     _enable_plugin_in_config(_PLUGIN_NAME)
 
     # Determine secrets dir path — preserve OS-native format
@@ -144,11 +147,13 @@ def install(
         secrets_dir_path = Path(env_secrets)
     else:
         secrets_dir_path = Path.home() / ".prismor" / "secrets"
-    secrets_dir_path.mkdir(parents=True, exist_ok=True)
-    try:
-        secrets_dir_path.chmod(0o700)
-    except PermissionError:
-        pass
+    # The plugin auto-vaults pasted secrets under <secrets>/auto_vault.
+    (secrets_dir_path / "auto_vault").mkdir(parents=True, exist_ok=True)
+    for d in (secrets_dir_path, secrets_dir_path / "auto_vault"):
+        try:
+            d.chmod(0o700)
+        except PermissionError:
+            pass
 
     config_path = _hermes_config_path()
     config = _read_yaml_config(config_path)
@@ -158,7 +163,8 @@ def install(
     # Use os.path.normpath to preserve OS-appropriate separators
     env["PRISMOR_SECRETS_DIR"] = os.path.normpath(str(secrets_dir_path))
     config["env"] = env
-    _write_yaml_config(config_path, config)
+    if len(config) > 1 or not config_path.exists():  # never overwrite an unreadable config
+        _write_yaml_config(config_path, config)
 
     return {
         "configPath": str(config_path),

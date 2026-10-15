@@ -31,7 +31,8 @@ KINDS = frozenset({"coding-agent", "framework", "multiplexer"})
 SURFACES = frozenset({"hook-config", "sdk", "mcp", "rules-only", "http", "pass-through"})
 STATUSES = frozenset({"shipped", "roadmap", "sweep-only"})
 # client-side = HTTP eval-server adapters that enforce in the caller (Node/Ruby/Java/Rust)
-BLOCKING = frozenset({"exit-2", "json-permission", "throw", "proxy-deny", "none", "client-side"})
+# return-block = in-process plugin hook returns a block result (OpenClaw/Hermes before_tool_call)
+BLOCKING = frozenset({"exit-2", "json-permission", "throw", "proxy-deny", "none", "client-side", "return-block"})
 
 
 @dataclass(frozen=True)

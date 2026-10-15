@@ -126,13 +126,14 @@ def test_marker_in_unrelated_metadata_is_not_a_hook(tmp_path):
     assert hooks.hook_health(tmp_path) == []
 
 
-def test_registered_plugin_is_unverified(tmp_path):
-    path = hooks._config_path("openclaw", "project", tmp_path)
-    path.parent.mkdir()
-    path.write_text(json.dumps({"plugins": ["/missing/prismor/plugin.js"]}))
-    check = hooks.hook_health(tmp_path)[0]
-    assert check["agent"] == "openclaw" and check["state"] == "warn"
-    assert check["configured"] and check["mode"] is None
+def test_legacy_plugin_registration_is_not_a_hook(tmp_path):
+    # Up to 1.61 openclaw/hermes got a {"plugins": [...]} file neither agent
+    # reads; counting it as configured is how they showed as governed.
+    legacy = tmp_path / ".openclaw" / "plugins.json"
+    legacy.parent.mkdir()
+    legacy.write_text(json.dumps({"plugins": ["/missing/prismor/plugin.js"]}))
+    assert hooks.hook_health(tmp_path) == []
+    assert not hooks.hook_installed("openclaw", "project", tmp_path)
 
 
 def test_both_scopes_and_mode_resolution(tmp_path):
@@ -218,7 +219,9 @@ def test_health_recognizes_installer_output(tmp_path, agent):
                         agent=agent, scope="project", mode="enforce")
     checks = [c for c in hooks.hook_health(tmp_path) if c["scope"] == "project" and c["agent"] == agent]
     assert len(checks) == 1 and checks[0]["configured"], checks
-    assert checks[0]["state"] == ("warn" if agent in (*hooks._PLUGIN_REGISTERED_AGENTS, "opencode") else "ok")
+    assert checks[0]["state"] == ("warn" if agent in hooks._PLUGIN_FILE_AGENTS else "ok")
+    if agent in hooks._PLUGIN_FILE_AGENTS:
+        assert checks[0]["mode"] == "enforce"  # read from the plugin's PRISMOR_COMMAND literal
 
 
 def test_invalid_agent_argument_is_reported(tmp_path):

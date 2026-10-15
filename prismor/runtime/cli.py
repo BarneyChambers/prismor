@@ -1592,7 +1592,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         register_workspace(workspace)
         for item in results:
-            print(f"Installed {item['agent']} hooks at {item['configPath']}")
+            if item.get("loadWarning"):
+                print(f"Wrote {item['agent']} hooks at {item['configPath']}, but they are NOT active: {item['loadWarning']}")
+            else:
+                print(f"Installed {item['agent']} hooks at {item['configPath']}")
         if getattr(args, "portable", False):
             print("Portable: the hook finds `prismor` at run time, so this file is safe to commit. "
                   "Install prismor in the cloud environment's setup script.")
@@ -2876,7 +2879,12 @@ def main(argv: Optional[List[str]] = None) -> None:
                     workspace=workspace,
                     scope=args.scope,
                 )
-                print(f"Installed Hermes Agent cloaking plugin at {h_result['pluginDir']}")
+                from prismor.runtime.hooks import plugin_load_warning
+                _why = plugin_load_warning("hermes", args.scope, workspace, plugin="prismor-cloak")
+                if _why:
+                    print(f"Wrote the Hermes Agent cloaking plugin at {h_result['pluginDir']}, but it is NOT active: {_why}")
+                else:
+                    print(f"Installed Hermes Agent cloaking plugin at {h_result['pluginDir']}")
                 for label in h_result["hooksInstalled"]:
                     print(f"  + {label}")
             _sdir = (result if cloak_agent in ("claude", "all") else h_result).get("secretsDir", str(Path.home() / ".prismor" / "secrets"))

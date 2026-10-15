@@ -34,5 +34,25 @@ def test_filesystem_plugin_blocks_already_vaulted_secret(tmp_path, monkeypatch):
     assert first["action"] == "block" and second["action"] == "block"
 
     name = first["message"].split("@@SECRET:")[1].split("@@")[0]
-    resolved = mod.on_pre_tool_call("terminal", {"command": f"echo @@SECRET:{name}@@"})
-    assert resolved["action"] == "decloak"
+    cloaked = {"command": f"echo @@SECRET:{name}@@"}
+    # A Hermes without middleware can't decloak: the placeholder call is refused.
+    assert mod.on_pre_tool_call("terminal", cloaked)["action"] == "block"
+
+    class Ctx:
+        def __init__(self):
+            self.hooks, self.middleware = {}, {}
+
+        def register_hook(self, name, cb):
+            self.hooks[name] = cb
+
+        def register_middleware(self, kind, cb):
+            self.middleware[kind] = cb
+
+    ctx = Ctx()
+    mod.register(ctx)
+    # Hermes 0.19 passes turn_id and friends; an unknown kwarg must not raise.
+    assert mod.on_pre_tool_call("terminal", cloaked, turn_id="t", api_request_id="r") is None
+    ran = ctx.middleware["tool_execution"](next_call=lambda a: a, args=cloaked, tool_name="terminal",
+                                           middleware_schema_version="hermes.middleware.v1")
+    assert ran["command"] == "echo " + "ghp_" + "a" * 36
+    assert cloaked["command"].endswith("@@")  # the hook-visible copy stays cloaked
