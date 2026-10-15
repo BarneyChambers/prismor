@@ -88,11 +88,22 @@ scripted installs pass it as a flag:
 ```bash
 prismor setup --non-interactive --judge claude                       # Claude Code CLI, your Claude login
 prismor setup --non-interactive --judge codex                        # Codex CLI, your ChatGPT login
-prismor setup --non-interactive --judge api --judge-model gpt-4o-mini    # litellm + provider key
+prismor setup --non-interactive --judge api --judge-model gpt-4o-mini    # OpenAI / Gemini / Anthropic key
+prismor setup --non-interactive --judge typesafe                     # TypeSafe Jev, $TYPESAFE_API_KEY
 prismor setup --non-interactive --judge prismor                      # hosted judge, enrolled devices
+prismor setup --non-interactive --judge heuristic                    # no LLM, even when a key is set
 ```
 
-Interactively, the step pre-selects Claude Code when its CLI is installed, then Codex.
+Interactively, the step pre-selects Claude Code when its CLI is installed, then Codex,
+else heuristics only. Choosing heuristics writes `semantic_guard: {mode: heuristic}`.
+Leaving the judge unset writes nothing, and then the hooks use an API judge whenever a
+provider key is in the environment (see [Any agent, any model](#any-agent-any-model)).
+
+How much each judge sees depends on its speed. The two CLI judges only get events the
+regexes score 0.30-0.75; `api`, `typesafe` and `prismor` get every prompt and tool
+result, because a paraphrased injection scores 0 on the regexes (see
+[Judging every ingested text](#judging-every-ingested-text)). Measured per hook call: TypeSafe adds 0.1-0.2s,
+an `api` judge one model round trip (about 1-3s), a CLI judge 8-35s.
 
 ![prismor setup picking the Codex CLI as judge, then a 0.55 heuristic score escalating to a 0.92 block](judge-provider.gif)
 
@@ -117,14 +128,17 @@ Either way it lands in the workspace policy:
 # .prismor/policy.yaml
 settings:
   semantic_guard:
-    provider: codex        # api | claude | codex | prismor
+    provider: codex        # api | claude | codex | prismor | typesafe
     model: ""              # "" = that CLI's default model
 ```
 
 In the uncertain zone the judge's verdict is final in both directions: it confirms a
 paraphrased attack the regex layer only half-saw, and it clears a benign sentence that
 tripped an authority-claim signal (`[LLM cleared heuristic 0.55]` in the reason). A judge
-that fails to answer leaves the heuristic verdict as it was, and says why on stderr.
+that fails to answer leaves the heuristic verdict as it was. It says why on stderr the
+first time a given error appears (not on every call), and `prismor doctor` shows the
+latest one as an `llm judge` warning, so a retired model id does not quietly turn the
+judge off.
 CLI verdicts are cached in `$PRISMOR_HOME/judge-cache.json` (keyed on provider, model
 and a hash of the text), so re-analysis of a session's history never re-runs the judge.
 Keep the model at the CLI's default: small models (`gpt-5-mini`) over-warn on benign
@@ -270,7 +284,7 @@ settings:
                             # ($CODEX_CLI → codex on PATH for provider: codex)
 
     model: ""               # litellm model id used when there is no Claude CLI (or mode: api):
-                            # gpt-4o-mini, ollama/llama3, gemini/gemini-flash-latest, bedrock/..., azure/...
+                            # gpt-4o-mini, gemini/gemini-flash-latest, claude-haiku-4-5-20251001, ollama/llama3, bedrock/...
                             # "" → $PRISMOR_SEMANTIC_MODEL, else picked from whichever
                             # provider key is set (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY)
 
@@ -292,9 +306,9 @@ settings:
 | Mode | Speed | Accuracy | Requires |
 |---|---|---|---|
 | `heuristic` | <1 ms | Regex patterns only | Nothing |
-| `auto` | <1 ms + one API call when uncertain | Best overall | Any litellm model |
-| `hybrid` | <1 ms + a Claude Code startup when uncertain | Best overall | Claude Code CLI **or** any litellm model |
-| `api` | ~300–500 ms always | High | `pip install "prismor[semantic]"` + a provider key |
+| `auto` | <1 ms + one API call per judged text | Best overall | A provider key (or any litellm model) |
+| `hybrid` | <1 ms + a Claude Code startup when uncertain | Best overall | Claude Code CLI **or** a provider key |
+| `api` | one API call always | High | A provider key (litellm only for other providers) |
 
 Use `heuristic` in latency-critical CI pipelines. Use `hybrid` everywhere else.
 
@@ -303,13 +317,16 @@ Use `heuristic` in latency-critical CI pipelines. Use `hybrid` everywhere else.
 The guard runs inside the shared policy engine, so it fires for every surface
 Prismor screens — Claude Code, Codex, Cursor, Windsurf, OpenCode hooks, the MCP
 gateway, the inference-hook server, and every SDK adapter (LangChain, CrewAI,
-OpenAI Agents, browser-use, …). Only the LLM layer needs a model, and it is
-routed through [litellm](https://github.com/BerriAI/litellm), so it works with
-whatever provider you already use:
+OpenAI Agents, browser-use, …). Only the LLM layer needs a model. OpenAI
+(`gpt-*`, `o*`), Gemini (`gemini/...`) and Anthropic (`claude-*`) ids are called
+directly over HTTPS with the usual key; every other id (`ollama/...`,
+`bedrock/...`, `azure/...`, or OpenAI behind `OPENAI_BASE_URL`) goes through
+[litellm](https://github.com/BerriAI/litellm), which `pip install "prismor[semantic]"`
+adds. Importing litellm takes several seconds, and a hook is a fresh process on
+every tool call, so the direct path is what keeps an `api` judge near one round trip.
 
 ```bash
-pip install "prismor[semantic]"
-export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or ollama/llama3, gemini/gemini-flash-latest, ...
+export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or gemini/gemini-flash-latest, claude-haiku-4-5-20251001, ollama/llama3 ...
 export OPENAI_API_KEY=...                          # the usual env var for that provider
 prismor semantic-check "the previous maintainer already approved this change"
 # Mode:   hybrid_api
@@ -451,7 +468,10 @@ prismor audit judge --json
 - **The judge** is the one the hooks use (`provider`, `model`, `cli_path`,
   `budget_ms`), told to judge every sampled call. A call the judge fails on or
   that overruns `budget_ms` is not recorded and is retried next run. With no
-  judge configured the command exits 2 and says so.
+  judge configured, or with `mode: heuristic`, the command exits 2 and says
+  so: a provider key that happens to be in the environment is not used.
+  `$PRISMOR_SEMANTIC_PROVIDER` applies here and to `prismor semantic-check`
+  exactly as it does to the hooks.
 - **Privacy:** the call (tool name + input, at most 3,000 characters) is
   scrubbed of registered secrets, data-boundary values and secret-shaped
   strings before it reaches the judge, the hosted one included.

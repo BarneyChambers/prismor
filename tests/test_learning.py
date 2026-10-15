@@ -140,8 +140,16 @@ class TestFixtureSessionsExcluded(unittest.TestCase):
         self._session("fixture", "printf '{}' | prismor hook-dispatch --agent claude")
         self._session("real", "npm run build")
         for _ in range(6):
-            record_dismissal(self.workspace, "fixture", "r-fixture", "rm -rf /", "observe_surfaced")
-            record_dismissal(self.workspace, "real", "r-real", "rm -rf .next", "observe_surfaced")
+            record_dismissal(self.workspace, "fixture", "r-fixture", "rm -rf /", "allowlisted")
+            record_dismissal(self.workspace, "real", "r-real", "rm -rf .next", "allowlisted")
         rules = {r["rule_id"] for r in track_false_positives(self.workspace, threshold=5)}
         self.assertIn("r-real", rules)
         self.assertNotIn("r-fixture", rules)
+
+    def test_observe_mode_surfacing_is_not_a_dismissal(self):
+        """Observe mode shows a finding and the call runs; nobody dismissed it."""
+        from prismor.runtime.learning import record_dismissal, track_false_positives
+        self._session("real", "npm run build")
+        for _ in range(6):
+            record_dismissal(self.workspace, "real", "semantic-guard-hybrid", "cat ~/.ssh/id_rsa", "observe_surfaced")
+        self.assertEqual(track_false_positives(self.workspace, threshold=5), [])

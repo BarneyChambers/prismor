@@ -308,11 +308,18 @@ $ prismor tags provenance [PATH]     # who wrote what other agents are reading
 $ prismor tags set 'mcp__crm__*' private_data
 $ prismor tags rm  'mcp__crm__*'
 $ prismor tags rules                 # active rules (DSL + legacy + default)
-$ prismor tags rules add "untrusted_content then critical_action -> block"
+$ prismor tags rules add "untrusted_content then egress.offlist -> block"
 $ prismor tags rules rm 0
-$ prismor tags edit                  # interactive wizard
+$ prismor tags edit                  # interactive wizard (option 6 turns tool_tags on)
 $ prismor tags lint                  # validate every rule expression
 ```
+
+Tags and rules do nothing while `tool_tags.enabled` is false (the shipped
+default); `tags set`, `tags rules add` and `tags rules` say so when that is the
+case. Prefer a narrow last step such as `egress.offlist` over the bare
+`untrusted_content then critical_action -> block`, which blocks every command
+for the rest of a session that read anything untrusted (see
+[Influence](#influence-what-separates-a-sequence-from-an-attack) above for why the shipped default only warns on it).
 
 Invalid expressions fail with a caret diagnostic:
 

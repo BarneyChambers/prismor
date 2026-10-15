@@ -2833,28 +2833,8 @@ class PolicyEngine:
         mode = str(cfg.get("mode", "hybrid")).lower()
         try:
             if mode in ("auto", "hybrid"):
-                from prismor.runtime.semantic_guard_v2 import SemanticGuardV2
-                cli = cfg.get("cli_path") or None
-                # `auto` is the default and screens every tool call, so it never
-                # spawns the CLI subagent; `hybrid` is the explicit opt-in to it.
-                # Policy names the judge; PRISMOR_SEMANTIC_PROVIDER is the operator's
-                # default when it does not (`prismor proxy --judge typesafe`). A
-                # policy `model` belongs to the policy's provider, not to that one.
-                env_provider = os.environ.get("PRISMOR_SEMANTIC_PROVIDER", "").strip().lower()
-                from_env = not cfg.get("provider") and bool(env_provider)
-                self._semantic_guard = SemanticGuardV2(
-                    cli_path=cli,
-                    model="" if from_env else str(cfg.get("model") or ""),
-                    allow_cli=(mode == "hybrid"),
-                    provider=env_provider if from_env else str(cfg.get("provider") or "").lower(),
-                    # Documented and editable in the console for a long time,
-                    # but never read: the band was always 0.30-0.75.
-                    # Unset: the guard picks from the judge's cost (0 for a fast
-                    # judge, the narrow band for a CLI one).
-                    low_threshold=(float(cfg["low_threshold"])
-                                   if cfg.get("low_threshold") is not None else None),
-                    high_threshold=float(cfg.get("high_threshold", 1.0)),
-                )
+                from prismor.runtime.semantic_guard_v2 import from_config
+                self._semantic_guard = from_config(cfg)
             else:
                 from prismor.runtime.semantic_guard import SemanticGuard
                 self._semantic_guard = SemanticGuard(

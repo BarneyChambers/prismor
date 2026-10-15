@@ -334,7 +334,10 @@ def _header_lines(step: Optional[int] = None, total: Optional[int] = None, label
         f"  {_w('PRISMOR', BOLD, CYAN)}  {_w('· ' + _VERSION, DIM)}",
     ]
     if step and label:
-        out.append(f"  {_w(f'Step {step}/{total}', DIM)}  {_w(label, BOLD)}")
+        # No "/total": the path branches (enforce adds steps, a named
+        # governance mode removes one), so any total shown up front changes
+        # under the user mid-wizard.
+        out.append(f"  {_w(f'Step {step}', DIM)}  {_w(label, BOLD)}")
     out.append(_w("  " + "─" * min(tw - 4, 64), DIM))
     out.append("")
     return out
@@ -761,11 +764,12 @@ def _step_cloak(current: bool = True, step: int = 3, total: int = 4) -> bool:
 
 _JUDGE_OPTS = [
     # (provider, label, default model, description)
-    ("",        "Heuristics only",  "",                          "no LLM; regex + structural rules decide"),
-    ("claude",  "Claude Code CLI",  "claude-haiku-4-5-20251001", "your Claude login, no API key; ~20s per escalation"),
-    ("codex",   "Codex CLI",        "",                          "your ChatGPT login, no API key; ~8s per escalation"),
-    ("api",     "API key",          "",                          "any litellm model via provider env key; ~1s"),
-    ("prismor", "Prismor API",     "",                          "1,000 free verdicts/month; no key or CLI; ~2s a verdict"),
+    ("heuristic", "Heuristics only",  "",                          "no LLM; regex + structural rules decide"),
+    ("claude",  "Claude Code CLI",  "claude-haiku-4-5-20251001", "your Claude login, no API key; ~20s, uncertain events only"),
+    ("codex",   "Codex CLI",        "",                          "your ChatGPT login, no API key; ~8s, uncertain events only"),
+    ("typesafe", "TypeSafe API",    "jev-latest",                "$TYPESAFE_API_KEY; ~0.2s, judges every text"),
+    ("api",     "API key",          "",                          "OpenAI / Gemini / Anthropic key; ~1-3s, judges every text"),
+    ("prismor", "Prismor API",     "",                          "1,000 free verdicts/month; no key or CLI; ~2s, judges every text"),
 ]
 
 
@@ -774,7 +778,7 @@ def _default_judge() -> str:
     for prov in ("claude", "codex"):
         if _judge_ready(prov) == "found":
             return prov
-    return ""
+    return "heuristic"
 
 
 def _judge_ready(provider: str) -> str:
@@ -789,6 +793,8 @@ def _judge_ready(provider: str) -> str:
         keys = [k for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY")
                 if os.environ.get(k)]
         return keys[0] if keys else "no key in env"
+    if provider == "typesafe":
+        return "TYPESAFE_API_KEY" if os.environ.get("TYPESAFE_API_KEY") else "no key in env"
     if provider == "prismor":
         from prismor.runtime.enterprise.identity import is_enrolled
         # "sign in" is a to-do, not a blocker: picking it runs `prismor login`
@@ -828,8 +834,9 @@ def _step_judge(current: tuple = ("", ""), step: int = 4, total: int = 5):
     sel = next((i for i, o in enumerate(_JUDGE_OPTS) if o[0] == want), 0)
     while True:
         lines = _header_lines(step, total, "LLM JUDGE")
-        lines.append(f"  {_w('When the regex layer is unsure (score 0.30-0.75), a small model makes', DIM)}")
-        lines.append(f"  {_w('the call. Pick which login it runs on. Only uncertain events pay for it.', DIM)}")
+        lines.append(f"  {_w('A small model reviews what the regex layer cannot decide. CLI judges are slow,', DIM)}")
+        lines.append(f"  {_w('so they only see uncertain events (score 0.30-0.75). API judges see every prompt', DIM)}")
+        lines.append(f"  {_w('and tool result: a paraphrased injection scores 0 on the regexes.', DIM)}")
         lines.append("")
         tw = _term_width()
         for i, (prov, label, _m, desc) in enumerate(_JUDGE_OPTS):
@@ -854,11 +861,14 @@ def _step_judge(current: tuple = ("", ""), step: int = 4, total: int = 5):
         elif key in (_LEFT, "b", "B"):  return _BACK  # type: ignore[return-value]
         elif key in (_ENTER, "\n"):
             prov, _l, default_model, _d = _JUDGE_OPTS[sel]
-            if not prov:
-                return ("", "")
-            if prov == "prismor":  # the server picks the model
+            if prov in ("heuristic", "prismor"):  # no model / the server picks it
                 return (prov, "")
-            sys.stdout.write("\n  " + _w("Model id (enter keeps the default; blank = CLI default)", DIM) + "\n")
+            if prov == "api":
+                from prismor.runtime.semantic_guard import default_model as _api_default
+                default_model = _api_default()
+            fallback = {"claude": "the Claude CLI's own default", "codex": "the Codex CLI's own default",
+                        "typesafe": "jev-latest"}.get(prov, default_model or "none: set PRISMOR_SEMANTIC_MODEL")
+            sys.stdout.write("\n  " + _w(f"Model id. Enter keeps what is shown; blank uses {fallback}.", DIM) + "\n")
             model = _read_line(current[1] if current[0] == prov and current[1] else default_model)
             return (prov, model)
         elif key in ("q", "Q", "\x03"): _cleanup(); sys.exit(0)
@@ -874,13 +884,25 @@ def _write_judge_setting(target: Path, provider: str, model: str) -> None:
     d = target / ".prismor"
     d.mkdir(exist_ok=True)
     path = d / "policy.yaml"
-    block = f"  semantic_guard:\n    provider: {provider}\n    model: {json.dumps(model)}\n"
+    if provider == "heuristic":
+        # Written, not left unset: unset means "use whichever provider key is in
+        # the environment", which is not what "no LLM" promised.
+        block = "  semantic_guard:\n    mode: heuristic\n"
+    else:
+        block = f"  semantic_guard:\n    provider: {provider}\n    model: {json.dumps(model)}\n"
     txt = path.read_text(encoding="utf-8") if path.exists() else 'version: "1.0"\n'
     if "semantic_guard:" in txt:
         import yaml
         raw = yaml.safe_load(txt) or {}
         sg = raw.setdefault("settings", {}).setdefault("semantic_guard", {})
-        sg["provider"], sg["model"] = provider, model
+        if provider == "heuristic":
+            sg.pop("provider", None)
+            sg.pop("model", None)
+            sg["mode"] = "heuristic"
+        else:
+            if sg.get("mode") == "heuristic":
+                sg.pop("mode")
+            sg["provider"], sg["model"] = provider, model
         path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
         return
     lines = txt.splitlines(keepends=True)
@@ -1087,8 +1109,9 @@ def _step_confirm(target: Path, mode: str, rules: List[dict], agents: List[str],
             lines.append(row(_w("built-ins served by Prismor; next session", DIM)))
         lines.append(row(kv("Cloak", "yes  (secret prevention)" if cloak else "no",
                             GRN if cloak else DIM)))
-        lines.append(row(kv("LLM judge", f"{judge[0]}  ({judge[1] or 'CLI default'})" if judge[0] else "heuristics only",
-                            GRN if judge[0] else DIM)))
+        _on = judge[0] not in ("", "heuristic")
+        lines.append(row(kv("LLM judge", f"{judge[0]}  ({judge[1] or 'default model'})" if _on else "heuristics only",
+                            GRN if _on else DIM)))
         lines.append(row(kv("Scope", "global (all projects)" if scope == "global" else "workspace only",
                             YEL if scope == "global" else GRN)))
         lines.append(row(kv("Self-edit", "password (3m window)" if unlock_pw else "blocked",
@@ -1154,8 +1177,13 @@ def _spinner_run(label: str, fn) -> None:
 
 
 
+_BLOCK_BEGIN = "<!-- prismor:security:begin -->"
+_BLOCK_END = "<!-- prismor:security:end -->"
+_LEGACY_HEADING = "## Security (Prismor)"
+
 _AGENT_CONTEXT_BLOCK = (
-    "\n## Security (Prismor)\n\n"
+    _BLOCK_BEGIN + "\n\n"
+    "## Security (Prismor)\n\n"
     "This workspace is protected by Prismor. "
     "Run `prismor status` at the start of every session.\n\n"
     "Key commands:\n\n"
@@ -1172,10 +1200,55 @@ _AGENT_CONTEXT_BLOCK = (
     "If Prismor blocks a call, don't reword and retry, and don't pause or edit "
     "`.prismor/` to get past it. Relay the printed unblock steps to the user; "
     "they are the user's to run.\n\n"
-    "Full decision tree: `.claude/skills/immunity-agent/SKILL.md`\n"
+    "Full decision tree: `.claude/skills/immunity-agent/SKILL.md`\n\n"
+    + _BLOCK_END + "\n"
 )
 
 _AGENTS_MD_AGENTS = {"codex", "openclaw", "hermes", "copilot"}
+
+
+def _upsert_security_block(path: Path) -> str:
+    """Write or refresh Prismor's Security block in an agent context file.
+
+    The block sits between ``_BLOCK_BEGIN``/``_BLOCK_END`` so a re-run can
+    replace exactly what Prismor wrote. A block from an older release has no
+    markers: it starts at the ``## Security (Prismor)`` heading and runs to the
+    next ``## `` heading. Anything else in the file — the cloak's own section
+    included — is left alone. If the file was trusted by the memory guard right
+    before this write, it stays trusted after it, so setup never trips the
+    changed-instruction-file notice on text it wrote itself.
+    """
+    block = _AGENT_CONTEXT_BLOCK
+    content = path.read_text(encoding="utf-8") if path.exists() else ""
+    if _BLOCK_BEGIN in content and _BLOCK_END in content:
+        head, rest = content.split(_BLOCK_BEGIN, 1)
+        tail = rest.split(_BLOCK_END, 1)[1].lstrip("\n")
+        new, status = head + block + ("\n" + tail if tail else ""), "refreshed"
+    elif _LEGACY_HEADING in content:
+        head, rest = content.split(_LEGACY_HEADING, 1)
+        nxt = re.search(r"^## ", rest, re.M)
+        tail = rest[nxt.start():] if nxt else ""
+        new, status = head + block + ("\n" + tail if tail else ""), "refreshed"
+    else:
+        sep = "" if not content else ("\n" if content.endswith("\n") else "\n\n")
+        new, status = content + sep + block, ("appended" if content else "created")
+    if new == content:
+        return "up to date"
+    was_trusted = False
+    try:
+        from prismor.runtime import memory_guard as _mg
+        ws = path.parent
+        entry = _mg.load_trust_store(ws).get("files", {}).get(str(path.resolve()))
+        was_trusted = bool(entry) and entry.get("sha256") == _mg.compute_file_hash(path)
+    except Exception:
+        pass
+    path.write_text(new, encoding="utf-8")
+    if was_trusted:
+        try:
+            _mg.approve_memory_file(path, ws)
+        except Exception:
+            pass
+    return status
 
 
 def _write_agent_context(target: Path, agents: List[str]) -> None:
@@ -1185,17 +1258,10 @@ def _write_agent_context(target: Path, agents: List[str]) -> None:
         "windsurf": target / ".windsurfrules",
     }
     for agent, path in agent_files.items():
-        if agent not in agents:
-            continue
-        content = path.read_text(encoding="utf-8") if path.exists() else ""
-        if "Prismor" not in content:
-            path.write_text(content + _AGENT_CONTEXT_BLOCK, encoding="utf-8")
-
+        if agent in agents:
+            _upsert_security_block(path)
     if any(a in agents for a in _AGENTS_MD_AGENTS):
-        path = target / "AGENTS.md"
-        content = path.read_text(encoding="utf-8") if path.exists() else ""
-        if "Prismor" not in content:
-            path.write_text(content + _AGENT_CONTEXT_BLOCK, encoding="utf-8")
+        _upsert_security_block(target / "AGENTS.md")
 
 
 # ── Install ───────────────────────────────────────────────────────────────────
@@ -1255,9 +1321,13 @@ def _install_skill(target: Path):
     """Copy the bundled immunity-agent Claude skill into the workspace.
 
     Installs to ``<target>/.claude/skills/immunity-agent/`` (SKILL.md plus its
-    docs/). Idempotent: if a SKILL.md is already present it's left untouched so
-    user edits survive re-runs. Returns ``(ok, detail)`` for the spinner.
+    docs/) and records the installed SKILL.md's hash in ``.prismor-bundled``.
+    A re-run refreshes a copy that still matches that hash, so agents pick up
+    new guidance after an upgrade; a copy the user edited is kept. A copy from
+    a release that wrote no stamp is refreshed with the old one saved as
+    ``SKILL.md.bak``. Returns ``(ok, detail)`` for the spinner.
     """
+    import hashlib
     try:
         from prismor.runtime.paths import skill_manifest_path, skill_docs_dir
         skill_md = skill_manifest_path()
@@ -1268,19 +1338,57 @@ def _install_skill(target: Path):
         return True, "skipped (skill not bundled)"
 
     dest = target / ".claude" / "skills" / "immunity-agent"
-    if (dest / "SKILL.md").exists():
-        return True, "already present"
+    current, stamp = dest / "SKILL.md", dest / ".prismor-bundled"
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+    detail = "installed"
     try:
+        if current.exists():
+            if sha(current) == sha(skill_md):
+                if not stamp.exists():
+                    stamp.write_text(sha(skill_md) + "\n", encoding="utf-8")
+                return True, "up to date"
+            recorded = stamp.read_text(encoding="utf-8").strip() if stamp.exists() else ""
+            if recorded and recorded != sha(current):
+                return True, "kept (edited locally; delete it and re-run setup to refresh)"
+            if not recorded:
+                shutil.copy2(current, dest / "SKILL.md.bak")
+                detail = "refreshed (old copy saved as SKILL.md.bak)"
+            else:
+                detail = "refreshed"
         dest.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(skill_md, dest / "SKILL.md")
+        shutil.copy2(skill_md, current)
+        stamp.write_text(sha(skill_md) + "\n", encoding="utf-8")
         if docs_src.exists() and docs_src.is_dir():
             docs_dest = dest / "docs"
             docs_dest.mkdir(exist_ok=True)
             for md in docs_src.glob("*.md"):
                 shutil.copy2(md, docs_dest / md.name)
-        return True, "installed"
+        return True, detail
     except OSError as e:
         return False, str(e)[:40]
+
+
+def refresh_guidance() -> List[str]:
+    """Refresh the skill and Security blocks in every registered workspace that
+    already has them, after an upgrade. Only touches what setup wrote."""
+    from prismor.runtime.store import list_registered_workspaces
+    done = []
+    for ws in list_registered_workspaces():
+        if not ws.is_dir():
+            continue
+        changed = []
+        if (ws / ".claude" / "skills" / "immunity-agent" / "SKILL.md").exists():
+            ok, detail = _install_skill(ws)
+            if ok and detail.startswith(("refreshed", "kept")):
+                changed.append(f"skill {detail}")
+        for name in ("CLAUDE.md", "AGENTS.md", ".cursorrules", ".windsurfrules"):
+            f = ws / name
+            if f.exists() and (_BLOCK_BEGIN in (t := f.read_text(encoding="utf-8")) or _LEGACY_HEADING in t):
+                if _upsert_security_block(f) == "refreshed":
+                    changed.append(name)
+        if changed:
+            done.append(f"{ws}: {', '.join(changed)}")
+    return done
 
 
 def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], cloak: bool = False, scope: str = "project", mirror_agents: Optional[List[str]] = None, gov_mode: Optional[str] = None, judge: tuple = ("", "")) -> None:
@@ -1391,13 +1499,17 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
     if judge[0]:
         def _write_judge():
             _write_judge_setting(target, judge[0], judge[1])
-            label = "Prismor API" if judge[0] == "prismor" else f"{judge[0]} ({judge[1] or 'CLI default'})"
-            # The api judge imports litellm, which the base install leaves out.
+            label = {"prismor": "Prismor API", "heuristic": "heuristics only (no LLM)"}.get(
+                judge[0], f"{judge[0]} ({judge[1] or 'default model'})")
+            # OpenAI, Gemini and Anthropic ids are called directly; any other
+            # model goes through litellm, which the base install leaves out.
             # Without it every verdict falls back to heuristics, i.e. the judge
             # is silently off — say so here, where the user just chose it.
             if judge[0] == "api":
                 import importlib.util
-                if importlib.util.find_spec("litellm") is None:
+                from prismor.runtime.semantic_guard import default_model, direct_route
+                if (not direct_route(judge[1] or default_model())
+                        and importlib.util.find_spec("litellm") is None):
                     return False, "needs litellm: pip install 'prismor[semantic]'"
             return True, label
         _spinner_run("Setting LLM judge", _write_judge)
@@ -1469,25 +1581,7 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
 
     # 4. CLAUDE.md
     def _update_claude():
-        md = target / "CLAUDE.md"
-        block = (
-            "\n## Security (Prismor)\n\n"
-            "This workspace is protected by Prismor — runtime "
-            "security hooks that monitor tool calls in real time (destructive "
-            "commands, secret leaks, supply-chain risk, prompt injection).\n\n"
-            "Run `prismor status` at the start of a session to check protection "
-            "state. The full decision tree lives in "
-            "`.claude/skills/immunity-agent/SKILL.md`.\n\n"
-            "For more info: https://github.com/PrismorSec/prismor\n"
-        )
-        if md.exists():
-            content = md.read_text(encoding="utf-8")
-            if "Prismor" in content:
-                return True, "already present"
-            md.write_text(content + block, encoding="utf-8")
-            return True, "appended"
-        md.write_text(block.lstrip(), encoding="utf-8")
-        return True, "created"
+        return True, _upsert_security_block(target / "CLAUDE.md")
     _spinner_run("Updating CLAUDE.md", _update_claude)
 
     # 4b. Install SKILL.md for all workspaces — any agent can read it.
@@ -1551,6 +1645,15 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
         print(f"  {_w(k + ':', GRN)}  {_w(v, DIM)}")
 
     _info("Hooks",      f"installed  (mode: {mode}, scope: {'global — every workspace on this machine' if scope == 'global' else 'this workspace'})")
+    if mode == "enforce" and gov_mode not in (None, "custom"):
+        _info("Blocking", f"what governance mode '{gov_mode}' selects  (prismor mode show)")
+    elif mode == "enforce":
+        n_block = sum(1 for r in rules if r.get("on"))
+        if n_block:
+            _info("Blocking", f"{n_block} rule(s)")
+        else:
+            print(f"  {_w('Blocking:', YEL)}  {_w('none — enforce is on but no rules are opted in, so nothing is stopped yet.', YEL)}")
+            print(f"             {_w('Add them: prismor setup --mode enforce --recommended', DIM)}")
     if "codex" in agents:
         _info("Codex",  "hooks run only after you trust them — accept the hook-trust prompt in the Codex TUI once,")
         print(f"          {_w('or pass --dangerously-bypass-hook-trust to `codex exec` for headless runs', DIM)}")
