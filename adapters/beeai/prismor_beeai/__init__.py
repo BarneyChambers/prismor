@@ -4,17 +4,12 @@ Routes every tool call through ``prismor.runtime.runtime.evaluate_tool_call``
 before the tool runs — same policy engine, observe/enforce model, and
 per-user attribution as the other adapters.
 
-BeeAI's real hook point is a tool's own ``Emitter``: ``Tool.run()`` awaits
-``context.emitter.emit("start", ToolStartEvent(input=..., options=...))``
-*before* calling ``self._run(...)``. Verified against source
-(``beeai_framework.emitter.Emitter._invoke``): listener callbacks run as
-tasks inside an ``asyncio.TaskGroup``, which always awaits every task
-before the surrounding ``async with`` block exits and re-raises if any
-task failed — so a listener that raises genuinely prevents the tool body
-from ever running, not just an after-the-fact observation. (This was
-checked carefully rather than assumed, after finding a *different*
-framework's documented "before execution" hook did NOT actually block in
-practice — see the Mastra adapter's notes.)
+The check wraps the tool's own ``_run``: ``Tool.run()`` validates the input
+and then awaits ``self._run(...)``, so a denial raised there means the body
+never runs, and it is raised as a ``ToolError`` -- the error BeeAI agents
+catch and show the model. (An earlier version hooked the tool's "start"
+event; the emitter re-wraps a listener's exception as a generic
+``EmitterError``, so the model never saw why and the agent run crashed.)
 
 RESULT REDACTION: not available here. The other adapters wrap the tool's
 entrypoint and so hold its return value; this one attaches a listener to a
@@ -34,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from beeai_framework.emitter.types import EmitterOptions
+from beeai_framework.tools import ToolError
 
 from prismor.runtime.principal import Subject, resolve_subject
 from prismor.runtime.runtime import Decision, evaluate_tool_call
@@ -76,11 +71,11 @@ def guard_tool(
     event_type: str = "shell",
     raise_on_block: bool = False,
 ) -> Any:
-    """Attach a Prismor policy check to a BeeAI tool's "start" event.
+    """Policy-check every call of a BeeAI tool before its body runs.
 
-    A denied call raises inside the listener, which the tool's Retryable
-    executor surfaces as a tool error (visible to the agent/model) --
-    self._run() is never reached. Returns the same tool object.
+    A denied call raises ``ToolError`` with the reason, which the agent hands
+    back to the model; ``self._run()``'s original body is never reached.
+    Returns the same tool object.
     """
     if getattr(tool, "__prismor_guarded__", False):
         return tool
@@ -88,7 +83,9 @@ def guard_tool(
     sid = session_id or f"beeai-{os.getpid()}"
     tool_name = getattr(tool, "name", tool.__class__.__name__)
 
-    async def on_start(data: Any, event: Any) -> None:
+    original_run = tool._run
+
+    async def guarded_run(input: Any, options: Any, context: Any) -> Any:
         field = _TYPE_FIELD.get(event_type, "command")
         payload_event = {
             "ts": datetime.now(timezone.utc).isoformat(),
@@ -96,11 +93,11 @@ def guard_tool(
             "agent": agent,
             "agent_event": "PreToolUse",
             "type": event_type,
-            field: _payload(data.input),
+            field: _payload(input),
             "metadata": {
                 "tool_name": tool_name,
                 "framework": "beeai",
-                "raw_input": str(data.input),
+                "raw_input": str(input),
             },
         }
         decision: Decision = evaluate_tool_call(
@@ -111,9 +108,17 @@ def guard_tool(
             reason = decision.reason or "policy violation"
             if raise_on_block:
                 raise PrismorBlocked(reason, decision)
-            raise RuntimeError(f"⛔ Prismor blocked this tool call: {reason}")
+            # A ToolError is what BeeAI agents catch and hand to the model. The
+            # "start"-event listener this replaced raised inside the emitter,
+            # which re-wraps it as a generic EmitterError ("Error during event
+            # emission"): the reason was lost and the agent run crashed.
+            raise ToolError(f"⛔ Prismor blocked this tool call: {reason}")
+        return await original_run(input, options, context)
 
-    tool.emitter.on("start", on_start, EmitterOptions(is_blocking=True))
+    # ponytail: wraps the body, so a hit in the tool's (opt-in) result cache is
+    # served without a policy check. Move the check ahead of the cache if a
+    # guarded tool ever enables one.
+    tool._run = guarded_run
     tool.__prismor_guarded__ = True
     return tool
 

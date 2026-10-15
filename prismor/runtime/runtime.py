@@ -117,7 +117,9 @@ def _apply_rule_exemptions(
 
 def _block_reason(finding: Dict[str, Any]) -> str:
     parts = [f"[{finding.get('severity', 'high')}] {finding.get('title', 'blocked')}"]
-    if finding.get("evidence"):
+    # Scoped-agent and IAM findings carry the title sentence again as their
+    # evidence; printing both showed every deny reason twice.
+    if finding.get("evidence") and str(finding["evidence"]) not in parts[0]:
         parts.append(str(finding["evidence"]))
     if finding.get("remediation"):
         parts.append(f"Recommended fix: {finding['remediation']}")
