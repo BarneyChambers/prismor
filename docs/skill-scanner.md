@@ -37,7 +37,7 @@ MCP servers increasingly run over the network (`http`, `sse`, `streamable-http`)
 
 ### Configuring the action
 
-By default these findings are warnings. Set them to block (to fail CI via `prismor scan --sarif`, or to block in enforce mode) in your project's `.prismor/policy.yaml`:
+By default these findings are warnings. Set them to block (they then carry `action: block` in `prismor scan --json`, and block in enforce mode) in your project's `.prismor/policy.yaml`:
 
 ```yaml
 settings:

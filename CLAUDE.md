@@ -21,7 +21,7 @@ The `prismor/runtime/cloaking/` subsystem is Prismor's prevention layer for secr
 ## Working in This Repo
 
 - The `advisories/` directory contains the signed threat feed — do not manually edit it. Use the pipeline scripts.
-- The `prismor/runtime/` directory is the runtime policy engine. Changes to `policies.py` affect what gets blocked in enforce mode.
+- The `prismor/runtime/` directory is the runtime policy engine. Rules live in `prismor/runtime/default_policy.yaml`; changes there affect what gets blocked in enforce mode (`policies.py` is a legacy module kept for backward compatibility).
 - The `pipeline/` directory contains the NVD fetch/merge/sign automation. The schema at `pipeline/schemas/threat-object.schema.json` is the source of truth for feed structure.
 - Run `python3 scripts/upgrade_feed.py` after pipeline changes to retroactively improve existing advisories.
 - Run `bash scripts/verify_feed.sh` to verify feed signature integrity.

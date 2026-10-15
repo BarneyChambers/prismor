@@ -32,7 +32,7 @@ If the task involves runtime monitoring, local hook installation, or session tel
 
 If the task involves secret handling, leak prevention, or the `@@SECRET:name@@` placeholder convention, also read:
 
-8. [`prismor/runtime/cloaking/README.md`](./prismor/runtime/cloaking/README.md)
+4. [`prismor/runtime/cloaking/README.md`](./prismor/runtime/cloaking/README.md)
 
 ## How To Work In This Repo
 
@@ -120,14 +120,14 @@ Prismor uses a **YAML-based policy engine**. All detection rules, enforcement se
 | `prismor/runtime/default_policy.yaml` | All default rules, settings (block_categories, manifest_patterns) |
 | `prismor/runtime/policy_schema.json` | JSON Schema for validating policy files |
 | `prismor/runtime/cli.py` | CLI entry point — check, status, sessions, dashboard, policy, hooks |
-| `prismor/runtime/hooks.py` | IDE hook installation and event normalization (Claude, Cursor, Windsurf, OpenClaw, Hermes) |
+| `prismor/runtime/hooks.py` | IDE hook installation and event normalization for the 17 agents in `_SUPPORTED_AGENTS` (Claude, Cursor, Windsurf, Codex, Copilot, Gemini, Antigravity, OpenCode, …) |
 | `prismor/runtime/store.py` | SQLite + JSONL session storage |
 | `prismor/runtime/feed.py` | Correlates findings with threat advisories |
 | `prismor/runtime/policies.py` | Legacy hardcoded patterns — kept for backward compat with tests only |
 
 **Policy loading order:**
 
-1. `default_policy.yaml` — base rules (78 rules, block categories, manifest patterns)
+1. `default_policy.yaml` — base rules (90+ rules, block categories, manifest patterns)
 2. `.prismor/policy.yaml` — per-project overrides (merged by rule `id`)
 3. signed remote (org) bundle — applied last on enrolled devices; authoritative
 
@@ -231,7 +231,7 @@ prismor cloak status                            # show install state + registere
 
 ### Setup wizard
 
-[`scripts/setup.py`](./scripts/setup.py) is the interactive setup wizard. It uses:
+[`prismor/runtime/setup_wizard.py`](./prismor/runtime/setup_wizard.py) is the interactive setup wizard behind `prismor setup`. ([`scripts/setup.py`](./scripts/setup.py) is the older wizard that `scripts/init.sh` still runs for git-clone installs.) It uses:
 
 - Alternate screen buffer for clean rendering
 - `tty.setcbreak()` for arrow key input (not `setraw` — that breaks output)

@@ -207,20 +207,17 @@ prismor install-hooks --agent windsurf --scope user --mode observe
 For the ungoverned MCP servers, scan them first:
 
 ```bash
-prismor scan mcp github-mcp
+prismor scan --scope user
 ```
 
-This checks the server against the advisory feed — known IOCs, schema drift from the expected version, typosquat detection. Add it to the allowlist if it passes:
+This checks every configured MCP server and installed skill for risky patterns: cleartext `http://` transport, bare-IP endpoints, endpoints that aren't on your egress allowlist, literal tokens in `headers`/`env`, and changes to a server's tool schemas since the last scan. To screen every call the agent makes to a server, put it behind the gateway:
 
-```yaml
-# .prismor/policy.yaml
-settings:
-  mcp_allowlist:
-    - server: github-mcp
-      version: ">=1.2.0"
-      approved_by: "security-team"
-      approved_date: "2026-08-13"
+```bash
+prismor mcp-gateway install        # this workspace's .mcp.json
+prismor mcp-gateway install --all  # every MCP config on the machine
 ```
+
+`prismor discover --fix` does the same for everything `discover` found, after showing you the plan.
 
 See [docs/skill-scanner.md](docs/skill-scanner.md) and [docs/attestation-bundle.md](docs/attestation-bundle.md#host-discovery).
 
@@ -233,7 +230,7 @@ See [docs/skill-scanner.md](docs/skill-scanner.md) and [docs/attestation-bundle.
 **Generate the bundle:**
 
 ```bash
-prismor attest generate
+prismor attest --out prismor-attestation-2026-08-13.json
 ```
 
 This packages:
@@ -243,7 +240,7 @@ This packages:
 - Audit trail anchor (the Ed25519-signed hash chain head from your session logs)
 - Framework coverage table (OWASP LLM Top 10, OWASP Agentic AI Top 10, NIST AI RMF, EU AI Act, SOC 2, ISO 42001)
 
-Output: `prismor-attestation-2026-08-13.json` — signed with your local Ed25519 key.
+Output: `prismor-attestation-2026-08-13.json` (without `--out` the bundle is printed to stdout). It is signed with your local Ed25519 key when `prismor[signing]` is installed (`pip install 'prismor[signing]'`); without it the bundle is unsigned and `attest verify` fails.
 
 **Give it to the auditor:**
 
@@ -313,10 +310,10 @@ During an incident, if you need to let an agent proceed without blocking while y
 
 ```bash
 prismor pause          # suspends enforcement only; observe-mode logging continues
-prismor pause-hard     # suspends all hook activity including logging
+prismor pause-hard     # same, but no auto-resume: stays paused until `prismor resume`
 ```
 
-`prismor pause` is the right call for most incidents — you keep the audit trail while removing the block.
+Both keep the audit trail while removing the block. `prismor pause` auto-resumes after 24h (`--for 2h` to change it), so prefer it for most incidents.
 
 See [docs/prismor-runtime.md](docs/prismor-runtime.md) for the full `action` reference.
 
@@ -366,10 +363,11 @@ The allowlist entry is scoped to this project. It does not affect other projects
 **Inspect the session forensics:**
 
 ```bash
-prismor trail show --session <session-id>
+prismor session <session-id>
+prismor rca <session-id>
 ```
 
-This shows every tool call in the session as a sequence — inputs, outputs, policy verdicts, timestamps. Use it to reconstruct what the agent was doing when the block fired.
+`session` shows every tool call in the session as a sequence, with inputs, policy verdicts and timestamps; `rca` adds the first failure, retry loops and reverted edits. `prismor trail show --last 50` renders the most recent signed audit-trail records. Use it to reconstruct what the agent was doing when the block fired.
 
 ```bash
 prismor trail verify

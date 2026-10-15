@@ -61,8 +61,8 @@ prismor status
 Read the output line by line:
 
 - **`Hooks: not installed`** → go to [Setup](#2-setup-run-once-per-workspace). Without hooks, Prismor sees nothing.
-- **`Hooks: claude (observe)`** → monitoring is on but only logging. Fine for the first session in a new repo. Recommend the user switch to `enforce` when they're ready (see [Setup](#2-setup-run-once-per-workspace)).
-- **`Hooks: claude (enforce)`** → the hook configuration requests enforcement. Read any `Hook health:` warnings; this line alone does not prove the agent invokes the hook.
+- **`Hooks: claude  (observe, project; configured)`** → monitoring is on but only logging. Fine for the first session in a new repo. Recommend the user switch to `enforce` when they're ready (see [Setup](#2-setup-run-once-per-workspace)).
+- **`Hooks: claude  (enforce, project; configured)`** → the hook configuration requests enforcement. It is followed by `Note: agent invocation not verified; run prismor doctor for configuration checks`: this line alone does not prove the agent invokes the hook. Read any `Hook health:` warnings.
 - **`Note:` lines** → status reports its own misconfigurations: the same agent hooked at *both* project and global scope (every call screened twice), or the two scopes disagreeing on mode. These are the user's to fix, and the printed command is the fix. Relay it, don't run it.
 - **`Workspace:`** → check this is the repo you're actually working in. A hook installed against a different workspace evaluates your calls under *that* repo's policy, which is a real misconfiguration worth raising.
 - **`Paused: yes`** → enforcement is suspended (logging continues). Say so before relying on a clean run; a command that passes while paused may block when it resumes.
@@ -151,8 +151,10 @@ Per-agent matrix (only one `--agent` value per invocation, or `all`):
 | Qwen Code (Alibaba) | `qwen` | `.qwen/settings.json` |
 | Continue CLI | `continue` | `.continue/settings.json` |
 | Goose (Agentic AI Foundation) | `goose` | `.agents/plugins/prismor/hooks/hooks.json` |
+| Gemini CLI | `gemini` | `.gemini/settings.json` |
+| Google Antigravity | `antigravity` | `.agents/hooks.json` |
+| OpenCode | `opencode` | `.opencode/plugins/prismor.js` (a plugin module OpenCode auto-loads) |
 
-OpenCode is governed through a bundled SDK plugin rather than a hook config.
 Agents with no hook protocol at all (n8n, hosted bots, closed CLIs) go behind
 the [LLM proxy](#7-enforcement-surfaces). Hosted agents that clone the repo
 onto their own VM (Claude Code on the web, Codex cloud, Copilot coding agent)
@@ -172,9 +174,9 @@ After install, re-run `prismor status`. The `Hooks:` line lists configured agent
 | Vercel AI SDK, Mastra (TypeScript) | [`docs/frameworks-vercel-ai.md`](./docs/frameworks-vercel-ai.md), [`docs/frameworks-mastra.md`](./docs/frameworks-mastra.md) |
 | Any other language, over HTTP | `prismor eval-server` — see [`docs/decision-contract.md`](./docs/decision-contract.md) |
 
-These adapters ship inside the `prismor` package — no separate install. They default to **observe**; the user opts into enforce explicitly. Adapters screen tool *calls* and redact tool *results*. Wrap each request in `use_subject("user:alice")` so a multi-tenant agent gets per-user attribution, IAM profiles, and suspension.
+These adapters ship inside the `prismor` package — no separate install. Defaults differ between adapters (some observe, some enforce), so pass the mode explicitly and confirm a block in a test before relying on it. Adapters screen tool *calls* and redact tool *results*. Wrap each request in `use_subject("user:alice")` so a multi-tenant agent gets per-user attribution, IAM profiles, and suspension.
 
-**Keep current.** `prismor status` prints the running version at the top. If the user asks to upgrade, or you see a stale version reported by `prismor status`, run:
+**Keep current.** `prismor --version` prints the running version, and `prismor status` adds a `note: prismor X is available` line when a newer release is out. If the user asks to upgrade, or you see that note, run:
 
 ```bash
 prismor update            # self-update to the latest published release
@@ -213,15 +215,15 @@ path: the policy engine never learns modes exist, so a mode can only produce
 settings the engine already reads.
 
 This matters to you for two reasons. It's the question a user can actually
-answer ("which of three postures" beats "which of 80 rules"), and **the active
+answer ("which of three postures" beats "which of 91 rules"), and **the active
 mode explains most blocks you will hit**. A denied `curl` under `dev-safe`
 isn't a broken rule; it's the mode working.
 
 | Mode | Intent | Coverage | Friction |
 |---|---|---|---|
-| `dev-safe` | Known developer destinations only. Arbitrary hosts blocked. | 29% (26/89 rules) | 9% |
-| `trusted-workspace` | Broad autonomy. Guardrails only on secrets and package installs. | 31% (28/89 rules) | 9% |
-| `regulated-airgap` | No network, no shell. File edits in the workspace, each approved. | 100% (89/89 rules) | 90% |
+| `dev-safe` | Known developer destinations only. Arbitrary hosts blocked. | 29% (26/91 rules) | 9% |
+| `trusted-workspace` | Broad autonomy. Guardrails only on secrets and package installs. | 31% (28/91 rules) | 9% |
+| `regulated-airgap` | No network, no shell. File edits in the workspace, each approved. | 100% (91/91 rules) | 90% |
 
 The numbers move as rules are added; `prismor mode list` prints the current ones.
 
@@ -265,7 +267,7 @@ already opted into them by installing prismor.
 | `npm install <pkg>` | `prismor supplychain npm install <pkg>` | Scores against IOC feed + age/maintainer signals before install runs. |
 | `pip install <pkg>` | `prismor supplychain pip install <pkg>` | Same gate for PyPI. |
 | `pnpm add` / `yarn add` / `uv add` / `cargo add` / `go get` | `prismor supplychain <pm> …` | Same gate per ecosystem. |
-| Package-manager config without hardening | `prismor supplychain harden` | Writes `ignore-scripts=true`, `save-exact=true`, pinned fetch into `.npmrc`, `pip.conf`, etc. Run `--dry-run` first to preview. |
+| Package-manager config without hardening | `prismor supplychain harden` | Writes npm `ignore-scripts`, `save-exact` and `audit` into `.npmrc`, the Yarn equivalents, pip `no-input` in `pip.conf`, and Cargo `[net]` retry / `git-fetch-with-cli`. Run `--dry-run` first to preview. |
 | Pasting a real API key / token into a tool call | Register once with `prismor cloak add <name>`, then write `@@SECRET:<name>@@` in the tool call | Real value stays in `~/.prismor/secrets/`, never reaches model context or transcripts. |
 | Any shell command you're not sure about | `prismor check "<cmd>"` first | Dry-run against active policy. Returns ALLOW / BLOCK + reason without executing. Add `--explain` for the rule chain. |
 | Recursive force-deletes, setuid `chmod`, `curl … \| bash`, edits to `/etc/sudoers` or `.github/workflows/*` | Pre-check with `prismor check`, and if the user genuinely needs it, propose a scoped allowlist entry in `.prismor/policy.yaml` rather than disabling Prismor | These are the exact patterns Prismor blocks. Bypassing is almost always wrong. |
@@ -347,8 +349,8 @@ password, or extend your own window. When it expires or the human runs
 
 Some rules can't be overridden at all. `destructive-command`,
 `secret-exfiltration`, `rce-canary`, `privilege-escalation`,
-`dos-resource-exhaustion`, `audit-trail-tampering`, and
-`tool-category-crossover` sit on a non-overridable floor — a policy that tries
+`dos-resource-exhaustion`, `audit-trail-tampering`, `tool-category-crossover`
+and `memory-integrity-mismatch` sit on a non-overridable floor — a policy that tries
 to disable them is ignored rather than honored, and `enabled: false`,
 `mode: observe` and `disable_patterns` are all ignored for them in every layer.
 A narrowly scoped allowlist entry (`prismor allow <rule> --pattern '<literal>'`)
@@ -373,6 +375,10 @@ pick the smallest tool that answers the question:
 | "What happened in this session?" | `prismor status` (also covers state; see [Check state](#1-check-state-first-command-of-every-session)) |
 | "Show me every flagged session" | `prismor sessions --findings-only` |
 | "Drill into session X" | `prismor session <id>` |
+| "What did session X change?" | `prismor session <id> --changes` (files written as diffs, commands run, a drafted PR description) |
+| "Where did this agent run go wrong?" | `prismor rca [session]` (first failure, retry loops, reverted edits; default: the latest session) |
+| "Which agent session wrote this line, and why?" | `prismor blame <path>[:<line>]` |
+| "What do agents keep tripping over in this repo?" | `prismor friction` (recurring failures as AGENTS.md lines; `--all` for every workspace) |
 | "Are my project deps compromised?" | `prismor deps` |
 | "Are there leaked secrets in my AI tool configs?" | `prismor sweep` (add `--redact` to vault them) |
 | "Audit my MCP servers and skills" | `prismor scan` |
@@ -392,7 +398,7 @@ pick the smallest tool that answers the question:
 | "What hosts is this project allowed to reach?" | `prismor egress show` (`egress report` for what was actually attempted) |
 | "Is Prismor itself healthy?" | `prismor doctor` (`--json` exits 0 only if every check passes) |
 | "Which tools are high-risk in my setup?" | `prismor tags list` (resolved tags + tier per tool) |
-| "Prove what happened — for an auditor" | `prismor trail verify` (re-walks the hash chain and signatures), `prismor trail show`, and `prismor attest` for a signed posture bundle |
+| "Prove what happened — for an auditor" | `prismor trail verify` (re-walks the hash chain and signatures), `prismor trail show`, and `prismor attest` for a posture bundle (Ed25519-signed when `prismor[signing]` is installed; unsigned otherwise) |
 | "Which framework controls does our policy cover?" | `prismor attest coverage` |
 | "Open the dashboard" | `prismor dashboard` → http://127.0.0.1:7070 (opens a browser; `--no-open` for headless) |
 | "Get Prismor into Prometheus / Grafana" | the dashboard server exposes `/metrics`; scrape config and the bundled Grafana dashboard are in [`docs/observability.md`](./docs/observability.md) |
@@ -698,6 +704,9 @@ and `prismor docs <page>` (e.g. `prismor docs llm-proxy`) prints one.
 - [`docs/skill-scanner.md`](./docs/skill-scanner.md): MCP server + skill risk scanning
 - [`docs/extensions.md`](./docs/extensions.md): the extension ledger — what can steer the agent, where it came from, which sessions ran under it
 - [`docs/canary.md`](./docs/canary.md): honeytoken tripwires for recon detection
+- [`docs/data-boundary.md`](./docs/data-boundary.md): what may be sent where — PII and secrets by destination tier
+- [`docs/subagents.md`](./docs/subagents.md): what is enforced inside Claude Code subagents and what the person is told
+- [`docs/pause-and-login.md`](./docs/pause-and-login.md): pausing enforcement without uninstalling, and the hosted judge via `prismor login`
 - [`docs/scoped-agent.md`](./docs/scoped-agent.md): session-scoped, task-derived rules
 - [`docs/learning.md`](./docs/learning.md): mining session history for new rules
 - [`docs/iam.md`](./docs/iam.md): named agent identities and permission profiles
@@ -705,7 +714,8 @@ and `prismor docs <page>` (e.g. `prismor docs llm-proxy`) prints one.
 
 **Evidence and telemetry**
 - [`docs/audit-trail.md`](./docs/audit-trail.md): hash-chained, Ed25519-signed local trail
-- [`docs/attestation-bundle.md`](./docs/attestation-bundle.md): one signed JSON an auditor can re-verify offline
+- [`docs/attestation-bundle.md`](./docs/attestation-bundle.md): one JSON an auditor can re-verify offline (signed with `prismor[signing]`)
+- [`docs/dev-insights.md`](./docs/dev-insights.md): `rca`, `blame`, `friction` and `session --changes` from the session record
 - [`docs/telemetry-sinks.md`](./docs/telemetry-sinks.md): OTLP, webhook, Splunk, Datadog, syslog, file, control plane
 - [`docs/telemetry-receipts.md`](./docs/telemetry-receipts.md): signed receipt schema
 - [`docs/live-telemetry.md`](./docs/live-telemetry.md): why live telemetry wasn't automatic, and the fix
