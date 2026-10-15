@@ -36,6 +36,30 @@ _FRONTMATTER_RE = re.compile(r'\A---\s*\n(.*?)\n---\s*\n', re.DOTALL)
 _MAX_BYTES = 512 * 1024
 
 
+def _installed_plugin_skills(plug: Path) -> List[Path]:
+    """SKILL.md files of the Claude Code plugins actually installed.
+
+    ``plugins/marketplaces/`` holds a clone of every catalog the person added,
+    installed or not, so globbing all of ``plugins/`` audited dozens of skills
+    no agent loads (one reported CRITICAL). ``installed_plugins.json`` names
+    each install's directory; without it, everything except the catalog
+    clones is scanned as before.
+    """
+    if not plug.is_dir():
+        return []
+    try:
+        data = json.loads((plug / "installed_plugins.json").read_text(encoding="utf-8"))
+        installs = [Path(i["installPath"]) for entries in (data.get("plugins") or {}).values()
+                    for i in (entries if isinstance(entries, list) else [entries])
+                    if isinstance(i, dict) and i.get("installPath")]
+    except (OSError, ValueError, TypeError, KeyError):
+        installs = None
+    if installs is None:
+        return sorted(p for p in plug.glob("**/skills/*/SKILL.md")
+                      if "marketplaces" not in p.relative_to(plug).parts[:1])
+    return sorted(p for root in installs if root.is_dir() for p in root.glob("**/skills/*/SKILL.md"))
+
+
 def discover_skill_files(workspace: Path) -> List[Path]:
     """Every SKILL.md the agents on this machine will load for ``workspace``."""
     home = Path.home()
@@ -51,10 +75,7 @@ def discover_skill_files(workspace: Path) -> List[Path]:
     for root in roots:
         if root.is_dir():
             found.extend(sorted(root.glob("*/SKILL.md")))
-    # Claude Code plugins: ~/.claude/plugins/<marketplace>/<plugin>/skills/<name>/SKILL.md
-    plug = home / ".claude" / "plugins"
-    if plug.is_dir():
-        found.extend(sorted(plug.glob("**/skills/*/SKILL.md")))
+    found.extend(_installed_plugin_skills(home / ".claude" / "plugins"))
     seen: set = set()
     out: List[Path] = []
     for p in found:

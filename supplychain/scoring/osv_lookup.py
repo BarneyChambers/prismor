@@ -109,7 +109,7 @@ def _classify_severity(vuln: Dict[str, Any]) -> str:
       4. Default "medium" so a confirmed-vulnerable version is never silent.
     """
     vid = vuln.get("id", "")
-    if vid.startswith("MAL-"):
+    if _is_malicious(vuln):
         return "critical"
 
     db = vuln.get("database_specific") or {}
@@ -152,7 +152,11 @@ def _is_malicious(vuln: Dict[str, Any]) -> bool:
     if vuln.get("id", "").startswith("MAL-"):
         return True
     db = vuln.get("database_specific") or {}
-    return str(db.get("type") or "").upper() == "MALICIOUS_LIBRARY"
+    if str(db.get("type") or "").upper() == "MALICIOUS_LIBRARY":
+        return True
+    # GitHub's malware advisories (GHSA "<pkg> is malware") carry CWE-506,
+    # Embedded Malicious Code, rather than a MAL- id.
+    return "CWE-506" in (db.get("cwe_ids") or [])
 
 
 def fetch_vulns(

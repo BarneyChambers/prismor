@@ -879,22 +879,6 @@ def save_session_snapshot(
             "AND (enrichment_json IS NULL OR enrichment_json NOT LIKE '%\"source\": \"runtime\"%')",
             (session_id,),
         )
-        runtime_row = cursor.execute(
-            "SELECT COUNT(*), MAX(CASE lower(severity) WHEN 'critical' THEN 90 WHEN 'high' THEN 70 "
-            "WHEN 'medium' THEN 45 WHEN 'low' THEN 15 ELSE 0 END) FROM findings WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        runtime_count = int((runtime_row or [0])[0] or 0)
-        runtime_risk = int((runtime_row or [0, 0])[1] or 0)
-        if runtime_count:
-            summary = dict(analysis["summary"])
-            summary["totalFindings"] = int(summary.get("totalFindings") or 0) + runtime_count
-            summary["riskScore"] = max(int(summary.get("riskScore") or 0), runtime_risk)
-            cursor.execute(
-                "UPDATE sessions SET findings_count = ?, risk_score = ?, summary_json = ? WHERE session_id = ?",
-                (summary["totalFindings"], summary["riskScore"], json.dumps(summary), session_id),
-            )
-
         cursor.executemany(
             """
             INSERT INTO events (
@@ -965,10 +949,33 @@ def save_session_snapshot(
                 for finding in analysis["findings"]
             ],
         )
+        # The summary counts the table, not analysis + runtime: an enforced
+        # finding is stored by persist_runtime_findings AND re-derived by this
+        # analysis under the same finding_id, so adding the two counted every
+        # block twice (`sessions` said 12 where `session` listed 6).
+        _sync_session_summary(cursor, session_id, dict(analysis["summary"]))
         connection.commit()
     finally:
         connection.close()
     return db_path
+
+
+def _sync_session_summary(cursor: sqlite3.Cursor, session_id: str, summary: Dict[str, Any]) -> None:
+    rows = cursor.execute(
+        "SELECT upper(COALESCE(severity, 'UNKNOWN')) FROM findings WHERE session_id = ?", (session_id,)
+    ).fetchall()
+    rank = {"CRITICAL": 90, "HIGH": 70, "MEDIUM": 45, "LOW": 15}
+    breakdown = {k: 0 for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")}
+    for (sev,) in rows:
+        breakdown[sev if sev in breakdown else "UNKNOWN"] += 1
+    summary["totalFindings"] = len(rows)
+    summary["severityBreakdown"] = breakdown
+    summary["riskScore"] = max(int(summary.get("riskScore") or 0),
+                               max((rank.get(sev, 0) for (sev,) in rows), default=0))
+    cursor.execute(
+        "UPDATE sessions SET findings_count = ?, risk_score = ?, summary_json = ? WHERE session_id = ?",
+        (summary["totalFindings"], summary["riskScore"], json.dumps(summary), session_id),
+    )
 
 
 def _enforced(finding: Dict[str, Any]) -> bool:
@@ -978,6 +985,16 @@ def _enforced(finding: Dict[str, Any]) -> bool:
     dashboard's ``flowVerdict``."""
     mode, action = finding.get("mode"), finding.get("action")
     return not (mode and mode != "enforce") and not (action and action != "block")
+
+
+#: ``_enforced`` as a SQL predicate over ``findings f``, so dashboard counts of
+#: "blocked" stop including findings that only warned.
+_ENFORCED_SQL = (
+    "(CASE WHEN json_valid(f.enrichment_json) THEN "
+    "COALESCE(NULLIF(json_extract(f.enrichment_json, '$.mode'), ''), 'enforce') = 'enforce' "
+    "AND COALESCE(NULLIF(json_extract(f.enrichment_json, '$.action'), ''), 'block') = 'block' "
+    "ELSE 1 END)"
+)
 
 
 def persist_runtime_findings(
@@ -1039,35 +1056,14 @@ def persist_runtime_findings(
             """,
             rows,
         )
-        row = cursor.execute(
-            "SELECT COUNT(*) as cnt, MAX(CASE lower(severity) "
-            "WHEN 'critical' THEN 90 WHEN 'high' THEN 70 "
-            "WHEN 'medium' THEN 45 WHEN 'low' THEN 15 ELSE 0 END) as risk "
-            "FROM findings WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        count = int(row[0] or 0)
-        risk = int(row[1] or 0)
         summary_raw = cursor.execute(
-            "SELECT summary_json FROM sessions WHERE session_id = ?",
-            (session_id,),
+            "SELECT summary_json FROM sessions WHERE session_id = ?", (session_id,)
         ).fetchone()
-        summary: Dict[str, Any] = {}
-        if summary_raw and summary_raw[0]:
-            try:
-                summary = json.loads(summary_raw[0])
-            except Exception:
-                summary = {}
-        summary["totalFindings"] = count
-        summary["riskScore"] = max(int(summary.get("riskScore") or 0), risk)
-        cursor.execute(
-            """
-            UPDATE sessions
-            SET findings_count = ?, risk_score = ?, summary_json = ?
-            WHERE session_id = ?
-            """,
-            (count, summary["riskScore"], json.dumps(summary), session_id),
-        )
+        try:
+            summary = json.loads(summary_raw[0]) if summary_raw and summary_raw[0] else {}
+        except ValueError:
+            summary = {}
+        _sync_session_summary(cursor, session_id, summary)
         connection.commit()
     finally:
         connection.close()
@@ -1565,7 +1561,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 """
                 SELECT COUNT(*) FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE f.category IN ('destructive_command','dos_resource_exhaustion')
+                WHERE """ + _ENFORCED_SQL + """
                   AND s.updated_at >= datetime('now', ?)
                 """,
                 (f"-{hours} hours",),
@@ -1576,7 +1572,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 """
                 SELECT COUNT(*) FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE f.category IN ('destructive_command','dos_resource_exhaustion')
+                WHERE """ + _ENFORCED_SQL + """
                   AND s.updated_at >= datetime('now', ?)
                   AND s.updated_at < datetime('now', ?)
                 """,
@@ -1632,7 +1628,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 SELECT date(s.updated_at) as day, COUNT(*) as flagged_events
                 FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE s.updated_at >= datetime('now', '-30 days')
+                WHERE s.updated_at >= datetime('now', '-30 days') AND """ + _ENFORCED_SQL + """
                 GROUP BY day
                 """
             ):
@@ -1649,7 +1645,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 SELECT s.agent, COUNT(*) as blocked
                 FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE s.updated_at >= datetime('now', ?)
+                WHERE s.updated_at >= datetime('now', ?) AND """ + _ENFORCED_SQL + """
                 GROUP BY s.agent
                 """,
                 (f"-{hours} hours",),
@@ -1703,7 +1699,9 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 SELECT e.ts, s.agent, e.type as action_type,
                        e.command_text, e.path_text, e.url_text,
                        f.severity,
-                       CASE WHEN f.finding_id IS NOT NULL THEN 'blocked' ELSE 'allowed' END as verdict
+                       CASE WHEN f.finding_id IS NULL THEN 'allowed'
+                            WHEN """ + _ENFORCED_SQL + """ THEN 'blocked'
+                            ELSE 'warned' END as verdict
                 FROM events e
                 JOIN sessions s ON s.session_id = e.session_id
                 LEFT JOIN findings f ON f.session_id = e.session_id
@@ -1740,6 +1738,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                        MAX(s.updated_at) as last_seen_ts
                 FROM findings f
                 LEFT JOIN sessions s ON s.session_id = f.session_id
+                WHERE """ + _ENFORCED_SQL + """
                 GROUP BY f.session_id
                 ORDER BY blocked DESC LIMIT 10
                 """
@@ -1765,7 +1764,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
             #    real server / skill names instead of hook noise) ────────
             for row in conn.execute(
                 """
-                SELECT e.raw_json, s.agent, f.finding_id IS NOT NULL as blocked
+                SELECT e.raw_json, s.agent, (f.finding_id IS NOT NULL AND """ + _ENFORCED_SQL + """) as blocked
                 FROM events e
                 JOIN sessions s ON s.session_id = e.session_id
                 LEFT JOIN findings f ON f.session_id = e.session_id
@@ -2951,6 +2950,11 @@ def _extract_advisory_ids(signals_json: str) -> List[str]:
     return ids
 
 
+# "Risky npm install: lodash@4.17.4 (score 75/100)" -- the hook's install finding
+# title (older rows end in ", block)" / ", warn)").
+_HOOK_INSTALL_TITLE = re.compile(r"(\w+) install: (\S+) \(score (\d+)/100")
+
+
 def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
     """Aggregate supply chain enforcement data across all registered workspaces."""
     from collections import Counter
@@ -3043,6 +3047,44 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
                     "advisoryIds": _extract_advisory_ids(row["signals_json"] or ""),
                     "iocId": row["ioc_id"] or "",
                     "sessionId": row["session_id"] or "",
+                })
+
+            # Installs the hooks screened (an agent's plain `npm install x`)
+            # never pass through write_supply_chain_event; they are findings.
+            # Only flagged installs are on record, so they add to blocked /
+            # warned / checked but never to allowed.
+            for row in conn.execute(
+                """
+                SELECT f.title, f.evidence, s.updated_at AS ts, f.session_id,
+                       """ + _ENFORCED_SQL + """ AS enforced
+                FROM findings f JOIN sessions s ON s.session_id = f.session_id
+                WHERE json_valid(f.enrichment_json)
+                  AND json_extract(f.enrichment_json, '$.ruleId') = 'pkg-install-vulnerable-version'
+                  AND s.updated_at >= datetime('now', ?)
+                """,
+                (f"-{hours} hours",),
+            ):
+                m = _HOOK_INSTALL_TITLE.search(row["title"] or "")
+                if not m:
+                    continue
+                eco, pkg, score = m.group(1), m.group(2), int(m.group(3))
+                verdict = "block" if row["enforced"] else "warn"
+                checked_24h += 1
+                ecosystem_total[eco] += 1
+                if verdict == "block":
+                    blocked_24h += 1
+                    ecosystem_blocked[eco] += 1
+                    pkg_blocks[pkg] += 1
+                    pkg_ecosystem[pkg] = eco
+                else:
+                    warned_24h += 1
+                recent_rows.append({
+                    "tsRaw": row["ts"] or "", "package": pkg, "version": "", "ecosystem": eco,
+                    "score": score, "verdict": verdict,
+                    "reason": (row["evidence"] or "").partition(": ")[2][:120],
+                    "installCmd": "(agent shell command)", "recommended": "",
+                    "advisoryIds": [a.upper() for a in _ADVISORY_RE.findall(row["evidence"] or "")],
+                    "iocId": "", "sessionId": row["session_id"] or "",
                 })
 
             # Per-session install activity in the 24h window.
