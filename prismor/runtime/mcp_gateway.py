@@ -571,6 +571,11 @@ def _extract_meta_tags(tool: Dict[str, Any]) -> List[str]:
     return out
 
 
+#: Listed only while an upstream is down, so the agent (and the person reading
+#: `/mcp`) learns why tools are missing instead of seeing "no tools".
+STATUS_TOOL = "prismor_gateway_status"
+
+
 class Gateway:
     def __init__(self, specs: List[UpstreamSpec], *, workspace: Path,
                  mode: str = "enforce", namespace: str = "plain",
@@ -614,6 +619,9 @@ class Gateway:
         #: tools/list already answered without. Both guarded by _init_cv.
         self._starting: set = set()
         self._late: set = set()
+        # Upstreams that failed to come up, name -> error. Shown to the client
+        # as a status tool so "no tools" is never the whole story.
+        self._failed: Dict[str, str] = {}
         self._init_cv = threading.Condition()
 
     # ── serve loop ───────────────────────────────────────────────────────
@@ -724,6 +732,7 @@ class Gateway:
         except Exception as exc:  # never leave the upstream marked as starting
             sys.stderr.write(
                 f"[prismor-gateway] upstream '{up.spec.name}' failed to initialize: {exc}\n")
+            self._failed[up.spec.name] = f"failed to start: {exc}"
         with self._init_cv:
             self._starting.discard(up.spec.name)
             late = up.spec.name in self._late
@@ -818,6 +827,7 @@ class Gateway:
             except UpstreamError as exc:
                 sys.stderr.write(
                     f"[prismor-gateway] tools/list failed for '{up.spec.name}': {exc}\n")
+                self._failed.setdefault(up.spec.name, f"tools/list failed: {exc}")
                 continue
             for tool in result.get("tools") or []:
                 if not isinstance(tool, dict) or not tool.get("name"):
@@ -838,6 +848,11 @@ class Gateway:
                     desc = str(tool.get("description") or "")
                     entry["description"] = f"[{up.spec.name}] {desc}".strip()
                 tools.append(entry)
+        if self._failed:
+            down = "; ".join(f"{n}: {e}" for n, e in sorted(self._failed.items()))
+            tools.append({"name": STATUS_TOOL, "inputSchema": {"type": "object", "properties": {}},
+                          "description": f"Prismor gateway: {len(self._failed)} MCP server(s) are down "
+                                         f"and their tools are missing. {down}"[:1000]})
         if hidden:
             sys.stderr.write(f"[prismor-gateway] hiding {len(hidden)} tool(s) this caller can never use: "
                              f"{', '.join(sorted(hidden))}\n")
@@ -879,6 +894,10 @@ class Gateway:
         with self._routes_lock:
             route = self._routes.get(name)
             hidden = name in getattr(self, "_hidden", ())
+        if route is None and name == STATUS_TOOL:
+            lines = [f"{n}: {e}" for n, e in sorted(self._failed.items())] or ["all servers are up"]
+            self._reply(req_id, {"content": [{"type": "text", "text": "\n".join(lines)}]})
+            return
         if route is None:
             self._reply_error(req_id, -32602,
                               f"tool {name} is not available to this caller (denied by policy)" if hidden
