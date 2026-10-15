@@ -1558,24 +1558,24 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
             tool_calls_prev += (row[0] or 0)
 
             row = conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE """ + _ENFORCED_SQL + """
+                WHERE {_ENFORCED_SQL}
                   AND s.updated_at >= datetime('now', ?)
-                """,
+                """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours} hours",),
             ).fetchone()
             dangerous_prevented_24h += (row[0] or 0)
 
             row = conn.execute(
-                """
+                f"""
                 SELECT COUNT(*) FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE """ + _ENFORCED_SQL + """
+                WHERE {_ENFORCED_SQL}
                   AND s.updated_at >= datetime('now', ?)
                   AND s.updated_at < datetime('now', ?)
-                """,
+                """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours * 2} hours", f"-{hours} hours"),
             ).fetchone()
             dangerous_prev += (row[0] or 0)
@@ -1624,13 +1624,13 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                     timeseries_acc[day] = [0, 0]
                 timeseries_acc[day][0] += row["total_events"] or 0
             for row in conn.execute(
-                """
+                f"""
                 SELECT date(s.updated_at) as day, COUNT(*) as flagged_events
                 FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE s.updated_at >= datetime('now', '-30 days') AND """ + _ENFORCED_SQL + """
+                WHERE s.updated_at >= datetime('now', '-30 days') AND {_ENFORCED_SQL}
                 GROUP BY day
-                """
+                """  # _ENFORCED_SQL is a module constant  # nosec B608
             ):
                 day = row["day"] or ""
                 if day not in timeseries_acc:
@@ -1641,13 +1641,13 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
             # Counts each finding once by joining to its specific event via
             # event_index — older join double-counted across the session.
             for row in conn.execute(
-                """
+                f"""
                 SELECT s.agent, COUNT(*) as blocked
                 FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                WHERE s.updated_at >= datetime('now', ?) AND """ + _ENFORCED_SQL + """
+                WHERE s.updated_at >= datetime('now', ?) AND {_ENFORCED_SQL}
                 GROUP BY s.agent
-                """,
+                """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours} hours",),
             ):
                 agent = row["agent"] or "unknown"
@@ -1695,12 +1695,12 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
 
             # ── Live events ───────────────────────────────────────────────
             for row in conn.execute(
-                """
+                f"""
                 SELECT e.ts, s.agent, e.type as action_type,
                        e.command_text, e.path_text, e.url_text,
                        f.severity,
                        CASE WHEN f.finding_id IS NULL THEN 'allowed'
-                            WHEN """ + _ENFORCED_SQL + """ THEN 'blocked'
+                            WHEN {_ENFORCED_SQL} THEN 'blocked'
                             ELSE 'warned' END as verdict
                 FROM events e
                 JOIN sessions s ON s.session_id = e.session_id
@@ -1712,7 +1712,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                                     )
                 WHERE e.ts >= datetime('now', '-24 hours')
                 ORDER BY e.ts DESC LIMIT 100
-                """
+                """  # _ENFORCED_SQL is a module constant  # nosec B608
             ):
                 action_parts = []
                 if row["action_type"]:
@@ -1732,16 +1732,16 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
 
             # ── Top sessions by blocks (full ID, agent, source) ──────────
             for row in conn.execute(
-                """
+                f"""
                 SELECT f.session_id as sid, s.agent, s.source,
                        COUNT(f.finding_id) as blocked,
                        MAX(s.updated_at) as last_seen_ts
                 FROM findings f
                 LEFT JOIN sessions s ON s.session_id = f.session_id
-                WHERE """ + _ENFORCED_SQL + """
+                WHERE {_ENFORCED_SQL}
                 GROUP BY f.session_id
                 ORDER BY blocked DESC LIMIT 10
-                """
+                """  # _ENFORCED_SQL is a module constant  # nosec B608
             ):
                 sid = row["sid"] or "unknown"
                 if sid not in top_users_acc:
@@ -1763,8 +1763,8 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
             #    like Pre/PostToolUse are filtered out so the chart shows
             #    real server / skill names instead of hook noise) ────────
             for row in conn.execute(
-                """
-                SELECT e.raw_json, s.agent, (f.finding_id IS NOT NULL AND """ + _ENFORCED_SQL + """) as blocked
+                f"""
+                SELECT e.raw_json, s.agent, (f.finding_id IS NOT NULL AND {_ENFORCED_SQL}) as blocked
                 FROM events e
                 JOIN sessions s ON s.session_id = e.session_id
                 LEFT JOIN findings f ON f.session_id = e.session_id
@@ -1776,7 +1776,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 WHERE e.type != 'supply_chain'
                   AND e.ts >= datetime('now', ?)
                 LIMIT 5000
-                """,
+                """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours} hours",),
             ):
                 info = _extract_mcp_or_tool(row["raw_json"] or "")
@@ -3054,14 +3054,14 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
             # Only flagged installs are on record, so they add to blocked /
             # warned / checked but never to allowed.
             for row in conn.execute(
-                """
+                f"""
                 SELECT f.title, f.evidence, s.updated_at AS ts, f.session_id,
-                       """ + _ENFORCED_SQL + """ AS enforced
+                       {_ENFORCED_SQL} AS enforced
                 FROM findings f JOIN sessions s ON s.session_id = f.session_id
                 WHERE json_valid(f.enrichment_json)
                   AND json_extract(f.enrichment_json, '$.ruleId') = 'pkg-install-vulnerable-version'
                   AND s.updated_at >= datetime('now', ?)
-                """,
+                """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours} hours",),
             ):
                 m = _HOOK_INSTALL_TITLE.search(row["title"] or "")
