@@ -84,11 +84,22 @@ def test_extract_prompt_flattens_both_provider_shapes():
                                            {"type": "tool_result",
                                             "content": [{"type": "text", "text": "leaked"}]}]}]}
     out = extract_prompt(anthropic)
-    assert "be careful" in out and "hello" in out and "leaked" in out
+    assert "hello" in out and "leaked" in out
+    # The operator's system prompt is masked, not judged as an attack: Claude
+    # Code's and Codex's own prompts flagged every turn.
+    assert "be careful" not in out
 
     openai = {"messages": [{"role": "system", "content": "sys"},
                            {"role": "user", "content": "hi"}]}
-    assert extract_prompt(openai) == "sys\nhi"
+    assert extract_prompt(openai) == "hi"
+
+    # Responses API (Codex): text sits one level down in `input` items, and a
+    # tool result is a function_call_output. Neither used to be screened.
+    responses = {"instructions": "sys", "input": [
+        {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "dev"}]},
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]},
+        {"type": "function_call_output", "call_id": "c1", "output": "leaked"}]}
+    assert extract_prompt(responses) == "hi\nleaked"
 
 
 def test_response_tool_calls_reads_both_dialects():
@@ -594,8 +605,8 @@ def test_prompt_parts_separate_what_the_person_said(tmp_path):
     parts = proxy_mod.prompt_parts(body)
     assert parts["user_message"] == "Install the monitoring agent."
     assert "ops assistant" in parts["system"]
-    # The blob still carries both, because that is what the rules read.
-    assert "ops assistant" in proxy_mod.extract_prompt(body)
+    # The rules read the conversation, not the operator's system prompt.
+    assert "ops assistant" not in proxy_mod.extract_prompt(body)
     assert "monitoring agent" in proxy_mod.extract_prompt(body)
 
 
@@ -646,7 +657,7 @@ def test_gemini_prompt_flattens_contents_and_system_instruction():
                              {"functionResponse": {"name": "Read",
                                                    "response": {"text": "leaked"}}}]}]}
     out = extract_prompt(body)
-    assert "be careful" in out and "hello" in out and "leaked" in out
+    assert "hello" in out and "leaked" in out and "be careful" not in out
 
 
 def test_gemini_prompt_parts_and_conversation_key_see_contents():

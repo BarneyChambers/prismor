@@ -242,6 +242,13 @@ class ProxyConfig:
 
 # ── payload normalizers ──────────────────────────────────────────────────────
 
+#: The operator's own instructions. Screening them as untrusted content flagged
+#: every Claude Code and Codex turn (their system prompts talk about secrets,
+#: shells and "ignore" on purpose) and scored a benign session 100/100. They are
+#: still masked on the way out; they are just not judged as an attack.
+_SYSTEM_ROLES = frozenset({"system", "developer"})
+
+
 def _text_of(content: Any) -> str:
     """Flatten a message ``content`` (string, or list of typed blocks) to text."""
     if isinstance(content, str):
@@ -261,6 +268,15 @@ def _text_of(content: Any) -> str:
                     parts.append(block["text"])
                 elif block.get("type") == "tool_result":
                     parts.append(_text_of(block.get("content")))
+                elif block.get("role") in _SYSTEM_ROLES:
+                    continue
+                elif isinstance(block.get("content"), (str, list)):
+                    # A Responses-API ``input`` item (Codex): the message text
+                    # sits one level down. Unflattened, the user's turn never
+                    # reached the rules at all.
+                    parts.append(_text_of(block["content"]))
+                elif block.get("type") == "function_call_output":
+                    parts.append(_text_of(block.get("output")))
                 elif "functionResponse" in block or "functionCall" in block:
                     # A Gemini tool result is where an injected instruction
                     # rides in, exactly as ``tool_result`` is above; it has to
@@ -346,7 +362,8 @@ def extract_a2a_prompt(body):
 
 
 def extract_prompt(body: Dict[str, Any]) -> str:
-    """The text going to the model: system prompt plus every message.
+    """The text going to the model that policy judges: every message and tool
+    result, but not the operator's system/developer prompt (``_SYSTEM_ROLES``).
 
     Each provider puts the system prompt somewhere different — ``system``,
     ``instructions``, folded into ``messages``, or ``systemInstruction`` — and
@@ -357,10 +374,9 @@ def extract_prompt(body: Dict[str, Any]) -> str:
     if is_a2a(body):
         return extract_a2a_prompt(body)
     parts: List[str] = []
-    system = _system_of(body)
-    if system:
-        parts.append(_text_of(system))
     for msg in _turns(body):
+        if msg.get("role") in _SYSTEM_ROLES:
+            continue
         parts.append(_text_of(msg.get("content")))
     if isinstance(body.get("input"), (str, list)):
         parts.append(_text_of(body["input"]))
@@ -596,13 +612,9 @@ class Screen:
             seen, blocked = set(state["seen"]), set(state["blocked"])
         texts: List[str] = []
         new: List[Tuple[str, str]] = []
-        system = _system_of(body)
-        if system:
-            fp = _message_fingerprint({"role": "system", "content": system})
-            if fp not in seen:
-                texts.append(_text_of(system))
-                new.append((fp, "system"))
         for msg in _turns(body):
+            if msg.get("role") in _SYSTEM_ROLES:
+                continue
             fp = _message_fingerprint(msg)
             if fp in blocked:
                 msg["content"] = SCRUBBED_MESSAGE
