@@ -45,6 +45,12 @@ _DURATION_RE = re.compile(r"^(\d+)\s*([smhd])$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
+from prismor.runtime import data_boundary as _db
+
+_DATA_BOUNDARY_RULES = frozenset(
+    getattr(_db, n) for n in dir(_db) if n.startswith("RULE_"))
+
+
 # ── shared with unblock.py ───────────────────────────────────────────────────
 
 def literal_pattern(evidence: str) -> Optional[str]:
@@ -185,6 +191,9 @@ def check_allowed(
             "  prismor egress rm <host>         drop an allow/deny entry\n"
             "  prismor egress mode observe      keep reporting, stop blocking"
         )
+    if rule is None and rule_id in _DATA_BOUNDARY_RULES:
+        from prismor.runtime.unblock import data_boundary_steps
+        return "\n".join(data_boundary_steps({"ruleId": rule_id}, workspace))
     if rule is None and (rule_id.startswith("tag-rule:") or rule_id == "tool-category-crossover"):
         return (
             f"{rule_id} is a tag-sequence rule (settings.tool_tags), not a policy "
@@ -264,6 +273,7 @@ def add_allowlist(
         for existing in entries:
             if (isinstance(existing, dict)
                     and list(existing.get("rule_ids") or []) == [rule_id]
+                    and existing.get("match") == "exact"
                     and not existing.get("expires")
                     and str(existing.get("reason") or default_reason) == default_reason):
                 pats = list(existing.get("patterns") or [])
@@ -278,6 +288,9 @@ def add_allowlist(
         "id": _next_allow_id(data, rule_id),
         "rule_ids": [rule_id],
         "patterns": [pattern],
+        # The pattern is the whole command (or one whole statement of it),
+        # never a substring — see AllowlistEntry.match.
+        "match": "exact",
         "reason": reason or default_reason,
     }
     if expires:

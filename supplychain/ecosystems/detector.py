@@ -160,6 +160,24 @@ def _extract_version(raw: str, ecosystem: str) -> str:
     return ""
 
 
+_PY_RE = re.compile(r"^python(?:\d+(?:\.\d+)*)?$")
+_PIP_RE = re.compile(r"^pip(?:\d+(?:\.\d+)*)?$")
+
+
+def _canonical_argv(argv: List[str]) -> List[str]:
+    """Same install, other spellings: `python3 -m pip`, `/usr/bin/pip3.12`,
+    `pipx install`. Without this `python3 -m pip install <typosquat>` went
+    straight past the gate that `pip install <typosquat>` hits."""
+    if not argv:
+        return argv
+    binary = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if _PY_RE.match(binary) and len(argv) >= 3 and argv[1] == "-m":
+        return _canonical_argv(argv[2:])
+    if _PIP_RE.match(binary) or binary == "pipx":
+        return ["pip", *argv[1:]]
+    return [binary, *argv[1:]]
+
+
 def detect_install(argv: List[str]) -> Optional[InstallEvent]:
     """Parse argv (e.g. ['npm', 'install', 'express']) → InstallEvent or None.
 
@@ -167,6 +185,7 @@ def detect_install(argv: List[str]) -> Optional[InstallEvent]:
     Returns an InstallEvent with empty packages if it's a manifest-only install
     (e.g. bare 'npm install' with no package names specified).
     """
+    argv = _canonical_argv(argv)
     if len(argv) < 2:
         return None
 

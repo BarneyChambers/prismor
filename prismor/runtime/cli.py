@@ -1003,13 +1003,20 @@ def main(argv: Optional[List[str]] = None) -> None:
         else:
             findings = engine.check_command(args.value)
 
+        _align_check_with_hook(engine, findings, workspace, args.type)
+        _paused = _pause_note()
+
         if not findings:
             print(_color("PASS", _GREEN) + f"  {args.value}")
+            if _paused:
+                print(_paused)
             return
 
         _print_findings(findings, engine=engine,
                         explain=args.explain, suggest=args.suggest_allowlist,
                         input_value=args.value)
+        if _paused:
+            print(_paused)
 
         # Exit 2 if a finding would actually block, 1 for warn-only, 0 for
         # log-only — keyed on the effective verdict, so a CI gate reflects what
@@ -4855,9 +4862,52 @@ def _effective_verdict(finding: Dict[str, Any]) -> str:
     question it exists to answer.
     """
     action = str(finding.get("action") or "warn").lower()
-    if action == "block" and str(finding.get("mode") or "").lower() != "enforce":
+    if str(finding.get("mode") or "").lower() == "enforce":
+        # Same verdict the hook reaches (hooks.should_block → contract.verdict_of):
+        # an enforce-mode finding stops the call whatever its declared action,
+        # so `warn` there used to print WARN for what the hook blocked.
+        from prismor.runtime.contract import verdict_of
+        return verdict_of(finding).upper()
+    if action == "block":
         return "WARN"
     return action.upper()
+
+
+def _align_check_with_hook(engine, findings: List[Dict[str, Any]], workspace: Path, kind: str) -> None:
+    """Mark findings with the verdict the installed hook would reach.
+
+    Hooks installed with ``--mode enforce`` on a legacy policy block by category
+    (runtime.evaluate_tool_call → legacy_should_block) while the finding still
+    carries the rule's observe mode, so `check` said WARN for what the hook
+    blocked (`git push --force` on dev-safe).
+    """
+    if not findings or not getattr(engine, "is_legacy_policy", False):
+        return
+    try:
+        from prismor.runtime.hooks import hook_health, legacy_should_block, should_block
+        if not any(c.get("configured") and c.get("mode") == "enforce" for c in hook_health(workspace)):
+            return
+        etype = {"read": "file_read", "write": "file_write", "text": "text"}.get(kind, "shell")
+        event = {"type": etype, "agent_event": "PreToolUse"}
+        if should_block(findings, event) is not None:
+            return
+        hit = legacy_should_block(findings, event, engine.block_categories)
+    except Exception:
+        return
+    if hit is not None:
+        hit["mode"] = "enforce"
+
+
+def _pause_note() -> str:
+    """`check` reports policy, but a paused machine does not enforce it."""
+    try:
+        from prismor.runtime import pause as _pause
+        if _pause.active_state() is not None:
+            return _color("Paused:", _YELLOW) + " enforcement is suspended right now, so nothing is " \
+                "blocked until `prismor resume` (findings are still recorded)."
+    except Exception:
+        pass
+    return ""
 
 
 def _blocks(finding: Dict[str, Any]) -> bool:
@@ -4926,6 +4976,7 @@ def _print_findings(
             print("  allowlists:")
             print(f"    - id: allow-{rid}-{abs(hash(value)) % 10000:04d}")
             print(f"      rule_ids: [{rid}]")
+            print("      match: exact")
             print(f"      reason: \"intentional — reviewed on {datetime.now().date().isoformat()}\"")
             print(f"      patterns: [{json.dumps(re.escape(value))}]")
 
@@ -5546,7 +5597,13 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
         engine = PolicyEngine(workspace=workspace)
         n_rules = len(getattr(engine, "rules", []) or [])
         mode = getattr(engine, "default_mode", "observe")
-        add("ok", "policy", f"{n_rules} rules loaded (default mode: {mode})")
+        _perr = getattr(engine, "project_policy_error", None)
+        if _perr:
+            _kept = ("enforcing its last valid version" if engine.project_policy_fallback
+                     else "only built-in and org rules apply")
+            add("fail", "policy", f"project policy is invalid, {_kept}: {_perr}")
+        else:
+            add("ok", "policy", f"{n_rules} rules loaded (default mode: {mode})")
     except Exception as exc:
         engine = None
         add("fail", "policy", f"policy failed to load: {exc}")
@@ -5878,6 +5935,11 @@ def _print_status_overview(workspace: Path) -> None:
     try:
         engine = PolicyEngine(workspace=workspace)
         print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active")
+        if engine.project_policy_error:
+            _kept = ("its last valid version is enforced" if engine.project_policy_fallback
+                     else "only built-in and org rules apply")
+            print(f"  {_color('Policy:', _RED)}      INVALID, {_kept}: {engine.project_policy_error}")
+            print(f"               Fix it, then: prismor policy validate")
     except Exception:
         engine = None
 
