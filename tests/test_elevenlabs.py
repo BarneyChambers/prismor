@@ -369,13 +369,13 @@ def _call(*turns):
 def test_only_new_messages_are_screened_on_the_next_turn(monkeypatch, tmp_path):
     screen = _screen(monkeypatch, tmp_path, "nothing-blocks")
     text, new = screen.conversation_delta("conv_1", _call(("user", "Where is order A1001?")))
-    assert "Acme's phone agent" in text and "A1001" in text
+    assert "A1001" in text and "Acme's phone agent" not in text   # system prompt is not judged
     screen.mark_screened("conv_1", new, blocked=False)
 
     body = _call(("user", "Where is order A1001?"), ("assistant", "It shipped."),
                  ("user", "Thanks, and A1002?"))
     text, new = screen.conversation_delta("conv_1", body)
-    assert text == "It shipped.\nThanks, and A1002?"     # system + first turn not re-judged
+    assert text == "It shipped.\nThanks, and A1002?"     # first turn not re-judged
     assert [r for _, r in new] == ["assistant", "user"]
 
 

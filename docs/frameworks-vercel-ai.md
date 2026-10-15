@@ -1,6 +1,6 @@
 # Vercel AI SDK — Prismor adapter
 
-The Vercel AI SDK adapter (`prismor`) is a TypeScript package that
+The Vercel AI SDK adapter (`prismor-warden` on npm) is a TypeScript package that
 intercepts every tool `execute()` call before it runs. It is the reference
 implementation of the **HTTP adapter pattern**: a thin language-native client
 calls the Prismor **eval-server** (a sidecar Python process) to evaluate each

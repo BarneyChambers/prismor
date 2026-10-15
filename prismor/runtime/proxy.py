@@ -163,42 +163,9 @@ READ_TIMEOUT = 600
 #: ``Screen.evaluate`` for why it is not once per event.
 SNAPSHOT_DEBOUNCE = 1.0
 
-# A model's tools are whatever the caller named them. Claude's are ``Bash`` and
-# ``Read``; an OpenAI-style agent calls the same thing ``bash``, ``shell`` or
-# ``run_command`` with ``cmd`` or an argv list. Matched only on the exact native
-# names, a proposed ``cat ~/.ssh/id_rsa`` fell through to the generic payload
-# path and no command rule ever saw a command.
-_PROPOSED_ALIASES = {
-    **{n: "Bash" for n in ("bash", "shell", "sh", "terminal", "exec", "run", "run_command", "run_shell_command",
-                           "execute_command", "execute_shell", "shell_command", "local_shell", "container.exec")},
-    **{n: "Read" for n in ("read", "read_file", "cat_file", "view_file", "open_file")},
-    **{n: "Write" for n in ("write", "write_file", "create_file", "save_file")},
-    **{n: "Edit" for n in ("edit", "edit_file", "str_replace", "replace_in_file")},
-    **{n: "WebFetch" for n in ("webfetch", "web_fetch", "fetch", "fetch_url", "http_get", "browse")},
-    "glob": "Glob", "grep": "Grep",
-}
-
-
 def _native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
-    """(native tool, native-keyed args) for a proposed call, so the mirror's
-    shaper -- and with it every hook rule -- applies to it."""
-    tool = _PROPOSED_ALIASES.get(str(tool_name or "").strip().lower(), tool_name)
-    if not isinstance(arguments, dict):
-        return tool, arguments
-    args = dict(arguments)
-    if tool == "Bash":
-        cmd = args.get("command", args.get("cmd", args.get("script")))
-        if isinstance(cmd, list):
-            import shlex
-            cmd = shlex.join(str(c) for c in cmd)
-        args["command"] = "" if cmd is None else str(cmd)
-    elif tool in ("Read", "Write", "Edit"):
-        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file") or "")
-        if tool == "Write":
-            args.setdefault("content", args.get("text") or args.get("contents") or "")
-    elif tool == "WebFetch":
-        args.setdefault("url", args.get("uri") or args.get("href") or "")
-    return tool, args
+    from prismor.runtime import mirror
+    return mirror.native_call(tool_name, arguments)
 
 
 # ── config ───────────────────────────────────────────────────────────────────
@@ -275,6 +242,13 @@ class ProxyConfig:
 
 # ── payload normalizers ──────────────────────────────────────────────────────
 
+#: The operator's own instructions. Screening them as untrusted content flagged
+#: every Claude Code and Codex turn (their system prompts talk about secrets,
+#: shells and "ignore" on purpose) and scored a benign session 100/100. They are
+#: still masked on the way out; they are just not judged as an attack.
+_SYSTEM_ROLES = frozenset({"system", "developer"})
+
+
 def _text_of(content: Any) -> str:
     """Flatten a message ``content`` (string, or list of typed blocks) to text."""
     if isinstance(content, str):
@@ -294,6 +268,15 @@ def _text_of(content: Any) -> str:
                     parts.append(block["text"])
                 elif block.get("type") == "tool_result":
                     parts.append(_text_of(block.get("content")))
+                elif block.get("role") in _SYSTEM_ROLES:
+                    continue
+                elif isinstance(block.get("content"), (str, list)):
+                    # A Responses-API ``input`` item (Codex): the message text
+                    # sits one level down. Unflattened, the user's turn never
+                    # reached the rules at all.
+                    parts.append(_text_of(block["content"]))
+                elif block.get("type") == "function_call_output":
+                    parts.append(_text_of(block.get("output")))
                 elif "functionResponse" in block or "functionCall" in block:
                     # A Gemini tool result is where an injected instruction
                     # rides in, exactly as ``tool_result`` is above; it has to
@@ -379,7 +362,8 @@ def extract_a2a_prompt(body):
 
 
 def extract_prompt(body: Dict[str, Any]) -> str:
-    """The text going to the model: system prompt plus every message.
+    """The text going to the model that policy judges: every message and tool
+    result, but not the operator's system/developer prompt (``_SYSTEM_ROLES``).
 
     Each provider puts the system prompt somewhere different — ``system``,
     ``instructions``, folded into ``messages``, or ``systemInstruction`` — and
@@ -390,10 +374,9 @@ def extract_prompt(body: Dict[str, Any]) -> str:
     if is_a2a(body):
         return extract_a2a_prompt(body)
     parts: List[str] = []
-    system = _system_of(body)
-    if system:
-        parts.append(_text_of(system))
     for msg in _turns(body):
+        if msg.get("role") in _SYSTEM_ROLES:
+            continue
         parts.append(_text_of(msg.get("content")))
     if isinstance(body.get("input"), (str, list)):
         parts.append(_text_of(body["input"]))
@@ -629,13 +612,9 @@ class Screen:
             seen, blocked = set(state["seen"]), set(state["blocked"])
         texts: List[str] = []
         new: List[Tuple[str, str]] = []
-        system = _system_of(body)
-        if system:
-            fp = _message_fingerprint({"role": "system", "content": system})
-            if fp not in seen:
-                texts.append(_text_of(system))
-                new.append((fp, "system"))
         for msg in _turns(body):
+            if msg.get("role") in _SYSTEM_ROLES:
+                continue
             fp = _message_fingerprint(msg)
             if fp in blocked:
                 msg["content"] = SCRUBBED_MESSAGE

@@ -38,9 +38,11 @@ def read_file(path: str) -> str:
     """Read a file."""
     ...
 
-tools = guard_tools([run_shell, read_file])   # every tool now policy-checked
+tools = guard_tools([run_shell, read_file], mode="enforce")   # every tool now policy-checked
 agent = create_react_agent(llm, tools)
 ```
+
+> **Pass `mode="enforce"` to block.** The default is `mode="observe"`: every call is checked and logged, but nothing is refused, and the guard prints one `OBSERVE mode` warning the first time it lets through a call enforce would have blocked.
 
 `guard_tools` wraps `tool.func` (sync) and `tool.coroutine` (async) in-place and
 returns the same list. Your tool schemas are untouched — the LLM sees the same
@@ -79,7 +81,7 @@ error in the agent's output.
 ```python
 from prismor.langchain import guard_tools, use_subject
 
-tools = guard_tools([run_shell, read_file])   # once, at startup — no bound subject
+tools = guard_tools([run_shell, read_file], mode="enforce")   # once, at startup — no bound subject
 agent = create_react_agent(llm, tools)
 
 # per-request handler
