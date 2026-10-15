@@ -451,7 +451,9 @@ def test_replay_does_not_overwrite_live_session_rows(claude_home, tmp_path):
     connection.close()
 
     assert live == ("hook", 42, 7), "live session row must be untouched"
-    assert replayed is not None and replayed[0] == REPLAY_SOURCE
+    # A session the hooks already recorded is evaluated for the report but not
+    # stored again: the replay copy doubled every session count.
+    assert replayed is None
 
 
 def test_sweep_is_idempotent(claude_home, tmp_path):

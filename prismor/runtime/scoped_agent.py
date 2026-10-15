@@ -612,6 +612,7 @@ def _static_fallback_rules(goal: str, available_tools: List[str]) -> Dict[str, A
         "deny_tools": deny,
         "deny_network": deny_network,
         "inventory": [t for t in available_tools if not is_mcp_tool(t) or t in allowed],
+        "origin": "static",
     }
     # Cloaked-secret placeholders always require Bash (decloak runs in shell).
     return _apply_web_invariant(_apply_cloak_invariant(rules, goal), available_tools)
@@ -903,6 +904,8 @@ def format_scoped_rules_box(rules: Dict[str, Any]) -> str:
         *_field("allowed_paths:", rules.get("allowed_paths", [])),
         *_field("deny_tools:", rules.get("deny_tools", [])),
         f"  deny_network:   {network}",
+        *(["  static fallback (no ANTHROPIC_API_KEY): built-in tools not restricted;",
+           "  only MCP families the prompt names are scoped."] if rules.get("origin") == "static" else []),
         "",
         "  Session-only; widened on each new prompt. Stored in $PRISMOR_HOME/scoped/.",
         "  Adjust: prismor scope show|edit <session-id>   Stop scoping: prismor scope clear <session-id>",

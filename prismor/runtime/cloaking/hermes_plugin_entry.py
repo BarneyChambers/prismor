@@ -214,14 +214,24 @@ def _scrub_secrets(text: str) -> str:
 # ── Hook Handlers ──────────────────────────────────────────────────────────
 
 
+# Hermes passes more keyword arguments with each release (turn_id,
+# api_request_id, middleware_trace, ...). Every handler takes **_ so a new one
+# can't raise TypeError, which Hermes logs and then runs the call unguarded.
+
+
 def on_pre_tool_call(
-    tool_name: str,
-    args: Dict[str, Any],
+    tool_name: str = "",
+    args: Optional[Dict[str, Any]] = None,
     task_id: str = "",
     session_id: str = "",
     tool_call_id: str = "",
+    **_: Any,
 ) -> Optional[Dict[str, Any]]:
-    """Pre-tool-call hook: handle secret placeholders and raw secret detection."""
+    """Pre-tool-call hook: check secret placeholders and block raw secrets.
+
+    Hermes honours only "block" / "approve" here, so placeholders are swapped
+    for their values later, in the tool_execution middleware (on_tool_execution),
+    after every hook and approval has seen the cloaked call."""
     search_text = json.dumps(args) if args else ""
 
     if not search_text:
@@ -249,15 +259,14 @@ def on_pre_tool_call(
                     ),
                 }
 
-        if env_vars:
+        if env_vars and not _CAN_DECLOAK:
             return {
-                "action": "decloak",
-                "env": env_vars,
-                "placeholders": {
-                    name: env_vars[f"PRISMOR_SECRET_VALUE_{name.upper()}"]
-                    for name in placeholder_matches
-                    if f"PRISMOR_SECRET_VALUE_{name.upper()}" in env_vars
-                },
+                "action": "block",
+                "message": (
+                    "This Hermes version has no tool_execution middleware, so Prismor "
+                    "cannot substitute secret placeholders. Upgrade Hermes, or run "
+                    "the command without the secret."
+                ),
             }
 
     # Phase 2: Raw secret detection - always block, regardless of vault state.
@@ -283,27 +292,51 @@ def on_pre_tool_call(
     return None
 
 
+def _decloak(value: Any) -> Any:
+    """``value`` with every registered secret placeholder replaced by its value."""
+    if isinstance(value, str):
+        return _SECRET_PLACEHOLDER_RE.sub(lambda m: _read_secret(m.group(1)) or m.group(0), value)
+    if isinstance(value, dict):
+        return {k: _decloak(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_decloak(v) for v in value]
+    return value
+
+
+def on_tool_execution(next_call: Any = None, args: Optional[Dict[str, Any]] = None, **_: Any) -> Any:
+    """tool_execution middleware: run the tool with placeholders decloaked.
+
+    Only the executed copy carries real values; the transcript, hooks and
+    approvals keep the placeholder, and the transform hooks below scrub any
+    value that comes back in the output."""
+    return next_call(_decloak(args or {}))
+
+
 def on_post_tool_call(
-    tool_name: str,
-    args: Dict[str, Any],
-    result: str,
+    tool_name: str = "",
+    args: Optional[Dict[str, Any]] = None,
+    result: Any = "",
     task_id: str = "",
     session_id: str = "",
     tool_call_id: str = "",
     duration_ms: int = 0,
+    **_: Any,
 ) -> None:
     """Post-tool-call hook: observational audit log (currently a no-op)."""
     pass
 
 
 def on_transform_terminal_output(
-    command: str,
-    output: str,
-    returncode: int,
+    command: str = "",
+    output: str = "",
+    returncode: int = 0,
     task_id: str = "",
     env_type: str = "",
+    **_: Any,
 ) -> Optional[str]:
     """Transform terminal output: scrub secret values before they reach context."""
+    if not isinstance(output, str):
+        return None
     scrubbed = _scrub_secrets(output)
     if scrubbed != output:
         return scrubbed
@@ -311,15 +344,18 @@ def on_transform_terminal_output(
 
 
 def on_transform_tool_result(
-    tool_name: str,
-    args: Dict[str, Any],
-    result: str,
+    tool_name: str = "",
+    args: Optional[Dict[str, Any]] = None,
+    result: Any = "",
     task_id: str = "",
     session_id: str = "",
     tool_call_id: str = "",
     duration_ms: int = 0,
+    **_: Any,
 ) -> Optional[str]:
     """Transform tool result: scrub secret values from non-terminal tool output."""
+    if not isinstance(result, str):
+        return None
     scrubbed = _scrub_secrets(result)
     if scrubbed != result:
         return scrubbed
@@ -327,9 +363,10 @@ def on_transform_tool_result(
 
 
 def on_pre_gateway_dispatch(
-    event: Any,
-    gateway: Any,
-    session_store: Any,
+    event: Any = None,
+    gateway: Any = None,
+    session_store: Any = None,
+    **_: Any,
 ) -> Optional[Dict[str, Any]]:
     """Pre-gateway dispatch: detect and auto-cloak pasted secrets."""
     try:
@@ -371,8 +408,15 @@ def on_pre_gateway_dispatch(
 # ── Plugin Registration ────────────────────────────────────────────────────
 
 
+_CAN_DECLOAK = False
+
+
 def register(ctx) -> None:
     """Register all cloaking hooks with the Hermes plugin system."""
+    global _CAN_DECLOAK
+    if hasattr(ctx, "register_middleware"):
+        ctx.register_middleware("tool_execution", on_tool_execution)
+        _CAN_DECLOAK = True
     ctx.register_hook("pre_tool_call", on_pre_tool_call)
     ctx.register_hook("post_tool_call", on_post_tool_call)
     ctx.register_hook("transform_terminal_output", on_transform_terminal_output)
@@ -382,5 +426,6 @@ def register(ctx) -> None:
     logger.info(
         "Prismor cloak plugin registered: "
         "pre_tool_call, post_tool_call, transform_terminal_output, "
-        "transform_tool_result, pre_gateway_dispatch"
+        "transform_tool_result, pre_gateway_dispatch%s",
+        ", tool_execution (decloak)" if _CAN_DECLOAK else " (no decloak: Hermes lacks middleware)"
     )

@@ -329,7 +329,14 @@ def _run_memory(args) -> None:
         for fpath in args.file:
             try:
                 text = Path(fpath).read_text(encoding="utf-8", errors="replace")
-                findings = engine.check_text(text)
+                # Screen it the way SessionStart does: as a "memory" event,
+                # which is what the memory_poisoning rules match on. A "text"
+                # event reported "clean" on a line the session notice flagged.
+                from prismor.runtime.hooks import strip_prismor_managed
+                findings = engine.evaluate(
+                    {"type": "memory", "path": str(fpath), "content": strip_prismor_managed(text)}, 0)
+                findings += [f for f in engine.check_text(text)
+                             if f.get("ruleId") not in {g.get("ruleId") for g in findings}]
                 if findings:
                     print(f"\n{fpath}:")
                     for f in findings:
@@ -866,7 +873,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         info = _scope.resolve_scope(workspace)
         ident = _identity.load_identity()
         print(f"Workspace:  {workspace}")
-        print(f"  git remote: {info.get('remote') or '(none / not a git repo)'}")
+        _in_git = any((p / ".git").exists() for p in (Path(workspace).resolve(), *Path(workspace).resolve().parents))
+        print(f"  git remote: {info.get('remote') or ('(none — this git repo has no remote)' if _in_git else '(not a git repo)')}")
         if not ident:
             print("  scope:      local-only (this machine is not enrolled)")
             print("  → Local protection is active. Nothing is reported anywhere.")
@@ -1003,13 +1011,20 @@ def main(argv: Optional[List[str]] = None) -> None:
         else:
             findings = engine.check_command(args.value)
 
+        _align_check_with_hook(engine, findings, workspace, args.type)
+        _paused = _pause_note()
+
         if not findings:
             print(_color("PASS", _GREEN) + f"  {args.value}")
+            if _paused:
+                print(_paused)
             return
 
         _print_findings(findings, engine=engine,
                         explain=args.explain, suggest=args.suggest_allowlist,
                         input_value=args.value)
+        if _paused:
+            print(_paused)
 
         # Exit 2 if a finding would actually block, 1 for warn-only, 0 for
         # log-only — keyed on the effective verdict, so a CI gate reflects what
@@ -1043,21 +1058,30 @@ def main(argv: Optional[List[str]] = None) -> None:
         mode = args.mode
         cli_path = getattr(args, "cli_path", None)
         if mode == "hybrid":
-            from prismor.runtime.semantic_guard_v2 import SemanticGuardV2
+            from prismor.runtime.semantic_guard_v2 import SemanticGuardV2, from_config
             provider = getattr(args, "provider", None)
-            model = args.model
-            if not provider:
-                # Same judge the hooks use here: the workspace policy's choice.
+            if provider:
+                guard = SemanticGuardV2(cli_path=cli_path, model=args.model, provider=provider)
+            else:
+                # Same judge the hooks use here: the workspace policy's choice,
+                # else $PRISMOR_SEMANTIC_PROVIDER. A CLI judge is allowed because
+                # this command was asked to judge.
                 try:
                     # Aliased: a bare `PolicyEngine` here would make the name
                     # local to this whole function and break every other branch.
                     from prismor.runtime.policy_engine import PolicyEngine as _Engine
-                    _sg = _Engine(workspace=Path.cwd()).semantic_guard_config or {}
-                    provider = str(_sg.get("provider") or "")
-                    model = model or str(_sg.get("model") or "")
+                    _sg = dict(_Engine(workspace=Path.cwd()).semantic_guard_config or {})
                 except Exception:
-                    provider = ""
-            guard = SemanticGuardV2(cli_path=cli_path, model=model, provider=provider or "")
+                    _sg = {}
+                if str(_sg.get("mode", "hybrid")).lower() == "auto":
+                    _sg["mode"] = "hybrid"
+                _over = {"cli_path": cli_path} if cli_path else {}
+                if args.model:
+                    _over["model"] = args.model
+                guard = from_config(_sg, **_over)
+                if guard is None:  # the policy says heuristics only
+                    mode = "heuristic"
+        if mode == "hybrid":
             result = guard.analyze(text)
             payload = {
                 "mode": guard.mode,
@@ -1182,7 +1206,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command == "deps":
         from prismor.runtime.deps import scan_workspace as deps_scan
         feed = load_feed(repo_root)
-        result = deps_scan(workspace, feed)
+        result = deps_scan(workspace, feed, osv=not getattr(args, "offline", False))
 
         if getattr(args, "json", False):
             print(json.dumps(result, indent=2))
@@ -1206,6 +1230,7 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         feed_matches = result["feed_matches"]
         lockfile_issues = result["lockfile_issues"]
+        _src_label = {"feed": "advisory feed", "ioc": "IOC list", "osv": "OSV.dev"}
         integrity_issues = result.get("integrity_issues", [])
 
         if not feed_matches and not lockfile_issues and not integrity_issues:
@@ -1214,12 +1239,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             return
 
         if feed_matches:
-            print(f"  {_color('Feed matches:', _BOLD)}")
+            print(f"  {_color('Known vulnerable or malicious dependencies:', _BOLD)}")
             for match in feed_matches:
                 sev = match["severity"]
                 color = _RED if sev in ("critical", "high") else _YELLOW
                 print(f"    {_color(f'[{sev.upper()}]', color)}  {match['advisory_id']}: {match['title']}")
-                print(f"             affected: {match['affected']}")
+                print(f"             affected: {match['affected']}  (source: {_src_label.get(match.get('source'), match.get('source', 'feed'))})")
                 if match.get("action"):
                     print(f"             action: {match['action']}")
             print()
@@ -1366,6 +1391,10 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         print()
 
+        if getattr(args, "fix", False) and fixable == 0:
+            print(f"  {_color('Nothing to auto-fix:', _DIM)} none of these issues has an automatic fix.")
+            print()
+
         # Apply fixes if requested
         if getattr(args, "fix", False) and fixable > 0:
             print(f"  {_color('Applying fixes...', _BOLD)}")
@@ -1505,8 +1534,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         session_id = args.session_id or getattr(args, "session_id_pos", None)
         if not session_id:
             raise SystemExit("session: --session-id or a positional session id is required")
+        from prismor.runtime import devlog
+        session_id = devlog.resolve_session_id(session_id)
         if getattr(args, "changes", False):
-            from prismor.runtime import devlog
             emit(devlog.changes(session_id), as_json=args.json, formatter=devlog.format_changes)
             return
         session = get_session(workspace, session_id)
@@ -1520,7 +1550,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command in ("rca", "blame", "friction"):
         from prismor.runtime import devlog
         if args.command == "rca":
-            sid = args.session_id or next((s["sessionId"] for s in list_sessions(workspace, 1)), None)
+            sid = (devlog.resolve_session_id(args.session_id) if args.session_id
+                   else next((s["sessionId"] for s in list_sessions(workspace, 1)), None))
             if not sid:
                 raise SystemExit("rca: " + (_sessions_elsewhere_hint(workspace)
                                             or "no sessions recorded yet")
@@ -1561,7 +1592,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         register_workspace(workspace)
         for item in results:
-            print(f"Installed {item['agent']} hooks at {item['configPath']}")
+            if item.get("loadWarning"):
+                print(f"Wrote {item['agent']} hooks at {item['configPath']}, but they are NOT active: {item['loadWarning']}")
+            else:
+                print(f"Installed {item['agent']} hooks at {item['configPath']}")
         if getattr(args, "portable", False):
             print("Portable: the hook finds `prismor` at run time, so this file is safe to commit. "
                   "Install prismor in the cloud environment's setup script.")
@@ -1933,6 +1967,14 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "its instructions as untrusted this session. If you made the change, run: "
                 "prismor memory approve"
             )
+
+        if _session_ctx_ok:
+            try:
+                from prismor.runtime import mirror as _mirror
+                _start_ctx.append(_mirror.instruction_context(workspace, args.agent))
+            except Exception:
+                pass
+            _start_ctx = [c for c in _start_ctx if c]
 
         # Extensions are instruction files and code too: skills, plugins, third-
         # party hooks, MCP servers, mostly installed by a command no hook ever
@@ -2455,6 +2497,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             return
 
         if subcmd == "check":
+            if getattr(args, "stray", None):
+                sys.stderr.write(
+                    "prismor sandbox check takes no command: it checks that Docker is ready.\n"
+                    "  Run a command in the sandbox:   prismor sandbox run -- <command>\n"
+                    "  Pre-check it against policy:    prismor check '<command>'\n")
+                raise SystemExit(2)
             report = _sandbox.status_report(cfg)
             ready = report["docker"].get("cli_found") and report["docker"].get("server_reachable")
             if ready:
@@ -2831,7 +2879,12 @@ def main(argv: Optional[List[str]] = None) -> None:
                     workspace=workspace,
                     scope=args.scope,
                 )
-                print(f"Installed Hermes Agent cloaking plugin at {h_result['pluginDir']}")
+                from prismor.runtime.hooks import plugin_load_warning
+                _why = plugin_load_warning("hermes", args.scope, workspace, plugin="prismor-cloak")
+                if _why:
+                    print(f"Wrote the Hermes Agent cloaking plugin at {h_result['pluginDir']}, but it is NOT active: {_why}")
+                else:
+                    print(f"Installed Hermes Agent cloaking plugin at {h_result['pluginDir']}")
                 for label in h_result["hooksInstalled"]:
                     print(f"  + {label}")
             _sdir = (result if cloak_agent in ("claude", "all") else h_result).get("secretsDir", str(Path.home() / ".prismor" / "secrets"))
@@ -3519,6 +3572,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         if result.returncode == 0:
             print(f"Updated to prismor {latest}. Restart your shell or agent to use the new version.")
+            # The new code is on disk now; a fresh interpreter runs it, so the
+            # agent guidance setup wrote follows the upgrade.
+            subprocess.run(
+                [sys.executable, "-c",
+                 "from prismor.runtime.setup_wizard import refresh_guidance as r\n"
+                 "for line in r(): print('Refreshed agent guidance in ' + line)"],
+                check=False,
+            )
         else:
             sys.stderr.write("pip upgrade failed — check the output above.\n")
             raise SystemExit(result.returncode)
@@ -3772,7 +3833,7 @@ def build_parser() -> argparse.ArgumentParser:
     sem_parser.add_argument("--cli-path", help="Override the path to the Claude/Codex CLI subagent")
     sem_parser.add_argument(
         "--provider",
-        choices=["claude", "codex", "api", "prismor"],
+        choices=["claude", "codex", "api", "prismor", "typesafe"],
         help="Which login judges the uncertain zone; default: the workspace policy's "
              "settings.semantic_guard.provider",
     )
@@ -3797,8 +3858,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--json", action="store_true", help="Output raw JSON")
 
     # ── deps ──────────────────────────────────────────────────────────
-    deps_parser = subparsers.add_parser("deps", help="Check workspace dependencies against threat feed")
+    deps_parser = subparsers.add_parser(
+        "deps", help="Check workspace dependencies against OSV.dev, the advisory feed and the IOC list")
     deps_parser.add_argument("--workspace", help="Workspace path")
+    deps_parser.add_argument("--offline", action="store_true",
+                             help="Skip the OSV.dev lookup (feed + IOC list only)")
     deps_parser.add_argument("--json", action="store_true", help="Output raw JSON")
 
     # ── audit ──────────────────────────────────────────────────────────
@@ -3866,6 +3930,9 @@ def build_parser() -> argparse.ArgumentParser:
     attest_verify.add_argument("bundle", help="Path to a bundle JSON file")
     attest_verify.add_argument(
         "--pubkey", help="Pin verification to this base64 raw Ed25519 public key")
+    attest_verify.add_argument(
+        "--require-signature", action="store_true",
+        help="Fail an unsigned bundle (default: accept it when its content hash matches)")
     attest_verify.add_argument("--json", action="store_true", help="Machine-readable report")
     attest_coverage = attest_sub.add_parser(
         "coverage", help="Show framework-control coverage of the active policy")
@@ -3919,7 +3986,10 @@ def build_parser() -> argparse.ArgumentParser:
     sandbox_status = sandbox_sub.add_parser("status", help="Show sandbox configuration and Docker readiness")
     sandbox_status.add_argument("--json", action="store_true", help="Output raw JSON")
 
-    sandbox_sub.add_parser("check", help="Check whether the Docker sandbox backend is available")
+    sandbox_check = sandbox_sub.add_parser("check", help="Check whether the Docker sandbox backend is available")
+    # Accepted only to answer it: `sandbox check "cmd"` reads naturally, and
+    # argparse's reply to a stray argument was the whole top-level usage.
+    sandbox_check.add_argument("stray", nargs="*", help=argparse.SUPPRESS)
 
     sandbox_on = sandbox_sub.add_parser("on", help="Turn the sandbox on for this workspace")
     sandbox_on.add_argument("--workspace", help="Workspace path")
@@ -4353,7 +4423,7 @@ def build_parser() -> argparse.ArgumentParser:
     tags_rules_p.add_argument("rules_action", nargs="?", default="list",
                               choices=["list", "add", "rm"])
     tags_rules_p.add_argument("expr", nargs="?",
-                              help='Rule expression (add) or index/text (rm), e.g. "untrusted_content then critical_action -> block"')
+                              help='Rule expression (add) or index/text (rm), e.g. "untrusted_content then egress.offlist -> block"')
     tags_rules_p.add_argument("--workspace", help="Workspace path")
 
     tags_prov_p = tags_sub.add_parser(
@@ -4728,11 +4798,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     setup_parser.add_argument(
         "--judge",
-        choices=["claude", "codex", "api", "prismor"],
+        choices=["heuristic", "claude", "codex", "typesafe", "api", "prismor"],
         default=None,
-        help="Which login judges uncertain events in the semantic layer: claude (Claude Code CLI), "
-             "codex (Codex CLI), api (litellm model + provider key), prismor (hosted judge on this "
-             "device's enrollment). Default: heuristics only "
+        help="Which model judges text in the semantic layer: heuristic (no LLM), claude (Claude Code "
+             "CLI) or codex (Codex CLI) for uncertain events only, typesafe ($TYPESAFE_API_KEY), api "
+             "(OpenAI/Gemini/Anthropic key, or any litellm model), prismor (hosted judge on this "
+             "device's enrollment). Unset: nothing is written, and the hooks use an API judge when "
+             "a provider key is in the environment, else heuristics "
              "(non-interactive only; $PRISMOR_JUDGE)",
     )
     setup_parser.add_argument(
@@ -4838,9 +4910,52 @@ def _effective_verdict(finding: Dict[str, Any]) -> str:
     question it exists to answer.
     """
     action = str(finding.get("action") or "warn").lower()
-    if action == "block" and str(finding.get("mode") or "").lower() != "enforce":
+    if str(finding.get("mode") or "").lower() == "enforce":
+        # Same verdict the hook reaches (hooks.should_block → contract.verdict_of):
+        # an enforce-mode finding stops the call whatever its declared action,
+        # so `warn` there used to print WARN for what the hook blocked.
+        from prismor.runtime.contract import verdict_of
+        return verdict_of(finding).upper()
+    if action == "block":
         return "WARN"
     return action.upper()
+
+
+def _align_check_with_hook(engine, findings: List[Dict[str, Any]], workspace: Path, kind: str) -> None:
+    """Mark findings with the verdict the installed hook would reach.
+
+    Hooks installed with ``--mode enforce`` on a legacy policy block by category
+    (runtime.evaluate_tool_call → legacy_should_block) while the finding still
+    carries the rule's observe mode, so `check` said WARN for what the hook
+    blocked (`git push --force` on dev-safe).
+    """
+    if not findings or not getattr(engine, "is_legacy_policy", False):
+        return
+    try:
+        from prismor.runtime.hooks import hook_health, legacy_should_block, should_block
+        if not any(c.get("configured") and c.get("mode") == "enforce" for c in hook_health(workspace)):
+            return
+        etype = {"read": "file_read", "write": "file_write", "text": "text"}.get(kind, "shell")
+        event = {"type": etype, "agent_event": "PreToolUse"}
+        if should_block(findings, event) is not None:
+            return
+        hit = legacy_should_block(findings, event, engine.block_categories)
+    except Exception:
+        return
+    if hit is not None:
+        hit["mode"] = "enforce"
+
+
+def _pause_note() -> str:
+    """`check` reports policy, but a paused machine does not enforce it."""
+    try:
+        from prismor.runtime import pause as _pause
+        if _pause.active_state() is not None:
+            return _color("Paused:", _YELLOW) + " enforcement is suspended right now, so nothing is " \
+                "blocked until `prismor resume` (findings are still recorded)."
+    except Exception:
+        pass
+    return ""
 
 
 def _blocks(finding: Dict[str, Any]) -> bool:
@@ -4909,6 +5024,7 @@ def _print_findings(
             print("  allowlists:")
             print(f"    - id: allow-{rid}-{abs(hash(value)) % 10000:04d}")
             print(f"      rule_ids: [{rid}]")
+            print("      match: exact")
             print(f"      reason: \"intentional — reviewed on {datetime.now().date().isoformat()}\"")
             print(f"      patterns: [{json.dumps(re.escape(value))}]")
 
@@ -5023,6 +5139,25 @@ def _dashboard_sparkline(day_counts: List[int]) -> str:
     return "".join(_BARS[min(int(c / peak * 8 + 0.5), 8)] for c in day_counts)
 
 
+def _spark_under(spark: str, labels: List[str]) -> str:
+    """Centre each bar under its day label ("Fri 9" and "Thu 15" differ in
+    width, so a fixed two-space gap drifted off the labels)."""
+    return "  ".join(bar.center(len(label)) for bar, label in zip(spark, labels))
+
+
+def _day_bucket(ts: str, now: datetime, days: int) -> Optional[int]:
+    """Index (0 = oldest) of the calendar day ``ts`` falls on in the last
+    ``days`` days, matching the day labels; None outside the window."""
+    try:
+        dt = datetime.fromisoformat(ts[:-1] + "+00:00" if ts.endswith("Z") else ts)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    bucket = days - 1 - (now.date() - dt.astimezone(now.tzinfo).date()).days
+    return bucket if 0 <= bucket < days else None
+
+
 def _sessions_in_window(
     workspace: Path, days: int
 ) -> List[Dict[str, Any]]:
@@ -5070,26 +5205,12 @@ def _print_dashboard(days: int = 7) -> None:
     global_day_counts: List[int] = [0] * days
     for ws in workspaces:
         for s in _sessions_in_window(ws, days):
-            ts = s.get("updatedAt") or s.get("startedAt") or ""
-            if not ts:
-                continue
-            try:
-                if ts.endswith("Z"):
-                    ts = ts[:-1] + "+00:00"
-                dt = datetime.fromisoformat(ts)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                age_days = (now - dt).days
-                bucket = days - 1 - age_days
-                if 0 <= bucket < days:
-                    global_day_counts[bucket] += s.get("findingsCount", 0)
-            except Exception:
-                pass
+            bucket = _day_bucket(s.get("updatedAt") or s.get("startedAt") or "", now, days)
+            if bucket is not None:
+                global_day_counts[bucket] += s.get("findingsCount", 0)
 
     spark = _dashboard_sparkline(global_day_counts)
-    # Pad each bar character to align under the 5-char day labels
-    spaced_spark = "  ".join(spark)
-    print(f"  {_color(spaced_spark, _YELLOW)}")
+    print(f"  {_color(_spark_under(spark, day_labels), _YELLOW)}")
     print()
 
     if not workspaces:
@@ -5133,21 +5254,9 @@ def _print_dashboard(days: int = 7) -> None:
         # Per-workspace sparkline for the days window
         ws_day_counts: List[int] = [0] * days
         for s in sessions:
-            ts = s.get("updatedAt") or s.get("startedAt") or ""
-            if not ts:
-                continue
-            try:
-                if ts.endswith("Z"):
-                    ts = ts[:-1] + "+00:00"
-                dt = datetime.fromisoformat(ts)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                age_days = (now - dt).days
-                bucket = days - 1 - age_days
-                if 0 <= bucket < days:
-                    ws_day_counts[bucket] += s.get("findingsCount", 0)
-            except Exception:
-                pass
+            bucket = _day_bucket(s.get("updatedAt") or s.get("startedAt") or "", now, days)
+            if bucket is not None:
+                ws_day_counts[bucket] += s.get("findingsCount", 0)
         ws_spark = _dashboard_sparkline(ws_day_counts)
 
         risk_str = _color(f"risk={latest_risk}/100", risk_color)
@@ -5160,7 +5269,7 @@ def _print_dashboard(days: int = 7) -> None:
         for check in _checks:
             if check["state"] != "ok":
                 print(f"    hook health: {check['agent']} ({check['scope']}): {check['detail']}")
-        print(f"    {_color(ws_spark, _YELLOW)}")
+        print(f"  {_color(_spark_under(ws_spark, day_labels), _YELLOW)}")
         print()
 
     # ── Footer ────────────────────────────────────────────────────────────
@@ -5292,7 +5401,11 @@ def _run_trail(args) -> None:
             print(f"  ⚠ {report['unverifiable']} signed record(s) not checked: the signature "
                   "backend is not installed. Hash chain and order were still verified. "
                   "To check signatures too: pip install 'prismor[signing]'")
-        if report["unsigned"]:
+        if report["unsigned"] and not report["signed"]:
+            # The default install: no `cryptography`, so nothing is signed.
+            print("  · no record is signed: install 'prismor[signing]' to sign new records. The hash "
+                  "chain catches edits and gaps, but anyone who can write the file can rebuild an unsigned chain.")
+        elif report["unsigned"]:
             print(f"  · {report['unsigned']} record(s) are unsigned (written before a device "
                   "signing key existed, or while signing was unavailable). The hash chain still covers them.")
         # A long tail of identical lines buries the summary; show a few, count the rest.
@@ -5428,9 +5541,25 @@ def _run_attest(args, workspace: Path, repo_root: Path) -> None:
             print(f"✗ cannot read bundle: {exc}")
             raise SystemExit(2)
         report = _attest.verify_bundle(bundle, pubkey_b64=getattr(args, "pubkey", None))
+        # A default install has no `cryptography`, so its bundles are unsigned
+        # and verify used to fail every one of them, untampered or not. An
+        # unsigned bundle whose hash matches is reported as exactly that (exit
+        # 0) unless a signature is demanded (--require-signature, --pubkey).
+        unsigned_ok = (report["content_hash_ok"] and not report["signed"]
+                       and not getattr(args, "require_signature", False)
+                       and not getattr(args, "pubkey", None))
+        passed = report["ok"] or unsigned_ok
         if getattr(args, "json", False):
-            print(json.dumps(report, indent=2))
-            raise SystemExit(0 if report["ok"] else 1)
+            print(json.dumps({**report, "unsigned_accepted": unsigned_ok}, indent=2))
+            raise SystemExit(0 if passed else 1)
+        if unsigned_ok:
+            print(f"⚠ unsigned bundle — schema {report.get('schema')}, "
+                  f"generated {str(report.get('generated_at'))[:19]}")
+            print("  integrity checked: content hash OK (catches accidental edits; anyone can "
+                  "re-hash a deliberate one)")
+            print("  signature absent: install prismor[signing] to sign bundles, "
+                  "then rebuild with `prismor attest`")
+            raise SystemExit(0)
         glyph = "✓" if report["ok"] else "✗"
         state = "verified" if report["ok"] else "FAILED"
         print(f"{glyph} attestation {state} — schema {report.get('schema')}, "
@@ -5451,6 +5580,8 @@ def _run_attest(args, workspace: Path, repo_root: Path) -> None:
         n_findings = len(bundle.get("audit_findings") or [])
         signed = "signed" if bundle.get("signature") else "UNSIGNED"
         print(f"Attestation bundle ({signed}) written to {out}")
+        if not bundle.get("signature"):
+            print("  unsigned: install prismor[signing] (adds `cryptography`) to sign bundles")
         print(f"  {n_agents} agents · {n_findings} audit findings · "
               f"trail anchor seq {(bundle.get('trail_checkpoint') or {}).get('seq')}")
         print(f"  re-verify with:  prismor attest verify {out}")
@@ -5529,7 +5660,13 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
         engine = PolicyEngine(workspace=workspace)
         n_rules = len(getattr(engine, "rules", []) or [])
         mode = getattr(engine, "default_mode", "observe")
-        add("ok", "policy", f"{n_rules} rules loaded (default mode: {mode})")
+        _perr = getattr(engine, "project_policy_error", None)
+        if _perr:
+            _kept = ("enforcing its last valid version" if engine.project_policy_fallback
+                     else "only built-in and org rules apply")
+            add("fail", "policy", f"project policy is invalid, {_kept}: {_perr}")
+        else:
+            add("ok", "policy", f"{n_rules} rules loaded (default mode: {mode})")
     except Exception as exc:
         engine = None
         add("fail", "policy", f"policy failed to load: {exc}")
@@ -5577,6 +5714,12 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
             add("warn" if n_off else "ok", "detection layers", "; ".join(layers))
         except Exception as exc:
             add("warn", "detection layers", f"could not summarize coverage: {exc}")
+
+    from prismor.runtime.semantic_guard import last_judge_error
+    _je = last_judge_error()
+    if _je:
+        _ago = max(0, int(time.time() - float(_je.get("at") or 0)))
+        add("warn", "llm judge", f"last call failed {_ago // 60}m ago and fell back to heuristics: {_je.get('error')}")
 
     # 3–4. Enrollment + remote policy signature.
     ident = None
@@ -5858,11 +6001,22 @@ def _print_status_overview(workspace: Path) -> None:
         print(f"  {_color('Codex cloak:', _GREEN)} block-only; use `prismor cloak run -- <command>` for placeholders")
 
     # Rules
+    blocking = None
     try:
         engine = PolicyEngine(workspace=workspace)
-        print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active")
+        from prismor.runtime.policy_engine import _SELF_PROTECTION_RULE_IDS
+        blocking = sum(1 for r in engine.rules
+                       if r.id not in _SELF_PROTECTION_RULE_IDS and engine._resolve_mode(r) == "enforce")
+        print(f"  {_color('Rules:', _GREEN)}       {len(engine.rules)} active, {blocking} block")
+        if engine.project_policy_error:
+            _kept = ("its last valid version is enforced" if engine.project_policy_fallback
+                     else "only built-in and org rules apply")
+            print(f"  {_color('Policy:', _RED)}      INVALID, {_kept}: {engine.project_policy_error}")
+            print(f"               Fix it, then: prismor policy validate")
     except Exception:
         engine = None
+    if mode == "enforce" and blocking == 0:
+        print(f"  {_color('Note:', _YELLOW)}        {_color('enforce, but no rules are opted in to block: nothing is stopped yet', _YELLOW)}")
 
     _print_status_quota(engine)
 
@@ -5887,10 +6041,12 @@ def _print_status_overview(workspace: Path) -> None:
     # Next-step nudge — one action, picked by current state
     print()
     if not agents_with_hooks:
-        print(f"  {_color('Next:', _CYAN)} prismor setup   (or scripted: prismor setup --non-interactive --mode observe)")
+        print(f"  {_color('Next:', _CYAN)} prismor setup   (or scripted: prismor setup --non-interactive --mode enforce --recommended)")
     elif mode == "observe":
         print(f"  {_color('Tip:', _DIM)}  observe mode logs only. Switch with:")
         print(f"        prismor setup --mode enforce --recommended   (picks the rules that block)")
+    elif mode == "enforce" and blocking == 0:
+        print(f"  {_color('Next:', _CYAN)} prismor setup --mode enforce --recommended   (pick the rules that block)")
     elif sessions and sessions[0].get("findingsCount", 0) > 0:
         print(f"  {_color('Next:', _CYAN)} prismor sessions --findings-only")
     else:
@@ -7260,7 +7416,7 @@ def format_tokens(payload: Dict[str, Any]) -> str:
     if offenders:
         lines.extend(["", "Biggest individual tool calls", "-" * 29])
         for row in offenders:
-            label = row["label"]
+            label = " ".join(str(row["label"]).split())  # a heredoc's newlines broke the table
             if len(label) > 60:
                 label = label[:57] + "..."
             lines.append(f"  {row['tool']:<12} {label:<60} {row['approxTokens']:>8,} tok")

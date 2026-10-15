@@ -98,7 +98,10 @@ def make_tool_hook(
             reason = decision.reason or "policy violation"
             if raise_on_block:
                 raise PrismorBlocked(reason, decision)
-            raise RuntimeError(f"⛔ Prismor blocked this tool call: {reason}")
+            # The hook's return value IS the tool result, so the model reads
+            # the denial. Raising made Agno log an ERROR with a traceback for
+            # an ordinary, expected block.
+            return f"⛔ Prismor blocked this tool call: {reason}"
         # The hook chain hands back the tool's own return value: redact it
         # here, the last point before Agno folds it into the model's context.
         return redact_tool_result(function_call(**arguments), workspace=ws,

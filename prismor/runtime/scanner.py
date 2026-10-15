@@ -731,6 +731,14 @@ def _audit_remote_transport(
     return findings
 
 
+def _is_broad_root(arg: str) -> bool:
+    """``/``, ``~``, ``$HOME``, the home directory itself, or a drive root."""
+    a = arg.strip().rstrip("/\\") or "/"
+    home = str(Path.home()).rstrip("/\\")
+    return (a in ("/", "~", "$HOME", "${HOME}", "%USERPROFILE%", home, "/Users", "/home")
+            or bool(re.fullmatch(r"[A-Za-z]:", a)))
+
+
 def _truncate_url(url: str, limit: int = 120) -> str:
     """Truncate a URL for evidence, stripping any query string (may carry tokens)."""
     base = url.split("?", 1)[0]
@@ -990,6 +998,24 @@ def audit_mcp_schema(
             "evidence": f"server name: {name!r}",
             "eventIndex": 0,
             "ruleId": "mcp-confusable-name",
+            "action": "warn",
+            "skillName": name,
+        })
+
+    # A stdio server handed the whole disk or home directory as an argument
+    # (`server-filesystem /`): every file, ~/.ssh and ~/.aws included, is one
+    # tool call away. The allow-list check below only reads allowedPaths.
+    args = cfg.get("args") if isinstance(cfg.get("args"), list) else []
+    broad = next((a for a in args if _is_broad_root(str(a))), None)
+    if broad is not None:
+        findings.append({
+            "id": f"mcp-broad-root-{name}",
+            "severity": "HIGH",
+            "category": "skill_risk",
+            "title": f"MCP server '{name}' is given access to {broad!r} — the whole disk or home directory, secrets included",
+            "evidence": " ".join([str(cfg.get("command") or "")] + [str(a) for a in args])[:200],
+            "eventIndex": 0,
+            "ruleId": "mcp-broad-root-access",
             "action": "warn",
             "skillName": name,
         })

@@ -117,7 +117,7 @@ def test_judge_prompt_treats_labeling_instructions_as_injection():
     assert "HUMAN reader" in p  # install docs are not injections
 
 
-@pytest.mark.parametrize("found, expected", [({"claude", "codex"}, "claude"), ({"codex"}, "codex"), (set(), "")])
+@pytest.mark.parametrize("found, expected", [({"claude", "codex"}, "claude"), ({"codex"}, "codex"), (set(), "heuristic")])
 def test_setup_preselects_the_subscription_cli_on_this_host(monkeypatch, found, expected):
     from prismor.runtime import setup_wizard as sw
     monkeypatch.setattr(sw, "_judge_ready", lambda p: "found" if p in found else "not installed")

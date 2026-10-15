@@ -24,8 +24,8 @@ _Generated from `prismor/runtime/integrations/registry.yaml` — do not edit by 
 | Claude Code | coding-agent | hook-config | ✅ | `exit-2` |
 | Cursor | coding-agent | hook-config | ✅ | `json-permission` |
 | Windsurf (Codeium Cascade) | coding-agent | hook-config | ✅ | `json-permission` |
-| OpenClaw | coding-agent | hook-config | ✅ | `throw` |
-| Hermes (NousResearch gateway) | coding-agent | hook-config | ✅ | `throw` |
+| OpenClaw | coding-agent | sdk | ✅ | `return-block` |
+| Hermes Agent (Nous Research) | coding-agent | sdk | ✅ | `return-block` |
 | Codex (OpenAI) | coding-agent | hook-config | ✅ | `exit-2` |
 | GitHub Copilot CLI | coding-agent | hook-config | ✅ | `json-permission` |
 | Grok Build (xAI) | coding-agent | hook-config | ✅ | `exit-2` |
@@ -114,26 +114,28 @@ Legend: ✅ shipped · 🟡 roadmap · — sweep-only / not applicable. Surfaces
 
 ### OpenClaw
 
-- **Config:** `~/.openclaw/config.json` — registers a JS plugin scaffolded at `prismor/runtime/openclaw-plugin/`.
-- **Plugin hooks:** `before_tool_call`, `message_sending`, plus an internal `message:received` hook at `~/.openclaw/hooks/prismor/`.
-- **Blocking:** non-zero exit from the Prismor dispatcher → plugin returns `{block: true, reason}`.
-- **Code:** `prismor/runtime/hooks.py` `_merge_openclaw()`, `_normalize_openclaw()`.
+- **Config:** a plugin Prismor writes to `~/.openclaw/extensions/prismor/` (global) or `<workspace>/.openclaw/extensions/prismor/` (project): `index.js` with the dispatcher command baked in, plus the `openclaw.plugin.json` manifest OpenClaw requires. OpenClaw enables installed extensions by default. Builds up to 1.61 wrote a `{"plugins": [...]}` entry to `~/.openclaw/config.json` / `.openclaw/plugins.json`, which OpenClaw never read, so OpenClaw ran ungoverned; install and uninstall now remove that entry.
+- **Plugin hooks:** `before_tool_call` (pre), `after_tool_call` (record), `message_received` (inbound channel messages, record only).
+- **Blocking:** dispatcher exit 2 → the handler returns `{block: true, blockReason}`. A hook that errors or times out lets the call run.
+- **Verified live** against OpenClaw 2026.3.2 (2026-10-15): `chmod -R 777` and an agent write to `.prismor/policy.yaml` blocked, `ls` allowed, sessions recorded as `agent=openclaw`.
+- **Code:** `prismor/runtime/hooks.py` `_write_openclaw_plugin()`, `_normalize_openclaw()`. **Docs:** [docs/openclaw.md](docs/openclaw.md).
 
-### Hermes (NousResearch gateway)
+### Hermes Agent (Nous Research)
 
-Prismor integrates with Hermes at two complementary layers:
+Prismor integrates with Hermes at two layers, both Python plugins Hermes loads into its own process. Hermes loads a plugin only when its name is in `plugins.enabled` in `~/.hermes/config.yaml` (the installers add it), and loads project plugins only with `HERMES_ENABLE_PROJECT_PLUGINS=1`.
 
-**1. Runtime hooks** (for policy enforcement and session monitoring):
-- **Config:** `~/.hermes/config.json` — registers a JS plugin scaffolded at `prismor/runtime/hermes-plugin/`.
-- **Plugin hooks:** `before_tool_call`, `message_sending`, internal `message:received` hook at `~/.hermes/hooks/prismor/`.
+**1. Policy hooks** (`prismor install-hooks --agent hermes`):
+- **Config:** `~/.hermes/plugins/prismor/` (global) or `./.hermes/plugins/prismor/` (project): `plugin.yaml` + `__init__.py`. Builds up to 1.61 wrote a JS plugin and a `~/.hermes/config.json` Hermes never read; install and uninstall now remove them.
+- **Plugin hooks:** `pre_tool_call` (block), `post_tool_call` (record), `pre_llm_call` (screen the user turn; Hermes cannot stop a turn here, so a flagged prompt becomes context telling the model not to act on it).
+- **Verified live** against Hermes Agent v0.19.0 (2026-10-15): `chmod -R 777` blocked, `ls` allowed, sessions recorded as `agent=hermes`.
 - **Session ingest:** offline analysis of `~/.hermes/sessions/*.jsonl` via `prismor ingest --input <file> --agent hermes`, or `prismor ingest --discover --agent hermes` to sweep the whole store automatically. The Hermes transcript adapter is contract-tested but has not been verified against real Hermes session data — run it with `--strict` and report a zero-event sweep. See [Transcript Ingest](docs/transcript-ingest.md).
-- **Code:** `prismor/runtime/hooks.py` `_merge_hermes()`, `_normalize_hermes()`.
+- **Code:** `prismor/runtime/hooks.py` `_write_hermes_plugin()`, `_normalize_hermes()`.
 
-**2. Secret cloaking** (for preventing secrets from entering model context):
-- **Discovery:** pip-installed Hermes auto-discovers the plugin via the `hermes_agent.plugins` entry-point group in `pyproject.toml`. No filesystem setup needed.
-- **Alternative install:** `prismor cloak install --agent hermes` copies the plugin to `~/.hermes/plugins/prismor-cloak/`.
-- **Hooks installed:** `pre_tool_call` (decloak + secret guard), `post_tool_call` (audit), `transform_terminal_output` (scrub output), `transform_tool_result` (scrub tool results), `pre_gateway_dispatch` (paste guard).
-- **Auto-vaulting:** pasted secrets are detected, vaulted under `auto_<hash>` names, and re-sent as `@@SECRET:auto_xxx@@` without the agent ever seeing the raw value.
+**2. Secret cloaking** (`prismor cloak install --agent hermes --scope global`):
+- **Install:** copies the plugin to `~/.hermes/plugins/prismor-cloak/` and enables it. The `hermes_agent.plugins` entry point in `pyproject.toml` only applies when `prismor` is installed into Hermes' own virtualenv, and still needs `plugins.enabled`.
+- **Hooks installed:** `pre_tool_call` (secret guard), `tool_execution` middleware (decloak: placeholders are replaced only in the copy that executes), `post_tool_call` (audit), `transform_terminal_output` / `transform_tool_result` (scrub), `pre_gateway_dispatch` (paste guard).
+- **Auto-vaulting:** pasted secrets are vaulted under `auto_<hash>` names and the agent only ever sees the placeholder.
+- **Verified live** against Hermes Agent v0.19.0: a placeholder in a `terminal` call ran with the real value (hash matched) while the output, transcript and Hermes' `state.db` held only the placeholder.
 - **Code:** `prismor/runtime/cloaking/hermes_installer.py`, `prismor/runtime/cloaking/hermes_plugin_entry.py`.
 - **Docs:** [docs/hermes.md](docs/hermes.md).
 
@@ -254,7 +256,7 @@ Prismor integrates with Hermes at two complementary layers:
 - **Config:** a plugin module Prismor writes to `.opencode/plugins/prismor.js` (project) or `~/.config/opencode/plugins/prismor.js` (user). OpenCode auto-loads every JS/TS file in those directories, so nothing is registered in `opencode.json`. Builds before this one wrote a `"plugins"` list to `.opencode/plugins.json`, which OpenCode never reads; install and uninstall remove that legacy entry (and the file, if nothing else is in it).
 - **Hooks:** `tool.execute.before`, `tool.execute.after`. The module exports a single plugin, `export const PrismorPlugin = async () => ({ ... })`; the tool name is `input.tool` and its arguments are `output.args`.
 - **Blocking:** the plugin pipes the event to the Prismor dispatcher; on exit 2 it does `throw new Error(reason)` inside `tool.execute.before`, which is how OpenCode blocks a call.
-- **Not yet verified against a live `opencode` binary.** Built from [opencode.ai/docs/plugins](https://opencode.ai/docs/plugins/). Prismor's governance model still recommends the [MCP mirror](docs/mcp-gateway.md) for OpenCode.
+- **Verified live** against `opencode` 1.19.0 (2026-10-15): `chmod -R 777` blocked, benign commands recorded as `agent=opencode`, reads of `.env` and writes to `.prismor/policy.yaml` blocked. The plugin only blocks on dispatcher exit 2, so if the dispatcher crashes or exceeds its 10 s timeout the call runs (fails open).
 - **Code:** `prismor/runtime/hooks.py` `_write_opencode_plugin()`, `_normalize_opencode()`.
 
 ---
@@ -540,7 +542,7 @@ Each agent below exposes a blocking pre-tool hook. An adapter requires (1) confi
 ### Amp (Sourcegraph spinoff)
 
 - **Config:** no declarative hooks.json — a TypeScript Plugin API (`.amp/plugins/*.ts` project, `~/.config/amp/plugins/*.ts` user). A plugin exports an async function receiving a context object and returning handlers keyed by event name (`tool.call`, `agent.start`, `agent.end`, ...).
-- **Adapter work:** architecturally closer to OpenCode than to any JSON-hooks agent in this table — needs a scaffolded `.ts` plugin file (like the OpenClaw/Hermes JS scaffolds, or OpenCode's planned shim) that shells out to the Prismor dispatcher and returns/throws a reject action on deny, not a config-merge. Not yet verified against a live `amp` install.
+- **Adapter work:** architecturally closer to OpenCode than to any JSON-hooks agent in this table — needs a scaffolded `.ts` plugin file (like the OpenClaw, Hermes and OpenCode plugin modules) that shells out to the Prismor dispatcher and returns/throws a reject action on deny, not a config-merge. Not yet verified against a live `amp` install.
 
 ### Auggie CLI (Augment Code)
 

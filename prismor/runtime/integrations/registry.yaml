@@ -73,26 +73,28 @@ agents:
   - id: openclaw
     name: OpenClaw
     kind: coding-agent
-    surface: hook-config
+    surface: sdk
     status: shipped
-    config_paths: { user: "~/.openclaw/config.json" }
-    events: [before_tool_call, message_sending, "message:received"]
-    blocking: throw
+    config_paths: { project: ".openclaw/extensions/prismor/", user: "~/.openclaw/extensions/prismor/" }
+    events: [before_tool_call, after_tool_call, message_received]
+    blocking: return-block
     normalizer: _normalize_openclaw
     sweep_dir: "~/.openclaw/"
-    sources: ["internal"]
+    sources: ["https://docs.openclaw.ai/tools/plugin"]
+    notes: "Plugin module (index.js + openclaw.plugin.json). Live-verified against openclaw 2026.3.2 (2026-10-15)."
 
   - id: hermes
-    name: Hermes (NousResearch gateway)
+    name: Hermes Agent (Nous Research)
     kind: coding-agent
-    surface: hook-config
+    surface: sdk
     status: shipped
-    config_paths: { user: "~/.hermes/config.json" }
-    events: [before_tool_call, message_sending, "message:received"]
-    blocking: throw
+    config_paths: { project: ".hermes/plugins/prismor/", user: "~/.hermes/plugins/prismor/" }
+    events: [pre_tool_call, post_tool_call, pre_llm_call]
+    blocking: return-block
     normalizer: _normalize_hermes
     sweep_dir: "~/.hermes/"
-    sources: ["internal"]
+    sources: ["https://github.com/NousResearch/hermes-agent (hermes_cli/plugins.py)"]
+    notes: "Python plugin (plugin.yaml + __init__.py), enabled via plugins.enabled in ~/.hermes/config.yaml; project plugins need HERMES_ENABLE_PROJECT_PLUGINS=1. Live-verified against Hermes Agent v0.19.0 (2026-10-15)."
 
   - id: codex
     name: Codex (OpenAI)

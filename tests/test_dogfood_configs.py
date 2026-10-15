@@ -332,20 +332,17 @@ def fake_home(tmp_path, monkeypatch):
     return home
 
 
-_INLINE_AGENTS = [a for a in hooks._SUPPORTED_AGENTS if a not in hooks._PLUGIN_REGISTERED_AGENTS]
-
-
-@pytest.mark.parametrize("agent", _INLINE_AGENTS)
+@pytest.mark.parametrize("agent", hooks._SUPPORTED_AGENTS)
 def test_installed_command_is_executable_as_written(agent, tmp_path, fake_home):
     ws = tmp_path / "ws"
     ws.mkdir()
     for scope in ("project", "global"):
         [result] = hooks.install_hooks(repo_root=ROOT, workspace=ws, agent=agent, scope=scope, mode="observe")
         text = Path(result["configPath"]).read_text(encoding="utf-8")
-        if agent == "opencode":
-            # A JS plugin module, not a JSON config: the command is a JSON
-            # string literal assigned to PRISMOR_COMMAND.
-            literal = text.split("const PRISMOR_COMMAND = ", 1)[1].split(";\n", 1)[0]
+        if agent in hooks._PLUGIN_FILE_AGENTS:
+            # A plugin module, not a JSON config: the command is a JSON string
+            # literal assigned to PRISMOR_COMMAND (JS or Python).
+            literal = text.split("PRISMOR_COMMAND = ", 1)[1].split("\n", 1)[0].rstrip(";")
             cmds = [json.loads(literal)]
         else:
             cmds = [c for _, _, c in _commands(json.loads(text)) if "hook-dispatch" in c]

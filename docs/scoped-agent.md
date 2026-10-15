@@ -82,9 +82,16 @@ dashboard) freezes the scope and becomes authoritative. Rules live in
 `$PRISMOR_HOME/scoped/<session-id>.json`.
 
 Without `ANTHROPIC_API_KEY` (and the `anthropic` SDK) Prismor uses a keyword
-heuristic instead of an LLM. That heuristic always allows `Read` and `Bash`
-(shell is how agents do almost anything, and Codex has no Read tool at all);
-it decides writes and network. Dangerous shell is the base policy's job.
+heuristic instead of an LLM, and that heuristic does **not** restrict the
+built-in tools: `Read`, `Glob`, `Grep`, `Bash`, `Edit` and `Write` are always
+allowed, and network is never denied. With shell allowed, denying `Write`
+stops nothing (`cat > file`), and a keyword list cannot tell an offline task
+from one that runs `gh` or `git push`, so each miss blocked routine work for
+the rest of the session. What the fallback does scope is MCP tool families:
+a family the prompt names is allowed. Dangerous shell, file paths and network
+destinations stay the job of the base policy and the
+[egress policy](network-isolation.md). `prismor scope show` labels a scope
+built this way as the static fallback.
 
 ---
 

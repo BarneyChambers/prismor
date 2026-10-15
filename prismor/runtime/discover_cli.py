@@ -77,7 +77,9 @@ def _print_agents(agents: List[Dict[str, Any]]) -> None:
         if not coverable:
             line += _c("  (Prismor has no hook for this agent)", _DIM)
         print(line)
-        detail = _home_relative((agent.get("config_paths") or [""])[0])
+        # A governed agent names the file that holds its Prismor hook; the first
+        # discovered config (e.g. ~/.claude/settings.json) may hold none.
+        detail = _home_relative(agent.get("hook_path") or (agent.get("config_paths") or [""])[0])
         if detail:
             print(f"      {_c(detail, _DIM)}")
     print()

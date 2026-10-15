@@ -198,6 +198,11 @@ def format_report(result: SweepResult, *, since_label: str = "all history") -> s
             f"  {labels.get(agent, agent):<14}    "
             f"{_plural(count, 'transcript')} outside --since window"
         )
+    for agent, count in sorted(result.already_captured.items()):
+        lines.append(
+            f"  {labels.get(agent, agent):<14}    "
+            f"{_plural(count, 'transcript')} not stored: already recorded live by the hooks"
+        )
     lines.append("")
 
     would_block, warnings = partition(result)

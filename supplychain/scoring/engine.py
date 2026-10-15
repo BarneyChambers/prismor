@@ -111,6 +111,11 @@ class RiskScorer:
             # registry reports as latest. OSV filters by version internally.
             lookup_version = spec.version or meta.version or ""
             vulns = fetch_vulns(spec.name, meta.ecosystem, lookup_version)
+            if not lookup_version:
+                # No version to filter by: OSV returns every advisory the
+                # package ever had, so only malicious-package records (which
+                # name the package itself, not a version) mean anything.
+                vulns = [v for v in vulns if v.get("malicious")]
             _SEV_POINTS = {"critical": 50, "high": 30, "medium": 15, "low": 5}
             _SEV_RANK = {"critical": 3, "high": 2, "medium": 1, "low": 0}
             vulns_sorted = sorted(

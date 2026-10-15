@@ -148,18 +148,15 @@ def _hook_installed(agent_id: str, workspace: Path) -> Tuple[bool, str, str]:
         return False, "", ""
     if agent_id not in getattr(hooks, "_SUPPORTED_AGENTS", []):
         return False, "", ""
-    for scope in ("project", "user"):
+    # "global", not "user": _config_path only knows project/global, so the
+    # second pass silently read a fallback path and named a file holding no hook.
+    for scope in ("project", "global"):
         try:
+            if not hooks.hook_installed(agent_id, scope, workspace):
+                continue
             path = hooks._config_path(agent_id, scope, workspace)
-        except Exception:
-            continue
-        if not path.exists():
-            continue
-        try:
             content = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        if "prismor" not in content.lower():
+        except Exception:
             continue
         mode = ""
         if "--mode enforce" in content:
