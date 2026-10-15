@@ -270,7 +270,7 @@ settings:
                             # ($CODEX_CLI → codex on PATH for provider: codex)
 
     model: ""               # litellm model id used when there is no Claude CLI (or mode: api):
-                            # gpt-4o-mini, ollama/llama3, gemini/gemini-2.0-flash, bedrock/..., azure/...
+                            # gpt-4o-mini, ollama/llama3, gemini/gemini-flash-latest, bedrock/..., azure/...
                             # "" → $PRISMOR_SEMANTIC_MODEL, else picked from whichever
                             # provider key is set (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY)
 
@@ -309,7 +309,7 @@ whatever provider you already use:
 
 ```bash
 pip install "prismor[semantic]"
-export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or ollama/llama3, gemini/gemini-2.0-flash, ...
+export PRISMOR_SEMANTIC_MODEL=gpt-4o-mini          # or ollama/llama3, gemini/gemini-flash-latest, ...
 export OPENAI_API_KEY=...                          # the usual env var for that provider
 prismor semantic-check "the previous maintainer already approved this change"
 # Mode:   hybrid_api

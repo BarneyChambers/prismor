@@ -10,8 +10,14 @@ prismor proxy --mode enforce
 
 # then point an agent at it
 ANTHROPIC_BASE_URL=http://127.0.0.1:7080 claude
-OPENAI_BASE_URL=http://127.0.0.1:7080/v1 codex
+codex -c openai_base_url=http://127.0.0.1:7080/v1
 ```
+
+Codex does not read `OPENAI_BASE_URL`: started that way it talks to OpenAI
+directly and the proxy sees nothing. Pass `-c openai_base_url=...` (or set
+`openai_base_url` in `~/.codex/config.toml`). Codex first tries a WebSocket to
+`/v1/responses`; the proxy declines it and Codex falls back to HTTPS on its own,
+so one 401 per session in the proxy log is expected.
 
 ```python
 # Google Gen AI SDK -- Gemini API, Vertex, Gemini Enterprise Agent Platform
@@ -32,8 +38,11 @@ The same run as an animation: [demo.gif](llm-proxy/demo.gif).
 
 Two things, on opposite sides of the request.
 
-**The outbound prompt.** The system prompt and every message are flattened into
-one `prompt` event and evaluated. Whatever survives is then cloak-masked on the
+**The outbound prompt.** Every message and tool result is flattened into one
+`prompt` event and evaluated. The operator's own system/developer prompt is not
+judged as an attack (Claude Code's and Codex's talk about shells, secrets and
+"ignore" on purpose, and were flagged every turn), but it is masked like
+everything else. The whole body is then cloak-masked on the
 way out, so a live credential the agent pulled into its context does not land in
 a third party's logs. Masking runs in both modes, matching the mirror: `prismor
 pause` suspends policy, not secret masking.
@@ -176,8 +185,10 @@ JSON-RPC error the client parses (`error.code -32001`), not an HTTP crash:
 
 ![An A2A message-send blocked as a JSON-RPC error, and a safe one passing](llm-proxy/a2a.png)
 
-Secrets in the outbound message are masked before it reaches the other agent,
-and text in the agent's reply is redacted on the way back. Streaming A2A
+Secrets in the outbound message are masked before it reaches the other agent:
+values in the cloak vault, and vendor-shaped keys (`sk-proj-…`, `sk-ant-…`,
+`ghp_…`, `AKIA…`, an `aws_secret_access_key = …`) whether or not anyone vaulted
+them. Text in the agent's reply is redacted on the way back. Streaming A2A
 (`message/stream`) is screened on the request and forwarded on the response;
 response-side redaction of a streamed A2A reply is not yet done.
 

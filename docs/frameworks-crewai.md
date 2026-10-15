@@ -34,7 +34,7 @@ def run_shell(command: str) -> str:
     """Run a shell command and return its output."""
     ...
 
-tools = guard_tools([run_shell])   # every tool now policy-checked
+tools = guard_tools([run_shell], mode="enforce")   # every tool now policy-checked
 
 agent = Agent(
     role="ops",
@@ -43,6 +43,8 @@ agent = Agent(
     llm="gpt-4o-mini",
 )
 ```
+
+> **Pass `mode="enforce"` to block.** The default is `mode="observe"`: every call is checked and logged, but nothing is refused, and the guard prints one `OBSERVE mode` warning the first time it lets through a call enforce would have blocked.
 
 `guard_tools` wraps the tool's implementation callable in-place — it tries
 `tool.func`, then `tool._run`, then `tool.run` (first found). The tool object
@@ -63,7 +65,7 @@ guarded = prismor_guard_tool(run_shell, mode="enforce", subject="user:alice")
 from crewai import Crew
 from prismor.crewai import guard_tools, use_subject
 
-tools = guard_tools([run_shell, search])   # once, at startup — no bound subject
+tools = guard_tools([run_shell, search], mode="enforce")   # once, at startup — no bound subject
 
 agent = Agent(role="ops", tools=tools, llm="gpt-4o-mini", ...)
 crew = Crew(agents=[agent], tasks=[...])

@@ -16,7 +16,7 @@ Easy path::
     from prismor.google_adk import make_before_tool_callback
 
     agent = LlmAgent(
-        model="gemini-2.0-flash", name="ops", tools=[run_shell],
+        model="gemini-flash-latest", name="ops", tools=[run_shell],
         before_tool_callback=make_before_tool_callback(subject="user:alice", mode="enforce"),
         after_tool_callback=make_after_tool_callback(),
     )
