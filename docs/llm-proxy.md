@@ -16,8 +16,9 @@ codex -c openai_base_url=http://127.0.0.1:7080/v1
 Codex does not read `OPENAI_BASE_URL`: started that way it talks to OpenAI
 directly and the proxy sees nothing. Pass `-c openai_base_url=...` (or set
 `openai_base_url` in `~/.codex/config.toml`). Codex first tries a WebSocket to
-`/v1/responses`; the proxy declines it and Codex falls back to HTTPS on its own,
-so one 401 per session in the proxy log is expected.
+`/v1/responses`; the proxy declines it, Codex retries a few times (printing
+`401 Unauthorized` errors) and then falls back to HTTPS on its own with
+"Falling back from WebSockets to HTTPS transport". Those errors are expected.
 
 ```python
 # Google Gen AI SDK -- Gemini API, Vertex, Gemini Enterprise Agent Platform
