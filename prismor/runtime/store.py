@@ -1109,7 +1109,7 @@ def list_sessions(workspace: Path, limit: int = 20, *, all_workspaces: bool = Fa
                     FROM sessions
                     WHERE workspace_path IS NOT NULL AND workspace_path != '' AND workspace_path != ? AND workspace_path != ?
                     ORDER BY updated_at DESC
-                    LIMIT 500
+                    LIMIT 20000
                     """,
                     (ws_key, ws_raw),
                 ).fetchall()
@@ -1775,7 +1775,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                                     )
                 WHERE e.type != 'supply_chain'
                   AND e.ts >= datetime('now', ?)
-                LIMIT 5000
+                LIMIT 20000
                 """,  # _ENFORCED_SQL is a module constant  # nosec B608
                 (f"-{hours} hours",),
             ):
@@ -2441,7 +2441,7 @@ def get_findings_page(
                     AND te.rn = COALESCE(f.event_index, 0)
                 {where}
                 ORDER BY COALESCE(te.ts, s.updated_at) DESC
-                LIMIT 5000
+                LIMIT 20000
                 """,  # nosec B608
                 params,
             ):
@@ -3023,7 +3023,7 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
                 FROM supply_chain_events
                 WHERE verdict IN ('block','warn')
                 ORDER BY ts DESC
-                LIMIT 60
+                LIMIT 20000
                 """
             ):
                 try:
@@ -3104,7 +3104,7 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
                   AND session_id IS NOT NULL AND session_id != ''
                 GROUP BY session_id, install_cmd
                 ORDER BY last_seen DESC
-                LIMIT 25
+                LIMIT 20000
                 """,
                 (f"-{hours} hours",),
             ):
@@ -4156,7 +4156,12 @@ def set_project_rule_states(workspace: Path, disabled_ids: List[str]) -> Dict[st
 
 
 #: How many trail rows a session view ships after the Pre/Post merge below.
-_TRAIL_ROWS = 250
+#: Enough for a whole session's subagents to show up as cards; only the newest
+#: _TRAIL_FULL rows keep the raw hook input and full tool output (most of the
+#: payload), so a long session stays a few MB instead of ~14.
+_TRAIL_ROWS = 2000
+_TRAIL_FULL = 250
+_TRAIL_CLIP = 600
 
 
 #: Two hook processes firing for one action land within a second of each other;
@@ -4238,6 +4243,25 @@ def _merge_tool_phases(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         merged.append(leftover)
     merged.sort(key=lambda e: e.get("tsAbs") or "", reverse=True)
     return merged[:_TRAIL_ROWS]
+
+
+def _slim_old_trail(events: List[Dict[str, Any]]) -> None:
+    """Rows past the newest _TRAIL_FULL keep what a summary needs (when, what,
+    verdict, which subagent) and lose the raw hook payloads and long output."""
+    for ev in events[_TRAIL_FULL:]:
+        ev.pop("hookInput", None)
+        ev.pop("postHookInput", None)
+        for run in ev.get("hookRuns") or []:
+            for field in ("stdout", "stderr", "content"):
+                run.pop(field, None)
+        arts = ev.get("artifacts") or {}
+        # Prompts stay whole: there are few of them, and a subagent's finish
+        # notice arrives as one and carries its final report.
+        for field in ("response", "stdout", "stderr", "content", "command"):
+            if isinstance(arts.get(field), str) and len(arts[field]) > _TRAIL_CLIP:
+                arts[field] = _clip(arts[field], _TRAIL_CLIP)
+        if len(ev.get("action") or "") > _TRAIL_CLIP:
+            ev["action"] = ev["action"][:_TRAIL_CLIP]
 
 
 def _attach_matched_patterns(events: List[Dict[str, Any]], workspace: Optional[Path]) -> None:
@@ -4517,7 +4541,7 @@ def get_session_scoped_detail(workspace: Path, session_id: str) -> Dict[str, Any
                 FROM numbered_events e
                 LEFT JOIN findings f ON f.session_id = e.session_id AND f.event_index = e.rn
                 ORDER BY e.ts DESC
-                LIMIT 600
+                LIMIT 20000
                 """,
                 (session_id,),
             ):
@@ -4609,6 +4633,7 @@ def get_session_scoped_detail(workspace: Path, session_id: str) -> Dict[str, Any
             _attach_task_durations(recent_events, tool_calls)
             _attach_hook_runs(recent_events, transcript)
             _attach_matched_patterns(recent_events, workspace)
+            _slim_old_trail(recent_events)
             # Dedupe on the raw timestamp: recent_blocked carries it, while an
             # event's "ts" is relative ("1m ago"), so the two never matched and
             # every block was listed twice.
