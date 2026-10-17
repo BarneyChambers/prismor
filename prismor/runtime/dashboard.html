@@ -1120,6 +1120,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-agent-card { padding:14px; }
   .ext-agent-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .agent-ico { width:16px; height:16px; vertical-align:-3px; margin-right:5px; flex:none; }
+  .agent-ico-generic { color:var(--gray-400); }
   .ext-agent .agent-ico { width:11px; height:11px; vertical-align:-1px; margin-right:3px; }
   html[data-theme="dark"] .agent-ico.l, html:not([data-theme="dark"]) .agent-ico.d { display:none; }
   .extd-agents { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
@@ -3678,10 +3679,12 @@ const _AGENT_SVG = {claude:'claude-code', 'claude-code':'claude-code', 'claude-d
   'openai-agents':'openai', langchain:'langchain', crewai:'crewai', 'pydantic-ai':'pydantic', mastra:'mastra',
   'google-adk':'google', 'autogen-core':'microsoft', 'semantic-kernel':'microsoft', n8n:'n8n'};
 const _AGENT_SVG_MONO = new Set(['codex', 'cursor', 'github-copilot', 'windsurf', 'grok', 'qwen', 'openai', 'anthropic']);
-function agentIcon(name, fallback) {
+// Agents without a known mark get a generic bot, unless the caller has a
+// better fallback of its own (bare=true returns '' instead).
+function agentIcon(name, fallback, bare) {
   const key = n => String(n || '').toLowerCase().trim().replace(/\s+/g, '-');
   const slug = _AGENT_SVG[key(name)] || _AGENT_SVG[key(fallback)];
-  if (!slug) return '';
+  if (!slug) return bare ? '' : '<svg class="icon agent-ico agent-ico-generic"><use href="#i-bot"/></svg>';
   const img = (v, c) => '<img class="agent-ico' + c + '" src="https://thesvg.org/icons/' + slug + '/' + v + '.svg" alt="" onerror="this.remove()">';
   return _AGENT_SVG_MONO.has(slug) ? img('light', ' l') + img('dark', ' d') : img('default', '');
 }
@@ -4276,7 +4279,7 @@ function renderExtKindList() {
         safe(it.name) + (kind === 'package' && it.deps[0] ? ' <span class="ext-quiet">' + safe(it.deps[0].target) + '</span>' : '') + '</span>' +
       (it.deps.length ? extBars(extActivity(it.deps, 15)) : '<span class="ext-quiet">-</span>') +
       '<span class="num">' + (it.sessions || '<span class="ext-never">never</span>') + '</span><span class="num">' + (it.calls || '-') + '</span>' +
-      '<span class="ext-item-agents">' + it.agents.slice(0, 4).map(a => '<span class="ext-agent" title="' + safeAttr(a) + '">' + (agentIcon(a) || safe(a)) + '</span>').join('') + '</span>' +
+      '<span class="ext-item-agents">' + it.agents.slice(0, 4).map(a => '<span class="ext-agent" title="' + safeAttr(a) + '">' + (agentIcon(a, '', true) || safe(a)) + '</span>').join('') + '</span>' +
       '<span class="ext-quiet">' + (it.last ? safe(extWhen(it.last)) : '') + '</span></div>').join('') +
     (items.length > 300 ? '<div class="empty">Showing 300 of ' + items.length + '. Filter by name.</div>' : '')
     : '<div class="empty">' + (q ? 'No ' + safe(extKindNoun(kind)) + ' match.' : 'Nothing recorded in this window. Prismor fills this in as your agents use them.') + '</div>';

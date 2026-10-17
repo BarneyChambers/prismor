@@ -1951,7 +1951,7 @@ def get_sessions_page(
             name_col = "agent_name" if "agent_name" in cols else "agent"
             for row in conn.execute(
                 f"SELECT session_id, agent, {name_col} as agent_name, source, risk_score, findings_count, "  # nosec B608
-                "started_at, updated_at, workspace_path FROM sessions LIMIT 5000"
+                "started_at, updated_at, workspace_path FROM sessions"
             ):
                 workspace_path = row["workspace_path"] or str(ws)
                 rows.append({
