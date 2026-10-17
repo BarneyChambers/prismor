@@ -351,7 +351,14 @@ def _merge_sqlite_db_once(src_db: Path, dst_db: Path) -> None:
     try:
         dst_db.parent.mkdir(parents=True, exist_ok=True)
         if not dst_db.exists():
-            shutil.copy2(src_db, dst_db)
+            # SQLite's backup, not a file copy: a WAL database keeps recent
+            # writes in its -wal file, which copying the main file would drop.
+            src, dst = sqlite3.connect(src_db), sqlite3.connect(dst_db)
+            try:
+                src.backup(dst)
+            finally:
+                src.close()
+                dst.close()
             return
         dst = sqlite3.connect(dst_db)
         try:
@@ -695,6 +702,16 @@ def initialize_database(workspace: Path) -> Path:
     db_path = get_db_path(workspace)
     connection = sqlite3.connect(db_path)
     try:
+        # WAL, so a reader (dashboard, `prismor sessions`) no longer blocks hook
+        # writes. With the default rollback journal one read held for over 5 s
+        # made every concurrent hook's snapshot fail with "database is locked":
+        # three parallel Codex subagent calls each waited ~10 s and none reached
+        # the store. The mode is stored in the file, so this only has to succeed
+        # once; while another process holds the DB it fails and is retried here.
+        try:
+            connection.execute("PRAGMA journal_mode=WAL")
+        except sqlite3.OperationalError:
+            pass
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS sessions (
