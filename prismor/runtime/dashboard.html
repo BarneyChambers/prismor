@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="https://prismor.dev/Prismor_Logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <style>
@@ -26,15 +26,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 .docs-search input{flex:1;min-width:0;border:none;outline:none;background:none;
   font-family:inherit;font-size:13px;color:var(--gray-900)}
 .docs-search input::-webkit-search-cancel-button{-webkit-appearance:none}
-.docs-count{font-size:11px;color:var(--gray-500);white-space:nowrap}
+.docs-count{font-size: 12px;color:var(--gray-500);white-space:nowrap}
 .docs-clear{border:none;background:none;color:var(--gray-500);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
 .docs-clear:hover{color:var(--gray-900)}
 .doc-row{padding:9px 10px;border-radius:8px;cursor:pointer}
 .doc-row:hover{background:var(--gray-100)}
 .doc-row.sel{background:var(--gray-100);box-shadow:inset 2px 0 0 var(--accent)}
 .doc-row-title{font-size:13px;font-weight:600}
-.doc-row-name{font:11px var(--font-mono);color:var(--gray-500);margin-top:2px}
-.doc-row-hit{font-size:11.5px;color:var(--gray-500);margin-top:3px;line-height:1.55;
+.doc-row-name{font:12px var(--font-mono);color:var(--gray-500);margin-top:2px}
+.doc-row-hit{font-size: 12px;color:var(--gray-500);margin-top:3px;line-height:1.55;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .doc-row-hit mark{background:rgba(242,84,45,.18);color:inherit;border-radius:3px;padding:0 1px}
 /* Fills the card's width: the reader's gutters are the card's own padding on
@@ -101,7 +101,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     /* Inter for UI. Code keeps a monospace stack, but the platform's own --
        a downloaded display face for command text was a strong opinion the app
        did not need, and one fewer webfont is one fewer render-blocking load. */
-    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui: Verdana, Geneva, "DejaVu Sans", sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
   }
   html[data-theme="dark"] {
@@ -130,6 +130,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   :root { --danger-ink: #b91c1c; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* Form controls default to the system font; make them follow the UI font.
+     Code surfaces (.yaml-editor, code, pre) re-assert --font-mono later. */
+  button, input, select, textarea { font-family: inherit; }
   body {
     font-family: var(--font-ui);
     background: var(--app-bg); color: var(--gray-800);
@@ -145,9 +148,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .topbar-left { display: flex; align-items: center; gap: 16px; }
   .topbar h1 { font-size: 15px; font-weight: 600; color: var(--gray-900); white-space: nowrap; }
   .topbar-right { display: flex; align-items: center; gap: 12px; }
-  .last-updated { font-size: 10px; color: var(--gray-400); }
+  .last-updated { font-size: 11px; color: var(--gray-400); }
   .badge {
-    font-size: 10px; padding: 2px 8px; border-radius: 9999px;
+    font-size: 11px; padding: 2px 8px; border-radius: 9999px;
     display: inline-flex; align-items: center; gap: 4px;
   }
   .badge-live { background: #dcfce7; color: #15803d; }
@@ -174,7 +177,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 16px; height: 16px; border-radius: 8px;
     background: #fee2e2; color: #b91c1c;
-    font-size: 10px; font-weight: 600; padding: 0 4px; margin-left: 6px;
+    font-size: 11px; font-weight: 600; padding: 0 4px; margin-left: 6px;
   }
 
   /* ── Content wrapper ── */
@@ -194,14 +197,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     border-radius: 8px; padding: 20px;
   }
   .card-title {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
     color: var(--gray-400); margin-bottom: 12px;
   }
 
   /* KPI */
   .kpi-value { font-size: 28px; font-weight: 600; color: var(--gray-900); }
   .kpi-value.accent { color: var(--pink-600); }
-  .kpi-delta { font-size: 11px; color: var(--gray-400); margin-top: 4px; }
+  .kpi-delta { font-size: 12px; color: var(--gray-400); margin-top: 4px; }
   .kpi-delta .up { color: #ef4444; }
   .kpi-delta .down { color: var(--green-500); }
 
@@ -211,23 +214,23 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sev-card.high     .sev-count { color: #db2777; }
   .sev-card.medium   .sev-count { color: #d97706; }
   .sev-card.low      .sev-count { color: #0284c7; }
-  .sev-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  .sev-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
                color: var(--gray-400); margin-bottom: 6px; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; }
   th {
-    text-align: left; font-size: 11px; color: var(--gray-400); font-weight: 400;
+    text-align: left; font-size: 12px; color: var(--gray-400); font-weight: 400;
     padding: 0 18px 8px 0; border-bottom: 1px solid var(--gray-100);
     cursor: pointer; user-select: none; white-space: nowrap;
   }
   th:hover { color: var(--gray-700); }
   th.right { text-align: right; }
-  th .sort-ind { font-size: 9px; margin-left: 3px; opacity: 0.4; }
+  th .sort-ind { font-size: 11px; margin-left: 3px; opacity: 0.4; }
   th.active-sort { color: var(--gray-700); }
   th.active-sort .sort-ind { opacity: 1; }
   td {
-    padding: 7px 18px 7px 0; font-size: 11px; color: var(--gray-700);
+    padding: 7px 18px 7px 0; font-size: 12px; color: var(--gray-700);
     border-bottom: 1px solid var(--gray-50); vertical-align: middle;
   }
   td.right { text-align: right; }
@@ -237,7 +240,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* Severity badges */
   .sev-badge {
     display: inline-block; padding: 1px 6px; border-radius: 4px;
-    font-size: 10px; font-weight: 500;
+    font-size: 11px; font-weight: 500;
   }
   .sev-critical { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
   .sev-high     { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
@@ -252,40 +255,40 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .risk-30 { background: #facc15; }
   .risk-60 { background: #f97316; }
   .risk-80 { background: #ef4444; }
-  .risk-num { font-size: 10px; color: var(--gray-500); min-width: 22px; text-align: right; }
+  .risk-num { font-size: 11px; color: var(--gray-500); min-width: 22px; text-align: right; }
 
   /* Agent pill */
   .agent-pill {
     display: inline-block; padding: 1px 7px; border-radius: 4px;
-    font-size: 10px; background: var(--gray-100); color: var(--gray-600);
+    font-size: 11px; background: var(--gray-100); color: var(--gray-600);
   }
 
   /* Filter + pager bar */
   .bar {
     display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
   }
-  .bar label { font-size: 10px; color: var(--gray-400); }
+  .bar label { font-size: 11px; color: var(--gray-400); }
   .bar-sep { width: 1px; height: 16px; background: var(--gray-200); margin: 0 4px; }
   .fsel {
-    font-family: inherit; font-size: 11px; color: var(--gray-700);
+    font-family: inherit; font-size: 12px; color: var(--gray-700);
     background: var(--gray-50); border: 1px solid var(--gray-200);
     border-radius: 4px; padding: 3px 6px; outline: none; cursor: pointer;
   }
   .fsel:focus { border-color: var(--purple); }
   .finput {
-    font-family: inherit; font-size: 11px; color: var(--gray-700);
+    font-family: inherit; font-size: 12px; color: var(--gray-700);
     background: var(--gray-50); border: 1px solid var(--gray-200);
     border-radius: 4px; padding: 3px 8px; outline: none; width: 180px;
   }
   .finput:focus { border-color: var(--purple); }
   .fbtn {
-    font-family: inherit; font-size: 10px; padding: 3px 10px;
+    font-family: inherit; font-size: 11px; padding: 3px 10px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: var(--gray-50); color: var(--gray-500); cursor: pointer;
   }
   .fbtn.active { background: var(--gray-800); color: #fff; border-color: var(--gray-800); }
   .bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-  .result-count { font-size: 10px; color: var(--gray-400); }
+  .result-count { font-size: 11px; color: var(--gray-400); }
 
   /* Pagination */
   .pager {
@@ -293,7 +296,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     padding-top: 12px; border-top: 1px solid var(--gray-100);
   }
   .pg-btn {
-    font-family: inherit; font-size: 11px; padding: 3px 10px;
+    font-family: inherit; font-size: 12px; padding: 3px 10px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: #fff; color: var(--gray-700); cursor: pointer;
   }
@@ -301,15 +304,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .pg-btn:not(:disabled):hover { background: var(--gray-50); }
   .pg-nums { display: flex; gap: 4px; }
   .pg-num {
-    font-family: inherit; font-size: 11px; min-width: 28px; padding: 3px 6px;
+    font-family: inherit; font-size: 12px; min-width: 28px; padding: 3px 6px;
     border: 1px solid transparent; border-radius: 4px;
     background: none; color: var(--gray-500); cursor: pointer; text-align: center;
   }
   .pg-num.cur { background: var(--gray-800); color: #fff; border-color: var(--gray-800); cursor: default; }
   .pg-num:not(.cur):hover { background: var(--gray-50); border-color: var(--gray-200); }
   .pg-num.ellipsis { cursor: default; pointer-events: none; }
-  .pg-info { font-size: 10px; color: var(--gray-400); margin-left: 4px; }
-  .pg-limit { font-family: inherit; font-size: 11px; padding: 3px 6px;
+  .pg-info { font-size: 11px; color: var(--gray-400); margin-left: 4px; }
+  .pg-limit { font-family: inherit; font-size: 12px; padding: 3px 6px;
               border: 1px solid var(--gray-200); border-radius: 4px;
               background: var(--gray-50); color: var(--gray-700); cursor: pointer;
               margin-left: auto; }
@@ -324,11 +327,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .event-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .event-dot.blocked { background: #ec4899; }
   .event-dot.allowed { background: #4ade80; }
-  .event-meta { font-size: 10px; color: var(--gray-400); }
-  .event-action { font-size: 11px; color: var(--gray-700); }
-  .event-sess-id { font-size: 10px; color: var(--gray-400); font-family: inherit; }
+  .event-meta { font-size: 11px; color: var(--gray-400); }
+  .event-action { font-size: 12px; color: var(--gray-700); }
+  .event-sess-id { font-size: 11px; color: var(--gray-400); font-family: inherit; }
   .event-sess-link {
-    font-size: 10px; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
     background: var(--gray-100); color: var(--gray-500); white-space: nowrap;
     flex-shrink: 0; border: 1px solid var(--gray-200);
     transition: background 0.1s, color 0.1s;
@@ -355,9 +358,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: flex; align-items: flex-start; gap: 10px;
     background: var(--surface); flex-shrink: 0;
   }
-  .sess-drawer-title { font-size: 11px; font-weight: 600; color: var(--gray-900); }
+  .sess-drawer-title { font-size: 12px; font-weight: 600; color: var(--gray-900); }
   .sess-drawer-sessid {
-    font-size: 10px; color: var(--gray-400); word-break: break-all;
+    font-size: 11px; color: var(--gray-400); word-break: break-all;
     margin-top: 2px; font-family: inherit;
   }
   .sess-drawer-close {
@@ -385,10 +388,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .drawer-toggle.resume:hover { background: #bbf7d0; }
   .drawer-toggle.clear  { background: #fff; color: #b91c1c; border: 1px solid #fecaca; }
   .drawer-toggle.clear:hover  { background: #fef2f2; }
-  .drawer-status { font-size: 11px; color: var(--gray-400); padding: 6px 0 0; width: 100%; }
+  .drawer-status { font-size: 12px; color: var(--gray-400); padding: 6px 0 0; width: 100%; }
   .drawer-section { margin-bottom: 18px; }
   .drawer-section-title {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
     color: var(--gray-400); margin-bottom: 8px;
   }
   .drawer-block-item {
@@ -398,8 +401,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     border: 1px solid var(--gray-100);
   }
   .drawer-block-body { flex: 1; min-width: 0; }
-  .drawer-block-title { font-size: 11px; font-weight: 500; color: var(--gray-800); }
-  .drawer-block-meta  { font-size: 10px; color: var(--gray-400); margin-top: 2px; }
+  .drawer-block-title { font-size: 12px; font-weight: 500; color: var(--gray-800); }
+  .drawer-block-meta  { font-size: 11px; color: var(--gray-400); margin-top: 2px; }
   .drawer-event-card {
     border: 1px solid var(--gray-100); background: var(--gray-50);
     border-radius: 7px; padding: 10px; margin-bottom: 10px;
@@ -420,11 +423,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .trail-dot.blocked { background: #ec4899; }
   .trail-dot.allowed { background: #4ade80; }
   .trail-main { flex: 1; min-width: 0; }
-  .trail-action { font-size: 11px; color: var(--gray-700); word-break: break-word; line-height: 1.35; }
-  .trail-meta { font-size: 10px; color: var(--gray-400); margin-bottom: 2px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .trail-action { font-size: 12px; color: var(--gray-700); word-break: break-word; line-height: 1.35; }
+  .trail-meta { font-size: 11px; color: var(--gray-400); margin-bottom: 2px; display: flex; gap: 5px; flex-wrap: wrap; }
   .drawer-rule-row {
     display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px;
-    font-size: 11px; min-width: 0;
+    font-size: 12px; min-width: 0;
   }
   /* A flex item's min-width is auto, so an unbroken command string refuses to
      shrink and paints straight out of the card. Both halves need the override,
@@ -439,18 +442,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: flex; align-items: center; gap: 8px;
     padding: 8px 0; border-bottom: 1px solid var(--gray-50);
   }
-  .user-rank { font-size: 10px; color: var(--gray-300); width: 16px; text-align: right; }
+  .user-rank { font-size: 11px; color: var(--gray-300); width: 16px; text-align: right; }
   .user-info { flex: 1; min-width: 0; }
   .user-top { display: flex; justify-content: space-between; align-items: center; }
-  .user-id { font-size: 11px; color: var(--gray-700); }
-  .user-count { font-size: 11px; font-weight: 600; color: var(--pink-600); }
+  .user-id { font-size: 12px; color: var(--gray-700); }
+  .user-count { font-size: 12px; font-weight: 600; color: var(--pink-600); }
   .user-bar { height: 4px; background: var(--gray-100); border-radius: 2px; margin-top: 4px; }
   .user-bar-fill { height: 100%; border-radius: 2px; background: var(--purple); }
-  .user-seen { font-size: 10px; color: var(--gray-300); }
+  .user-seen { font-size: 11px; color: var(--gray-300); }
 
   /* Donut legend */
   .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 12px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--gray-500); }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--gray-500); }
   .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .chart-container { position: relative; }
 
@@ -463,16 +466,16 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .finding-ev-row.open { display: table-row; }
   .finding-ev-cell {
     padding: 8px 12px 12px; background: var(--gray-50);
-    font-size: 11px; color: var(--gray-600); line-height: 1.6;
+    font-size: 12px; color: var(--gray-600); line-height: 1.6;
   }
   .finding-cmd {
     margin-top: 6px; padding: 6px 8px;
     background: var(--gray-900); color: #e5e7eb;
-    border-radius: 4px; font-size: 10px; word-break: break-all;
+    border-radius: 4px; font-size: 11px; word-break: break-all;
   }
   .finding-cmd:empty { display: none; }
-  .expand-arrow { font-size: 9px; color: var(--gray-300); }
-  .empty { padding: 24px; text-align: center; font-size: 11px; color: var(--gray-400); }
+  .expand-arrow { font-size: 11px; color: var(--gray-300); }
+  .empty { padding: 24px; text-align: center; font-size: 12px; color: var(--gray-400); }
 
   /* Section header */
   .section {
@@ -480,45 +483,45 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     margin: 28px 0 12px 2px;
   }
   .section h2 {
-    font-size: 11px; font-weight: 600; color: var(--gray-700);
+    font-size: 12px; font-weight: 600; color: var(--gray-700);
     text-transform: uppercase; letter-spacing: 0.10em;
   }
   .section .rule { flex: 1; height: 1px; background: var(--gray-200); }
-  .section .hint { font-size: 10px; color: var(--gray-400); }
+  .section .hint { font-size: 11px; color: var(--gray-400); }
 
   /* Supply chain */
   .pkg-name { font-weight: 500; }
-  .pkg-ver  { color: var(--gray-400); font-size: 10px; }
+  .pkg-ver  { color: var(--gray-400); font-size: 11px; }
   .adv-pill {
     display: inline-block; padding: 1px 5px; border-radius: 3px;
-    font-size: 9px; background: var(--gray-100); color: var(--gray-600);
+    font-size: 11px; background: var(--gray-100); color: var(--gray-600);
     margin-right: 3px;
   }
   .sugg-pill {
     display: inline-block; padding: 1px 6px; border-radius: 3px;
-    font-size: 10px; background: #dcfce7; color: #15803d;
+    font-size: 11px; background: #dcfce7; color: #15803d;
   }
-  .sugg-none { color: var(--gray-300); font-size: 10px; }
+  .sugg-none { color: var(--gray-300); font-size: 11px; }
   .ts-hover { cursor: help; border-bottom: 1px dotted var(--gray-200); }
   .trigger-kind {
     display: inline-block; padding: 1px 6px; border-radius: 3px;
-    font-size: 9px; background: var(--gray-100); color: var(--gray-600);
+    font-size: 11px; background: var(--gray-100); color: var(--gray-600);
     text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;
   }
   .trigger-detail {
     margin-top: 6px; padding: 6px 8px;
     background: var(--gray-900); color: #e5e7eb;
-    border-radius: 4px; font-size: 10px; word-break: break-all; white-space: pre-wrap;
+    border-radius: 4px; font-size: 11px; word-break: break-all; white-space: pre-wrap;
   }
   .trigger-detail:empty { display: none; }
   .src-pill {
     display: inline-block; padding: 1px 5px; border-radius: 3px;
-    font-size: 9px; color: var(--gray-500); background: var(--gray-100); margin-left: 4px;
+    font-size: 11px; color: var(--gray-500); background: var(--gray-100); margin-left: 4px;
   }
   .src-pill.supply { background: #fef3c7; color: #92400e; }
   .sess-status {
     display: inline-flex; align-items: center; gap: 6px;
-    font-size: 11px; color: var(--gray-600);
+    font-size: 12px; color: var(--gray-600);
   }
   .sess-status-dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -532,11 +535,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   .tool-tag-badge {
     display:inline-block; margin-right:8px; padding:1px 6px; border-radius:999px;
-    font-size:10px; font-weight:600; letter-spacing:.02em;
+    font-size: 11px; font-weight:600; letter-spacing:.02em;
     background:#eef2ff; color:#4338ca; vertical-align:middle;
   }
   .hook-pill {
-    display:inline-block; padding:0 5px; border-radius:999px; font-size:9px; font-weight:600;
+    display:inline-block; padding:0 5px; border-radius:999px; font-size: 11px; font-weight:600;
     letter-spacing:.02em; background:var(--gray-100); color:var(--gray-500); vertical-align:middle;
   }
 
@@ -582,23 +585,23 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .rule-title { font-size:12px; color:var(--gray-500); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .rule-lock {
     display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:999px;
-    font-size:10px; font-weight:700; letter-spacing:.02em; border:1px solid #e5e7eb;
+    font-size: 11px; font-weight:700; letter-spacing:.02em; border:1px solid #e5e7eb;
     color:#475569; background:#f8fafc;
   }
   .rule-lock .icon { width:10px; height:10px; }
   /* What a rule does when it fires: stop the call, or record it. */
   .rule-verdict {
     display:inline-flex; align-items:center; padding:2px 7px; border-radius:999px;
-    font-size:10px; font-weight:700; letter-spacing:.02em; border:1px solid transparent;
+    font-size: 11px; font-weight:700; letter-spacing:.02em; border:1px solid transparent;
   }
   .rule-verdict.blocks  { color:#b91c1c; background:#fef2f2; border-color:#fecaca; }
   .rule-verdict.reports { color:#92400e; background:#fffbeb; border-color:#fde68a; }
   .rules-head {
-    font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    font-size: 12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
     color:var(--gray-500); margin:0 0 6px 2px;
   }
   .rule-sev {
-    font-size:10px; font-weight:700; letter-spacing:.04em; padding:2px 7px;
+    font-size: 11px; font-weight:700; letter-spacing:.04em; padding:2px 7px;
     border-radius:4px; white-space:nowrap;
   }
   .rule-sev.CRITICAL { background:#fde8e8; color:#c81e1e; }
@@ -607,7 +610,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .rule-sev.LOW      { background:var(--gray-100); color:var(--gray-500); }
   /* toggle switch */
   .rule-toggle { position:relative; display:inline-block; width:38px; height:22px; flex:0 0 auto; cursor:pointer; }
-  .en-toggle { font-family:var(--font-ui); font-size:11px; font-weight:600; padding:5px 14px; border-radius:999px; border:1px solid; cursor:pointer; transition:all .12s; white-space:nowrap; }
+  .en-toggle { font-family:var(--font-ui); font-size: 12px; font-weight:600; padding:5px 14px; border-radius:999px; border:1px solid; cursor:pointer; transition:all .12s; white-space:nowrap; }
   .en-toggle.on  { background:#dcfce7; color:#15803d; border-color:#bbf7d0; }
   .en-toggle.on:hover  { background:#bbf7d0; }
   .en-toggle.off { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
@@ -645,14 +648,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
   }
-  .policy-meta { font-size: 11px; color: var(--gray-500); }
-  .policy-meta .path { font-family: inherit; color: var(--gray-400); font-size: 10px; }
+  .policy-meta { font-size: 12px; color: var(--gray-500); }
+  .policy-meta .path { font-family: inherit; color: var(--gray-400); font-size: 11px; }
 
   .yaml-editor {
     width: 100%; min-height: 320px; padding: 12px;
     background: #111827; color: #e5e7eb;
     border: 1px solid var(--gray-700); border-radius: 6px;
-    font-family: inherit; font-size: 11px; line-height: 1.6;
+    font-family: inherit; font-size: 12px; line-height: 1.6;
     resize: vertical; outline: none;
     tab-size: 2;
   }
@@ -685,7 +688,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .banner {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .banner-enterprise {
     background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
@@ -703,7 +706,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
 
   .policy-status {
-    font-size: 11px; padding: 4px 0; min-height: 20px;
+    font-size: 12px; padding: 4px 0; min-height: 20px;
   }
   .status-ok   { color: #15803d; }
   .status-err  { color: #b91c1c; }
@@ -716,17 +719,17 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     background: var(--gray-50); border: 1px solid var(--gray-200);
     margin-bottom: 14px;
   }
-  .mode-toggle-label { font-size: 11px; color: var(--gray-500); }
+  .mode-toggle-label { font-size: 12px; color: var(--gray-500); }
   .mode-toggle-btns  { display: flex; border-radius: 5px; overflow: hidden; border: 1px solid var(--gray-200); }
   .mode-btn {
-    font-family: inherit; font-size: 11px; font-weight: 500;
+    font-family: inherit; font-size: 12px; font-weight: 500;
     padding: 5px 14px; border: none; cursor: pointer; background: var(--surface); color: var(--gray-500);
     transition: background 0.12s, color 0.12s;
   }
   .mode-btn + .mode-btn { border-left: 1px solid var(--gray-200); }
   .mode-btn.active-observe  { background: #eff6ff; color: #1d4ed8; }
   .mode-btn.active-enforce  { background: #fef2f2; color: #b91c1c; }
-  .mode-hint { font-size: 10px; color: var(--gray-400); margin-left: 4px; }
+  .mode-hint { font-size: 11px; color: var(--gray-400); margin-left: 4px; }
 
   /* ── Session Control tab ── */
   .sess-ctrl-row {
@@ -736,12 +739,12 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   .sess-ctrl-row:last-child { border-bottom: none; }
   .sess-id-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .sess-id { font-size: 11px; color: var(--gray-700); font-family: inherit; }
-  .sess-ws { font-size: 10px; color: var(--gray-400); }
+  .sess-id { font-size: 12px; color: var(--gray-700); font-family: inherit; }
+  .sess-ws { font-size: 11px; color: var(--gray-400); }
 
   .status-pill {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 500;
+    padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
   }
   .status-active   { background: #dcfce7; color: #15803d; }
   .status-paused   { background: #fef9c3; color: #92400e; }
@@ -751,7 +754,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   .sess-ctrl-btns { display: flex; gap: 4px; flex-wrap: wrap; }
   .sess-act-btn {
-    font-family: inherit; font-size: 10px; padding: 4px 10px;
+    font-family: inherit; font-size: 11px; padding: 4px 10px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: var(--surface); color: var(--gray-700); cursor: pointer; white-space: nowrap;
   }
@@ -772,7 +775,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   .scoped-tag {
     display: inline-block; padding: 1px 6px; border-radius: 3px;
-    font-size: 10px; margin: 2px;
+    font-size: 11px; margin: 2px;
   }
   .tag-allow { background: #dcfce7; color: #15803d; }
   .tag-deny  { background: #fce7f3; color: #be185d; }
@@ -783,16 +786,16 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: flex; align-items: flex-start; gap: 8px;
     padding: 6px 8px; border-radius: 4px;
     background: var(--gray-50); margin-bottom: 4px;
-    font-size: 11px; color: var(--gray-700);
+    font-size: 12px; color: var(--gray-700);
   }
   .blocked-sev { flex-shrink: 0; }
 
   .scope-edit-row {
     display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap;
   }
-  .scope-edit-label { font-size: 10px; color: var(--gray-500); min-width: 60px; }
+  .scope-edit-label { font-size: 11px; color: var(--gray-500); min-width: 60px; }
   .scope-edit-input {
-    font-family: inherit; font-size: 11px; padding: 4px 8px;
+    font-family: inherit; font-size: 12px; padding: 4px 8px;
     border: 1px solid var(--gray-200); border-radius: 4px; background: var(--gray-50);
     color: var(--gray-700); outline: none; flex: 1; min-width: 200px;
   }
@@ -801,7 +804,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* global days picker moved to policy */
   .period-row {
     display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
-    font-size: 10px; color: var(--gray-400);
+    font-size: 11px; color: var(--gray-400);
   }
 
   @media (max-width: 768px) {
@@ -844,7 +847,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     transition: width 0.3s ease;
   }
   #loadingLabel {
-    font-size: 11px; color: var(--gray-400);
+    font-size: 12px; color: var(--gray-400);
   }
 
   /* Scoped rules inline editor */
@@ -854,7 +857,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     margin-bottom: 10px;
   }
   .scope-edit-btn {
-    font-family: inherit; font-size: 10px; padding: 3px 10px;
+    font-family: inherit; font-size: 11px; padding: 3px 10px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: #fff; color: var(--gray-600); cursor: pointer;
   }
@@ -863,11 +866,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   .tag-removable {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 2px 6px 2px 8px; border-radius: 4px; font-size: 11px; margin: 2px;
+    padding: 2px 6px 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px;
     cursor: default;
   }
   .tag-removable .tag-x {
-    font-size: 10px; line-height: 1; cursor: pointer; opacity: 0.55;
+    font-size: 11px; line-height: 1; cursor: pointer; opacity: 0.55;
     padding: 0 1px; border-radius: 2px;
   }
   .tag-removable .tag-x:hover { opacity: 1; background: rgba(0,0,0,.1); }
@@ -876,20 +879,20 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap;
   }
   .tool-add-select {
-    font-family: inherit; font-size: 11px; padding: 4px 8px;
+    font-family: inherit; font-size: 12px; padding: 4px 8px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: var(--gray-50); color: var(--gray-700); cursor: pointer; outline: none;
   }
   .tool-add-select:focus { border-color: var(--purple); }
   .tool-add-do {
-    font-family: inherit; font-size: 11px; padding: 4px 10px;
+    font-family: inherit; font-size: 12px; padding: 4px 10px;
     border: 1px solid var(--gray-200); border-radius: 4px;
     background: #fff; color: var(--gray-700); cursor: pointer;
   }
   .tool-add-do:hover { background: var(--gray-50); }
 
   .net-toggle-btn {
-    font-family: inherit; font-size: 11px; padding: 4px 12px;
+    font-family: inherit; font-size: 12px; padding: 4px 12px;
     border-radius: 4px; cursor: pointer; transition: background 0.12s;
     border: 1px solid;
   }
@@ -904,7 +907,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* ── Topbar: logo, mode chip, upgrade ── */
   .topbar-logo { width: 24px; height: 24px; object-fit: contain; display: block; }
   .mode-chip {
-    font-family: inherit; font-size: 10px; font-weight: 600; cursor: pointer;
+    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
     padding: 2px 9px; border-radius: 9999px; border: 1px solid transparent;
     display: inline-flex; align-items: center; gap: 5px;
     text-transform: uppercase; letter-spacing: 0.05em; background: none;
@@ -914,7 +917,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .mode-chip.enforce { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
   .mode-chip.unknown { background: var(--gray-100); color: var(--gray-400); }
   .upgrade-btn {
-    font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+    font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
     padding: 5px 14px; border-radius: 6px; border: none; color: #fff;
     background: #1f2a3c;
     display: inline-flex; align-items: center; gap: 6px;
@@ -922,7 +925,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   .upgrade-btn:hover { opacity: 0.88; }
   .upgrade-btn:active { transform: scale(0.97); }
-  .tab-lock { font-size: 10px; margin-left: 5px; opacity: 0.7; }
+  .tab-lock { font-size: 11px; margin-left: 5px; opacity: 0.7; }
 
   /* ── Agents tab ── */
   .agent-off td { opacity: 0.55; }
@@ -969,7 +972,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .up-cta-primary:hover { background: #0f1620; }
   .up-cta-secondary { font-size: 12px; color: var(--gray-500); text-decoration: none; white-space: nowrap; }
   .up-cta-secondary:hover { color: var(--gray-800); text-decoration: underline; }
-  .up-modal-note { font-size: 10px; color: var(--gray-400); padding: 0 28px 22px; line-height: 1.5; }
+  .up-modal-note { font-size: 11px; color: var(--gray-400); padding: 0 28px 22px; line-height: 1.5; }
 
   /* ── Fleet (enterprise teaser) ── */
   .locked-hero {
@@ -995,7 +998,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     background: linear-gradient(180deg, rgba(249,250,251,0.15), rgba(249,250,251,0.9));
   }
   .fleet-preview .overlay span {
-    font-size: 11px; color: var(--gray-500); background: #fff;
+    font-size: 12px; color: var(--gray-500); background: #fff;
     border: 1px solid var(--gray-200); border-radius: 6px; padding: 8px 16px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }
@@ -1024,7 +1027,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* ── Toast ── */
   #prismorToast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-    background: #1f2937; color: #f9fafb; font-size: 11px; padding: 9px 16px;
+    background: #1f2937; color: #f9fafb; font-size: 12px; padding: 9px 16px;
     border-radius: 6px; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     display: none; max-width: 80vw;
   }
@@ -1038,7 +1041,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   .view-back:hover { background:var(--surface); color:var(--gray-800); border-color:var(--gray-300); }
   .view-back .icon { width:13px; height:13px; }
-  .crumbs { font-size:11px; color:var(--gray-400); display:flex; align-items:center; gap:6px; }
+  .crumbs { font-size: 12px; color:var(--gray-400); display:flex; align-items:center; gap:6px; }
   .crumbs a { color:var(--gray-500); cursor:pointer; text-decoration:none; }
   .crumbs a:hover { color:var(--gray-800); text-decoration:underline; }
   .crumbs .sep { color:var(--gray-300); }
@@ -1066,7 +1069,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .agent-hero-name { font-size:18px; font-weight:700; color:var(--gray-900); display:flex; align-items:center; gap:10px; }
   .agent-hero-sub { font-size:12px; color:var(--gray-500); margin-top:3px; }
   .agent-switch-wrap { display:flex; align-items:center; gap:8px; }
-  .agent-switch-wrap label { font-size:11px; color:var(--gray-400); font-weight:600; }
+  .agent-switch-wrap label { font-size: 12px; color:var(--gray-400); font-weight:600; }
   .agent-switch {
     font-family:var(--font-ui); font-size:13px; font-weight:600; color:var(--gray-800);
     border:1px solid var(--gray-300); border-radius:9px; padding:8px 12px; background:#fff; cursor:pointer;
@@ -1077,7 +1080,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     flex:1; min-width:120px; padding:14px 16px; border:1px solid var(--gray-200);
     border-radius:12px; background:var(--surface);
   }
-  .agent-stat-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray-400); font-weight:600; }
+  .agent-stat-label { font-size: 11px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray-400); font-weight:600; }
   .agent-stat-value { font-size:24px; font-weight:700; color:var(--gray-900); margin-top:4px; }
   .agent-stat-value.accent { color:var(--pink-600); }
   .agent-name.link { cursor:pointer; }
@@ -1086,7 +1089,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .agent-ctrl { display:flex; align-items:center; gap:14px; padding:11px 0; border-bottom:1px solid var(--gray-100); flex-wrap:wrap; }
   .agent-ctrl:last-child { border-bottom:none; }
   .agent-ctrl > label:first-child { width:150px; font-size:12px; font-weight:600; color:var(--gray-700); flex-shrink:0; }
-  .agent-ctrl-hint { font-size:11px; color:var(--gray-400); }
+  .agent-ctrl-hint { font-size: 12px; color:var(--gray-400); }
   /* ── Per-tool three-state grid (Allow / Ask / Deny) ── */
   .tp-block { align-items:flex-start; flex-direction:column; gap:8px; }
   .tp-grid { width:100%; border:1px solid var(--gray-100); border-radius:10px; overflow:hidden; }
@@ -1094,18 +1097,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .tp-row:last-child { border-bottom:none; }
   .tp-tool { font-family:var(--font-mono,monospace); font-size:12.5px; color:var(--gray-800); }
   .tp-btns { display:inline-flex; gap:4px; }
-  .tp-btn { font-family:var(--font-ui); font-size:11px; font-weight:600; padding:4px 12px; border-radius:999px; border:1px solid var(--gray-200); background:var(--gray-50,#f8fafc); color:var(--gray-400); cursor:pointer; transition:all .12s; }
+  .tp-btn { font-family:var(--font-ui); font-size: 12px; font-weight:600; padding:4px 12px; border-radius:999px; border:1px solid var(--gray-200); background:var(--gray-50,#f8fafc); color:var(--gray-400); cursor:pointer; transition:all .12s; }
   .tp-btn:hover { border-color:var(--gray-300); color:var(--gray-600); }
   .tp-allow.on { background:#dcfce7; color:#15803d; border-color:#bbf7d0; }
   .tp-ask.on   { background:#fef9c3; color:#a16207; border-color:#fde68a; }
   .tp-deny.on  { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
-  .mcp-kind { font-size:11px; font-weight:600; color:var(--gray-500); background:var(--gray-100); border-radius:999px; padding:2px 9px; margin-left:2px; }
+  .mcp-kind { font-size: 12px; font-weight:600; color:var(--gray-500); background:var(--gray-100); border-radius:999px; padding:2px 9px; margin-left:2px; }
   .mcp-kind-mirror { color:#a16207; background:#fef9c3; }
   .ext-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
   .ext-stat { background:var(--surface); border:1px solid var(--gray-200); border-radius:10px; padding:12px 14px; }
   .ext-stat b { display:block; color:var(--gray-900); font-size:22px; font-weight:700; line-height:1.1; }
-  .ext-stat span { font-size:11px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; }
-  .ext-stat em { font-style:normal; font-size:11px; font-weight:600; color:#b45309; margin-left:6px; }
+  .ext-stat span { font-size: 12px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; }
+  .ext-stat em { font-style:normal; font-size: 12px; font-weight:600; color:#b45309; margin-left:6px; }
   .ext-views { display:inline-flex; gap:2px; padding:3px; margin-bottom:14px; border:1px solid var(--gray-200); border-radius:9px; background:var(--gray-100); }
   .ext-view { font-size:12.5px; font-weight:600; padding:6px 14px; border-radius:6px; border:0; background:none; color:var(--gray-500); cursor:pointer; }
   .ext-view.on { background:var(--surface); color:var(--gray-900); box-shadow:0 1px 2px rgba(0,0,0,.12); }
@@ -1113,10 +1116,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-use { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:10px 12px; cursor:pointer; }
   .ext-use:hover { background:var(--gray-100); border-radius:10px; }
   .ext-use-id { font-family:var(--mono,ui-monospace,monospace); font-size:12px; color:var(--gray-900); font-weight:600; }
-  .ext-use-meta { font-size:11px; color:var(--gray-400); margin-left:auto; white-space:nowrap; }
-  .ext-agent { font-size:10.5px; font-weight:700; border-radius:4px; padding:1px 6px; background:rgba(59,130,246,.14); color:#3b82f6; flex:none; }
-  .ext-quiet { font-size:11px; color:var(--gray-500); }
-  .ext-never { font-size:10.5px; font-weight:600; border-radius:999px; padding:1px 8px; border:1px dashed var(--gray-300); color:var(--gray-500); flex:none; }
+  .ext-use-meta { font-size: 12px; color:var(--gray-400); margin-left:auto; white-space:nowrap; }
+  .ext-agent { font-size: 11.5px; font-weight:700; border-radius:4px; padding:1px 6px; background:rgba(59,130,246,.14); color:#3b82f6; flex:none; }
+  .ext-quiet { font-size: 12px; color:var(--gray-500); }
+  .ext-never { font-size: 11.5px; font-weight:600; border-radius:999px; padding:1px 8px; border:1px dashed var(--gray-300); color:var(--gray-500); flex:none; }
   .ext-agent-card { padding:14px; }
   .ext-agent-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .agent-ico { width:16px; height:16px; vertical-align:-3px; margin-right:5px; flex:none; }
@@ -1126,19 +1129,19 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .extd-agents { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }
   .extd-agent { border:1px solid var(--gray-200); border-radius:8px; padding:10px 12px; background:var(--surface); }
   .extd-agent b { font-size:14px; color:var(--gray-900); display:flex; align-items:center; }
-  .extd-agent small { display:block; color:var(--gray-500); font-size:11.5px; margin-top:4px; }
+  .extd-agent small { display:block; color:var(--gray-500); font-size: 12px; margin-top:4px; }
   .extd-call { border-top:1px solid var(--gray-100); padding:8px 2px; }
   .extd-call-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12px; color:var(--gray-600); }
   .extd-call-head code { font-size:12px; color:var(--gray-900); }
   .extd-call pre { margin:6px 0 0; padding:8px 10px; border-radius:6px; background:var(--gray-50); color:var(--gray-800);
-    font-size:11.5px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+    font-size: 12px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
   .ext-agent-head b { font-size:15px; color:var(--gray-900); }
   .ext-agent-nums { display:flex; flex-wrap:wrap; gap:18px; margin-bottom:10px; }
-  .ext-agent-nums div { font-size:11px; color:var(--gray-500); }
+  .ext-agent-nums div { font-size: 12px; color:var(--gray-500); }
   .ext-agent-nums div b { display:block; font-size:18px; color:var(--gray-900); }
   .ext-agent-nums div.warn b { color:#d97706; }
   .ext-chipline { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; }
-  .ext-chipline em { font-style:normal; font-size:11px; color:var(--gray-400); width:74px; flex:none; }
+  .ext-chipline em { font-style:normal; font-size: 12px; color:var(--gray-400); width:74px; flex:none; }
   .ext-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:16px; align-items:start; }
   @media (max-width: 980px) { .ext-layout { grid-template-columns:1fr; } }
   .ext-filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
@@ -1147,20 +1150,20 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-row { background:var(--surface); border:1px solid var(--gray-200); border-radius:10px; margin-bottom:8px; }
   .ext-head { display:flex; align-items:center; gap:8px; padding:10px 12px; cursor:pointer; min-width:0; }
   .ext-name { color:var(--gray-900); font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-  .ext-origin { font-size:11px; color:var(--gray-400); font-family:var(--mono,ui-monospace,monospace); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
-  .ext-badge { font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:4px; padding:2px 6px; flex:none; }
+  .ext-origin { font-size: 12px; color:var(--gray-400); font-family:var(--mono,ui-monospace,monospace); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1; }
+  .ext-badge { font-size: 11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; border-radius:4px; padding:2px 6px; flex:none; }
   .ext-badge.new, .ext-badge.changed { background:rgba(245,158,11,.18); color:#d97706; }
   .ext-badge.approved { background:rgba(34,197,94,.16); color:#16a34a; }
   .ext-badge.unchanged { background:var(--gray-100); color:var(--gray-500); }
-  .ext-kind { font-size:10px; font-weight:700; text-transform:uppercase; color:var(--gray-500); border:1px solid var(--gray-200); border-radius:4px; padding:1px 5px; flex:none; }
-  .ext-cap { font-size:10.5px; font-weight:600; border-radius:999px; padding:1px 8px; background:var(--gray-100); color:var(--gray-500); flex:none; }
+  .ext-kind { font-size: 11px; font-weight:700; text-transform:uppercase; color:var(--gray-500); border:1px solid var(--gray-200); border-radius:4px; padding:1px 5px; flex:none; }
+  .ext-cap { font-size: 11.5px; font-weight:600; border-radius:999px; padding:1px 8px; background:var(--gray-100); color:var(--gray-500); flex:none; }
   .ext-cap.remote_instructions, .ext-cap.network { background:rgba(239,68,68,.15); color:#ef4444; }
   .ext-cap.runs_code, .ext-cap.declares_hooks { background:rgba(249,115,22,.15); color:#f97316; }
   .ext-body { border-top:1px solid var(--gray-100); padding:10px 12px 12px; font-size:12px; display:none; }
   .ext-row.open .ext-body { display:block; }
   .ext-kv { display:grid; grid-template-columns:110px minmax(0,1fr); gap:4px 10px; }
   .ext-kv dt { color:var(--gray-400); }
-  .ext-kv dd { margin:0; font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; overflow-wrap:anywhere; }
+  .ext-kv dd { margin:0; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; overflow-wrap:anywhere; }
   .ext-approve { margin-top:10px; font-size:12px; font-weight:600; padding:5px 12px; border-radius:6px; border:1px solid #16a34a; background:rgba(34,197,94,.12); color:#16a34a; cursor:pointer; }
   .ext-ev { display:grid; grid-template-columns:8px minmax(0,1fr); gap:10px; padding:8px 0; border-bottom:1px solid var(--gray-100); font-size:12px; }
   .ext-ev:last-child { border-bottom:0; }
@@ -1168,7 +1171,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-ev.extension_installed i, .ext-ev.extension_changed i { background:#f59e0b; }
   .ext-ev.remote_ref_drift i, .ext-ev.remote_ref_flagged i { background:#ef4444; }
   .ext-ev.extension_invoked i { background:#3b82f6; }
-  .ext-cause { display:inline-flex; align-items:center; gap:4px; flex:none; font-size:10.5px; font-weight:600; border-radius:999px;
+  .ext-cause { display:inline-flex; align-items:center; gap:4px; flex:none; font-size: 11.5px; font-weight:600; border-radius:999px;
     padding:1px 8px; margin-left:6px; background:var(--gray-100); color:var(--gray-600); cursor:pointer; white-space:nowrap; }
   .ext-cause .icon { width:11px; height:11px; }
   .ext-cause.unreviewed { background:rgba(245,158,11,.18); color:#d97706; }
@@ -1179,23 +1182,23 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .dev-row { padding:8px 0; border-bottom:1px solid var(--gray-100); }
   .dev-row:last-child { border-bottom:0; }
   .dev-h { font-weight:600; margin:12px 0 2px; }
-  .dev-quiet { font-size:11px; font-weight:400; color:var(--gray-400); margin-left:6px; text-transform:none; letter-spacing:0; }
-  .dev-mono { font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; overflow-wrap:anywhere; }
+  .dev-quiet { font-size: 12px; font-weight:400; color:var(--gray-400); margin-left:6px; text-transform:none; letter-spacing:0; }
+  .dev-mono { font-family:var(--mono,ui-monospace,monospace); font-size: 12px; overflow-wrap:anywhere; }
   .dev-err { color:#ef4444; }
   .files-layout { grid-template-columns:minmax(260px,380px) minmax(0,1fr); }
   .file-item { padding:7px 8px; border-radius:6px; cursor:pointer; border-bottom:1px solid var(--gray-100); }
   .file-item:hover { background:var(--gray-50); }
   .file-item.active { background:rgba(59,130,246,.10); }
   .ftree-dir { margin-left:12px; }
-  .ftree-dir > summary { cursor:pointer; padding:4px 6px; border-radius:6px; font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; font-weight:600; }
+  .ftree-dir > summary { cursor:pointer; padding:4px 6px; border-radius:6px; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; font-weight:600; }
   .ftree-dir > summary:hover { background:var(--gray-50); }
-  .ftree-root { font-family:var(--mono,ui-monospace,monospace); font-size:11px; color:var(--gray-400); overflow-wrap:anywhere; margin:2px 0 6px; }
+  .ftree-root { font-family:var(--mono,ui-monospace,monospace); font-size: 12px; color:var(--gray-400); overflow-wrap:anywhere; margin:2px 0 6px; }
   .ftree .file-item { margin-left:12px; padding:5px 8px; }
   .file-item .dev-mono { direction:rtl; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dev-add { color:#16a34a; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; }
-  .dev-del { color:#dc2626; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; }
+  .dev-add { color:#16a34a; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; }
+  .dev-del { color:#dc2626; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; }
   .dev-diff { margin:6px 0 4px; border:1px solid var(--gray-200); border-radius:6px; overflow:auto; max-height:420px;
-    font-family:var(--mono,ui-monospace,monospace); font-size:11.5px; line-height:1.55; }
+    font-family:var(--mono,ui-monospace,monospace); font-size: 12px; line-height:1.55; }
   .dev-diff div { padding:0 10px; white-space:pre; min-width:max-content; }
   .dev-diff .a { background:rgba(34,197,94,.14); color:#15803d; }
   .dev-diff .d { background:rgba(239,68,68,.13); color:#b91c1c; }
@@ -1210,29 +1213,29 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-sum b { color:var(--gray-900); font-weight:600; }
   .sess-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); align-self:center; flex:none; }
   .sess-dot.ok { background:#22c55e; } .sess-dot.warn { background:#f59e0b; } .sess-dot.bad { background:#ef4444; }
-  .sess-sub { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
+  .sess-sub { font-size: 12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
   .sess-sub span { font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400); margin-left:6px; }
   .sess-none { padding:2px 0 6px; }
-  .sess-hook-ev { font-size:10.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
+  .sess-hook-ev { font-size: 11.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
   .dev-fail { border:1px solid var(--gray-200); border-radius:6px; padding:8px 10px; margin:8px 0; }
-  .dev-fail-label { font-size:11px; font-weight:700; color:#b91c1c; margin-bottom:4px; }
+  .dev-fail-label { font-size: 12px; font-weight:700; color:#b91c1c; margin-bottom:4px; }
   .dev-fail-head { display:flex; gap:8px; align-items:baseline; min-width:0; }
   .dev-fail-cmd { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; }
-  .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size:11.5px; color:var(--gray-500); }
-  .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size:11.5px; }
+  .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size: 12px; color:var(--gray-500); }
+  .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size: 12px; }
   .dev-before { margin:-2px 0 8px 12px; }
-  .dev-locate { flex:none; padding:2px 10px; font-size:11.5px; }
+  .dev-locate { flex:none; padding:2px 10px; font-size: 12px; }
   #sessFlowCanvas .tree-leaf.flash { animation:devflash 1.6s ease-out; }
   @keyframes devflash { 0%,35% { box-shadow:inset 0 0 0 2px #ef4444; background:rgba(239,68,68,.12); } 100% { box-shadow:none; } }
   .dev-note { font-size:12.5px; color:var(--gray-600); background:var(--gray-50); border-radius:6px; padding:8px 10px; margin:8px 0; }
   .sess-ext-hooks summary { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
-  .sess-ran-title { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
+  .sess-ran-title { font-size: 11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
   .sess-ran-group { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; }
   .sess-ran-group em { font-style:normal; color:var(--gray-500); margin-right:2px; }
   .sess-ran-docs { font-weight:600; color:var(--gray-600); margin-left:6px; }
-  .ext-ev small { display:block; color:var(--gray-400); font-size:11px; overflow-wrap:anywhere; }
-  .mcp-hint { font-size:11.5px; color:var(--gray-500); margin-top:8px; line-height:1.5; }
+  .ext-ev small { display:block; color:var(--gray-400); font-size: 12px; overflow-wrap:anywhere; }
+  .mcp-hint { font-size: 12px; color:var(--gray-500); margin-top:8px; line-height:1.5; }
   .tp-toggle { position:relative; width:38px; height:22px; border-radius:999px; border:1px solid var(--gray-200); background:var(--gray-100); cursor:pointer; padding:0; transition:background .12s; }
   .tp-toggle.on { background:#22c55e; border-color:#16a34a; }
   .tp-toggle.off { background:var(--gray-200); }
@@ -1248,7 +1251,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     border:1px solid var(--gray-200); border-radius:14px; background:var(--surface);
   }
   .session-hero-main { flex:1; min-width:200px; }
-  .session-hero-title { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--gray-400); font-weight:700; }
+  .session-hero-title { font-size: 12px; text-transform:uppercase; letter-spacing:.6px; color:var(--gray-400); font-weight:700; }
   .session-hero-id { font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--gray-900); margin-top:3px; word-break:break-all; }
   .session-hero-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
 
@@ -1256,12 +1259,12 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* Long values (commands, prompts, regexes, hooks) get the full panel width
      under their label instead of a 60% column beside it. */
   .drawer-rule-row.stack { flex-direction:column; gap:4px; }
-  .drawer-rule-row.stack > .drawer-rule-label { min-width:0; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+  .drawer-rule-row.stack > .drawer-rule-label { min-width:0; font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
   .drawer-rule-row.stack > div { width:100%; }
-  .drawer-code { font-family:var(--font-mono); font-size:11px; line-height:1.5; color:var(--gray-800); background:var(--surface);
+  .drawer-code { font-family:var(--font-mono); font-size: 12px; line-height:1.5; color:var(--gray-800); background:var(--surface);
     border:1px solid var(--gray-200); border-radius:6px; padding:6px 8px; max-height:180px; overflow:auto;
     white-space:pre-wrap; overflow-wrap:anywhere; }
-  .drawer-rule-row details > summary { cursor:pointer; color:#3b82f6; font-size:11px; margin-bottom:4px; }
+  .drawer-rule-row details > summary { cursor:pointer; color:#3b82f6; font-size: 12px; margin-bottom:4px; }
   .session-layout > div { min-width:0; }
   @media (max-width:900px){ .session-layout { grid-template-columns:1fr; } }
 
@@ -1273,18 +1276,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .flow-head-title { font-size:12px; font-weight:700; color:var(--gray-800); }
   /* ── Session tree: turns -> lanes -> events ── */
   .tree-toolbar { display:flex; gap:6px; align-items:center; }
-  .tree-btn { font-size:11px; font-weight:600; color:var(--gray-700); background:var(--surface);
+  .tree-btn { font-size: 12px; font-weight:600; color:var(--gray-700); background:var(--surface);
     border:1px solid var(--gray-300); border-radius:7px; padding:4px 9px; cursor:pointer; }
   .tree-btn:hover { background:var(--gray-50); }
   .artifacts { margin-top:14px; }
-  .artifacts h4 { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--gray-500); margin:0 0 8px; }
+  .artifacts h4 { font-size: 12px; text-transform:uppercase; letter-spacing:.04em; color:var(--gray-500); margin:0 0 8px; }
   .art-phase { text-transform:none; letter-spacing:0; font-weight:600; color:var(--gray-400); }
   .art-row { margin-bottom:9px; }
-  .art-label { font-size:10px; font-weight:600; color:var(--gray-500); margin-bottom:2px; }
-  .art-val { font-size:11px; color:var(--gray-700); word-break:break-word; }
+  .art-label { font-size: 11px; font-weight:600; color:var(--gray-500); margin-bottom:2px; }
+  .art-val { font-size: 12px; color:var(--gray-700); word-break:break-word; }
   /* 12 lines exactly: a max-height that is not a multiple of line-height slices
      the last row in half, which reads as a broken box rather than a scroll. */
-  .art-pre { font-family:var(--font-mono); font-size:10.5px; line-height:1.5; color:var(--gray-700);
+  .art-pre { font-family:var(--font-mono); font-size: 11.5px; line-height:1.5; color:var(--gray-700);
     background:var(--gray-50); border:1px solid var(--gray-200); border-radius:7px;
     padding:8px 10px; margin:0; max-height:calc(12 * 1.5 * 10.5px + 16px); overflow:auto;
     white-space:pre-wrap; overflow-wrap:anywhere; tab-size:2; }
@@ -1299,17 +1302,17 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sa-card.open { grid-column:1/-1; }
   .sa-card.bad { border-color:var(--bad); }
   .sa-title { font-weight:600; color:var(--gray-900); font-size:13px; line-height:1.35; }
-  .sa-meta { color:var(--gray-500); font-size:11.5px; display:flex; flex-wrap:wrap; gap:4px 10px; }
+  .sa-meta { color:var(--gray-500); font-size: 12px; display:flex; flex-wrap:wrap; gap:4px 10px; }
   /* Theme tokens only, so both themes hold up. "No finish recorded" is a
      gap in what Codex/Claude reported, not an alarm, so it stays neutral. */
   .sa-st { font-weight:600; } .sa-st.done { color:var(--ok); } .sa-st.run { color:var(--gray-600); } .sa-st.fail { color:var(--danger-ink); }
-  .sa-badge { font-size:11px; font-weight:600; border-radius:4px; padding:1px 6px; }
+  .sa-badge { font-size: 12px; font-weight:600; border-radius:4px; padding:1px 6px; }
   .sa-badge.block { color:var(--danger-ink); background:color-mix(in srgb, var(--bad) 13%, transparent); }
   .sa-badge.warn { color:var(--gray-800); background:color-mix(in srgb, var(--warn) 22%, transparent); }
   .sa-out { color:var(--gray-700); font-size:12px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .sa-card.open .sa-out { -webkit-line-clamp:unset; white-space:pre-wrap; }
-  .sa-files { color:var(--gray-500); font-size:11px; font-family:var(--mono, ui-monospace, monospace); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-  .sa-more { align-self:flex-start; border:0; background:none; padding:2px 0; color:var(--gray-600); font-size:11.5px; cursor:pointer; }
+  .sa-files { color:var(--gray-500); font-size: 12px; font-family:var(--mono, ui-monospace, monospace); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .sa-more { align-self:flex-start; border:0; background:none; padding:2px 0; color:var(--gray-600); font-size: 12px; cursor:pointer; }
   .sa-more:hover { color:var(--gray-900); text-decoration:underline; }
   .sa-more:focus-visible { outline:2px solid var(--gray-700); outline-offset:2px; border-radius:3px; }
   .sa-calls.hidden { display:none; }
@@ -1323,13 +1326,13 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     background:none; border:0; padding:6px 8px; border-radius:8px; cursor:pointer; color:inherit; }
   .tree-row:hover { background:var(--gray-50); }
   .tree-row.turn { padding:7px 8px; }
-  .tree-row.lane .tree-lane-label { font-size:11px; text-transform:uppercase; color:var(--gray-500); }
+  .tree-row.lane .tree-lane-label { font-size: 12px; text-transform:uppercase; color:var(--gray-500); }
   .tree-caret { width:12px; flex:none; color:var(--gray-400); transition:transform .12s ease; }
   .tree-row.collapsed .tree-caret { transform:rotate(-90deg); }
   .tree-turn-label { font-weight:700; color:var(--gray-800); }
   .tree-turn-sub { color:var(--gray-500); font-weight:400; margin-left:8px; min-width:0;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tree-count { margin-left:auto; flex:none; font-size:10px; font-weight:600; color:var(--gray-500);
+  .tree-count { margin-left:auto; flex:none; font-size: 11px; font-weight:600; color:var(--gray-500);
     background:var(--gray-100); border-radius:10px; padding:1px 7px; min-width:20px; text-align:center; }
   .tree-row.turn .tree-count { color:var(--gray-700); }
   .tree-children { margin-left:14px; padding-left:10px; border-left:1px solid var(--gray-200); }
@@ -1349,32 +1352,32 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .tree-dot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--green-500); }
   .tree-dot.warn { background:#f59e0b; }
   .tree-dot.block { background:#ef4444; }
-  .tree-id { flex:none; font-size:10px; font-weight:600;
+  .tree-id { flex:none; font-size: 11px; font-weight:600;
     color:var(--gray-500); background:var(--gray-100); border-radius:5px; padding:1px 6px; }
   .tree-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--gray-700); }
   .tree-leaf.blocked .tree-text { color:var(--danger-ink); font-weight:600; }
-  .hook-chip { flex:none; font-size:10px; font-weight:600; border-radius:999px; padding:1px 7px; margin-left:6px;
+  .hook-chip { flex:none; font-size: 11px; font-weight:600; border-radius:999px; padding:1px 7px; margin-left:6px;
     background:var(--gray-100); color:var(--gray-600); font-variant-numeric:tabular-nums; }
   .hook-chip.slow { background:rgba(217,119,6,.14); color:#d97706; }
   .hook-chip.fail { background:rgba(220,38,38,.12); color:#dc2626; }
   .hook-runs { margin-top:4px; }
-  .hook-phase { font-size:10.5px; font-weight:700; color:var(--gray-500); margin:8px 0 3px; text-transform:uppercase; letter-spacing:.04em; }
-  .hook-run { font-size:11px; margin-bottom:5px; }
+  .hook-phase { font-size: 11.5px; font-weight:700; color:var(--gray-500); margin:8px 0 3px; text-transform:uppercase; letter-spacing:.04em; }
+  .hook-run { font-size: 12px; margin-bottom:5px; }
   .hook-run > summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 8px; align-items:center; cursor:pointer; list-style:none; }
   .hook-run > summary::-webkit-details-marker { display:none; }
   .hook-run[open] > summary code { color:#3b82f6; }
-  .hook-io { font-size:11px; color:var(--gray-600); margin:6px 0 0; }
+  .hook-io { font-size: 12px; color:var(--gray-600); margin:6px 0 0; }
   .hook-io em { font-style:normal; font-weight:600; color:var(--gray-500); display:block; margin-bottom:2px; }
-  .hook-io pre { margin:0; padding:6px 8px; border-radius:6px; background:var(--gray-50); color:var(--gray-800); font-size:10.5px;
+  .hook-io pre { margin:0; padding:6px 8px; border-radius:6px; background:var(--gray-50); color:var(--gray-800); font-size: 11.5px;
     max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-word; }
-  .hook-sent { font-size:11px; margin:0 0 6px; } .hook-sent summary { cursor:pointer; color:#3b82f6; }
-  .hook-run code { font-size:11px; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-sent { font-size: 12px; margin:0 0 6px; } .hook-sent summary { cursor:pointer; color:#3b82f6; }
+  .hook-run code { font-size: 12px; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hook-run .ms { text-align:right; color:var(--gray-600); font-variant-numeric:tabular-nums; }
   .hook-run .bar { grid-column:1 / -1; height:3px; border-radius:2px; background:var(--gray-100); }
   .hook-run .bar i { display:block; height:100%; border-radius:2px; background:#3b82f6; }
   .hook-run.slow .bar i { background:#d97706; } .hook-run.fail .bar i { background:#dc2626; }
-  .tree-ts { margin-left:auto; flex:none; font-size:10px; color:var(--gray-400); font-variant-numeric:tabular-nums; }
-  .flow-legend { display:flex; gap:12px; font-size:10px; color:var(--gray-500); }
+  .tree-ts { margin-left:auto; flex:none; font-size: 11px; color:var(--gray-400); font-variant-numeric:tabular-nums; }
+  .flow-legend { display:flex; gap:12px; font-size: 11px; color:var(--gray-500); }
   .flow-legend span { display:inline-flex; align-items:center; gap:4px; }
   .flow-legend i { width:9px; height:9px; border-radius:3px; display:inline-block; }
   .flow-legend i.allow { background:var(--green-500); }
@@ -1404,14 +1407,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .flow-node.branch:hover { transform:translateX(64px) translateY(-2px); }
 
   .flow-node-top { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
-  .flow-node-chip { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--gray-500); background:var(--gray-100); border-radius:5px; padding:2px 6px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .flow-node-action { font-family:var(--font-mono); font-size:11px; color:var(--gray-800); line-height:1.4; max-height:44px; overflow:hidden; word-break:break-all; }
+  .flow-node-chip { font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--gray-500); background:var(--gray-100); border-radius:5px; padding:2px 6px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .flow-node-action { font-family:var(--font-mono); font-size: 12px; color:var(--gray-800); line-height:1.4; max-height:44px; overflow:hidden; word-break:break-all; }
   .flow-node-foot { display:flex; align-items:center; justify-content:space-between; margin-top:7px; }
-  .flow-node-verdict { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:2px 7px; border-radius:999px; }
+  .flow-node-verdict { font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:2px 7px; border-radius:999px; }
   .flow-node-verdict.allow { background:#dcfce7; color:#15803d; }
   .flow-node-verdict.warn  { background:#fef3c7; color:#b45309; }
   .flow-node-verdict.block { background:#fee2e2; color:#b91c1c; }
-  .flow-node-ts { font-size:9px; color:var(--gray-400); }
+  .flow-node-ts { font-size: 11px; color:var(--gray-400); }
 
   .flow-endpoint {
     position:relative; z-index:1; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:6px;
@@ -1423,7 +1426,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   .flow-endpoint.start .dot { background:var(--gray-900); }
   .flow-endpoint.end   .dot { background:var(--green-500); }
-  .flow-endpoint .lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--gray-400); }
+  .flow-endpoint .lbl { font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--gray-400); }
   .flow-endpoint .icon { width:18px; height:18px; }
 
   .flow-empty { padding:40px 20px; text-align:center; color:var(--gray-400); font-size:12px; }
@@ -1431,20 +1434,20 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   /* node detail side panel */
   .node-panel { border:1px solid var(--gray-200); border-radius:14px; background:var(--surface); padding:16px 18px; position:sticky; top:16px; }
   .node-panel-empty { color:var(--gray-400); font-size:12px; text-align:center; padding:24px 8px; }
-  .node-panel h4 { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray-400); font-weight:700; margin:0 0 10px; }
+  .node-panel h4 { font-size: 12px; text-transform:uppercase; letter-spacing:.5px; color:var(--gray-400); font-weight:700; margin:0 0 10px; }
   .node-actions { margin-top:14px; padding-top:14px; border-top:1px solid var(--gray-100); }
-  .na-tool { font-family:var(--font-mono); font-size:11px; background:var(--gray-100); border-radius:6px; padding:1px 7px; color:var(--gray-800); text-transform:none; letter-spacing:0; }
+  .na-tool { font-family:var(--font-mono); font-size: 12px; background:var(--gray-100); border-radius:6px; padding:1px 7px; color:var(--gray-800); text-transform:none; letter-spacing:0; }
   .na-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
-  .na-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; width:42px; flex-shrink:0; }
+  .na-label { font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; width:42px; flex-shrink:0; }
   .na-label.na-deny { color:#b91c1c; }
   .na-label.na-allow { color:#15803d; }
-  .na-btn { font-size:11px; font-weight:600; padding:5px 10px; border-radius:6px; border:1px solid var(--gray-200); background:#fff; color:var(--gray-700); cursor:pointer; transition:all .12s; }
+  .na-btn { font-size: 12px; font-weight:600; padding:5px 10px; border-radius:6px; border:1px solid var(--gray-200); background:#fff; color:var(--gray-700); cursor:pointer; transition:all .12s; }
   .na-btn.deny:hover { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
   .na-btn.allow:hover { background:#f0fdf4; border-color:#bbf7d0; color:#15803d; }
-  .na-status { font-size:11px; margin:6px 0 4px; min-height:14px; }
-  .na-hint { font-size:10px; color:var(--gray-400); line-height:1.5; }
+  .na-status { font-size: 12px; margin:6px 0 4px; min-height:14px; }
+  .na-hint { font-size: 11px; color:var(--gray-400); line-height:1.5; }
   .theme-toggle {
-    font-family: inherit; font-size: 11px; font-weight: 600;
+    font-family: inherit; font-size: 12px; font-weight: 600;
     padding: 7px 10px; border-radius: 999px;
     border: 1px solid var(--gray-200); background: var(--surface);
     color: var(--gray-600); cursor: pointer;
@@ -1583,7 +1586,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     --md-e2: 0 2px 6px rgba(16,24,40,.08), 0 4px 10px rgba(16,24,40,.06);
     --md-e3: 0 8px 18px rgba(16,24,40,.12), 0 16px 32px rgba(16,24,40,.12);
     --md-radius: 10px; --md-radius-sm: 6px;
-    --font-ui: "Roboto", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui: Verdana, Geneva, "DejaVu Sans", sans-serif;
   }
   body { font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
 
@@ -1677,14 +1680,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #page-policy td, #page-fleet td {
     font-size: 12px;
   }
-  #page-agents [style*="font-size:10px"], #page-sessions [style*="font-size:10px"],
-  #page-agent [style*="font-size:10px"], #page-session [style*="font-size:10px"],
-  #page-policy [style*="font-size:10px"], #page-fleet [style*="font-size:10px"] {
-    font-size: 11px !important;
+  #page-agents [style*="font-size: 11px"], #page-sessions [style*="font-size: 11px"],
+  #page-agent [style*="font-size: 11px"], #page-session [style*="font-size: 11px"],
+  #page-policy [style*="font-size: 11px"], #page-fleet [style*="font-size: 11px"] {
+    font-size: 12px !important;
   }
-  #page-agents [style*="font-size:11px"], #page-sessions [style*="font-size:11px"],
-  #page-agent [style*="font-size:11px"], #page-session [style*="font-size:11px"],
-  #page-policy [style*="font-size:11px"], #page-fleet [style*="font-size:11px"] {
+  #page-agents [style*="font-size: 12px"], #page-sessions [style*="font-size: 12px"],
+  #page-agent [style*="font-size: 12px"], #page-session [style*="font-size: 12px"],
+  #page-policy [style*="font-size: 12px"], #page-fleet [style*="font-size: 12px"] {
     font-size: 12px !important;
   }
 
@@ -1740,7 +1743,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #breadcrumbLabel { font-size: 12.5px; font-weight: 600; color: var(--gray-900); }
 
   /* dense rows, uppercase headers, full-row hover to match the reference table */
-  th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; padding: 0 18px 10px 0; }
+  th { text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; padding: 0 18px 10px 0; }
   td { padding: 11px 18px 11px 0; }
   tbody tr:hover td { background: rgba(255,255,255,.035); }
   .sess-checkbox { width: 28px; accent-color: var(--md-primary); cursor: pointer; }
@@ -1762,7 +1765,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .prec-rank {
     flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
     background: var(--surface-strong); border: 1px solid var(--gray-300);
-    color: var(--gray-600); font-size: 11px; font-weight: 700;
+    color: var(--gray-600); font-size: 12px; font-weight: 700;
     display: flex; align-items: center; justify-content: center; margin-top: 2px;
   }
   .prec-arrow {
@@ -1796,7 +1799,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #page-session .sess-ran-under { margin-bottom: 8px; padding: 0 14px; }
   .sess-ext-all > summary { list-style: none; cursor: pointer; padding: 9px 0; margin: 0; }
   .sess-ext-all > summary::-webkit-details-marker { display: none; }
-  .sess-ext-toggle { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--gray-500); }
+  .sess-ext-toggle { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--gray-500); }
   .sess-ext-all[open] > summary { border-bottom: 1px solid var(--gray-100); margin-bottom: 10px; }
   .sess-ext-all[open] .sess-ext-toggle::after { content: ' \25B4'; }
   .sess-ext-all:not([open]) .sess-ext-toggle::after { content: ' \25BE'; }
@@ -1832,7 +1835,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     --purple: #1c1c1c;
 
     /* Inter (kit type face): undo the Roboto override */
-    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui: Verdana, Geneva, "DejaVu Sans", sans-serif;
 
     /* soft, diffuse shadow (Figma effect: 6/6, 50 blur, ~5% black) */
     --md-e1: 0 1px 2px rgba(28,28,28,.04), 0 6px 26px rgba(28,28,28,.05);
@@ -1954,7 +1957,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .banner-text strong { display: inline; margin: 0; font-weight: 600; color: var(--gray-900); }
   .banner-text > strong:first-child { display: block; margin-bottom: 5px; font-size: 13px; }
   .banner code {
-    font-family: var(--font-mono); font-size: 11px;
+    font-family: var(--font-mono); font-size: 12px;
     background: var(--surface); border: 1px solid var(--gray-200); color: var(--gray-700);
     border-radius: 6px; padding: 1px 6px;
   }
@@ -1966,10 +1969,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     background: var(--surface); border-color: var(--gray-200); color: var(--gray-700);
   }
 
-  .match-hit{font-family:var(--font-mono);font-size:10.5px;line-height:1.5;
+  .match-hit{font-family:var(--font-mono);font-size: 11.5px;line-height:1.5;
     color:var(--gray-800);background:rgba(220,38,38,.09);border:1px solid rgba(220,38,38,.22);
     border-radius:4px;padding:4px 6px;word-break:break-all;max-height:120px;overflow:auto}
-  .match-pattern{font-family:var(--font-mono);font-size:10.5px;line-height:1.5;
+  .match-pattern{font-family:var(--font-mono);font-size: 11.5px;line-height:1.5;
     color:var(--gray-600);background:var(--gray-100);border-radius:4px;padding:4px 6px;word-break:break-all}
   mark.match-mark{background:rgba(220,38,38,.22);color:inherit;border-radius:2px;padding:0 1px}
 
@@ -2037,10 +2040,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .topbar h1 { font-size: 15px; font-weight: 500; color: var(--ink-2); }
   #breadcrumbLabel { font-size: 15px; font-weight: 500; color: var(--ink); }
   .topbar-right { gap: 10px; }
-  .last-updated { font-size: 11.5px; color: var(--muted); }
-  .badge { font-size: 11px; padding: 3px 9px; }
+  .last-updated { font-size: 12px; color: var(--muted); }
+  .badge { font-size: 12px; padding: 3px 9px; }
   .badge-live { background: var(--ok-soft); color: var(--ok); }
-  .mode-chip { font-size: 10.5px; padding: 4px 10px; }
+  .mode-chip { font-size: 11.5px; padding: 4px 10px; }
   .theme-toggle, .upgrade-btn {
     font-size: 12.5px; font-weight: 500; padding: 7px 12px; border-radius: 6px;
     border: 1px solid var(--hairline); background: var(--surface); color: var(--ink-2); box-shadow: none;
@@ -2057,7 +2060,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     background: var(--surface); border-right: 1px solid var(--hairline);
   }
   .nav-group {
-    font-size: 10.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
+    font-size: 11.5px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase;
     color: var(--muted); padding: 18px 12px 6px;
   }
   .tab-nav .tab-btn {
@@ -2093,16 +2096,16 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .attn-list li.link { cursor: pointer; } .attn-list li.link:hover { border-color: var(--gray-400); }
   .attn-list li b { color: var(--ink); font-weight: 600; } .attn-list li span { color: var(--ink-2); font-size: 12.5px; }
   .attn-sub { font-size: 12.5px !important; margin: 16px 0 18px !important; color: var(--muted) !important; }
-  .help { display: inline-block; font-style: normal; font-size: 9px; line-height: 12px; width: 13px; height: 13px; text-align: center; border-radius: 50%; border: 1px solid currentColor; opacity: .55; cursor: help; vertical-align: 1px; margin-left: 2px; }
+  .help { display: inline-block; font-style: normal; font-size: 11px; line-height: 12px; width: 13px; height: 13px; text-align: center; border-radius: 50%; border: 1px solid currentColor; opacity: .55; cursor: help; vertical-align: 1px; margin-left: 2px; }
   .kpi-strip .kpi-delta.neutral .up, .kpi-strip .kpi-delta.neutral .down { color: var(--muted); }
   .how-it-works { margin-bottom: 28px; } .how-it-works > summary { list-style: none; cursor: pointer; display: flex; gap: 10px; align-items: center; }
   .how-it-works > summary::-webkit-details-marker { display: none; } .how-it-works[open] > summary { margin-bottom: 14px; }
   .how-it-works:not([open]) .sess-ext-toggle::after { content: ' \25BE'; } .how-it-works[open] .sess-ext-toggle::after { content: ' \25B4'; }
   .ext-stat { cursor: pointer; } .ext-stat.warn { border-color: #f59e0b; } .ext-stat.warn b { color: #b45309; }
-  .ext-stat small { display: block; font-size: 11px; color: var(--gray-500); margin-top: 4px; line-height: 1.4; text-transform: none; letter-spacing: 0; }
+  .ext-stat small { display: block; font-size: 12px; color: var(--gray-500); margin-top: 4px; line-height: 1.4; text-transform: none; letter-spacing: 0; }
   .ext-kinds { display:flex; flex-wrap:wrap; }
   .ext-item { display:grid; grid-template-columns:minmax(0,2.4fr) 96px 70px 70px minmax(0,1fr) 80px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
-  .ext-item.hdr { cursor:default; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
+  .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
@@ -2110,16 +2113,16 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-spark i { flex:1; min-height:1px; background:var(--accent); opacity:.75; border-radius:1px; }
   .ext-spark.big { height:90px; gap:3px; margin:6px 0 2px; }
   .extd-kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:14px; }
-  .extd-kpis div { border:1px solid var(--gray-200); border-radius:8px; padding:8px 12px; font-size:11px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; }
+  .extd-kpis div { border:1px solid var(--gray-200); border-radius:8px; padding:8px 12px; font-size: 12px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; }
   .extd-kpis b { display:block; font-size:18px; color:var(--gray-900); text-transform:none; letter-spacing:0; font-variant-numeric:tabular-nums; }
   .extd-break { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; margin:14px 0; }
-  .extd-break h4 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); margin:0 0 6px; font-weight:600; }
+  .extd-break h4 { font-size: 12px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); margin:0 0 6px; font-weight:600; }
   .extd-bar { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:8px; font-size:12.5px; padding:2px 0; }
   .extd-bar span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:linear-gradient(90deg,var(--md-primary-soft,#e8eefc) var(--w),transparent var(--w)); border-radius:3px; padding:1px 6px; }
   .extd-bar em { font-style:normal; text-align:right; font-variant-numeric:tabular-nums; color:var(--gray-500); }
   @media (max-width:720px) { .ext-item { grid-template-columns:minmax(0,1fr) 60px 60px; } .ext-item > :nth-child(2), .ext-item > :nth-child(5), .ext-item > :nth-child(6) { display:none; } }
   .dep-when { flex:none; }
-  .ext-review-note { display: inline-block; margin-left: 10px; font-size: 11px; color: var(--gray-500); max-width: 460px; vertical-align: middle; }
+  .ext-review-note { display: inline-block; margin-left: 10px; font-size: 12px; color: var(--gray-500); max-width: 460px; vertical-align: middle; }
   .btn-ok, .btn-line {
     font: 600 14px var(--font-ui); padding: 11px 16px; border-radius: 6px; cursor: pointer;
     display: inline-flex; align-items: center; gap: 9px; line-height: 1; transition: background .15s;
@@ -2134,7 +2137,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
   .ring-pct { font-size: 38px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
   .ring-pct small { font-size: 19px; font-weight: 500; margin-left: 1px; }
-  .ring-cap { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
+  .ring-cap { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-top: 8px; }
   .ring-legend { display: grid; gap: 14px; font-size: 14.5px; color: var(--ink-2); min-width: 210px; }
   .ring-legend > div { display: flex; align-items: center; gap: 10px; }
   .ring-legend b { margin-left: auto; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -2143,7 +2146,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   /* hairline KPI strip */
   .strip-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; }
-  .kpi-label { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .kpi-label { font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
   .kpi-strip {
     display: grid; grid-template-columns: repeat(4, 1fr);
     border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); margin-bottom: 40px;
@@ -2155,7 +2158,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .kpi-strip .kpi-delta .up { color: var(--bad); } .kpi-strip .kpi-delta .down { color: var(--ok); }
 
   /* the five-step strip */
-  .steps-label { font-size: 11px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .steps-label { font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
   .steps {
     display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface);
     border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; margin-bottom: 36px;
@@ -2183,10 +2186,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .card { padding: 20px 22px; }
   .card-title { font-size: 15px; font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: 0; margin-bottom: 14px; }
   .section { margin: 36px 0 14px 0; }
-  .section h2 { font-size: 11px; font-weight: 500; letter-spacing: .14em; color: var(--muted); }
+  .section h2 { font-size: 12px; font-weight: 500; letter-spacing: .14em; color: var(--muted); }
   .section .rule { display: none; }
   .section .hint { font-size: 12px; color: var(--muted); }
-  th { font-size: 10.5px; letter-spacing: .1em; color: var(--muted); border-bottom-color: var(--hairline); }
+  th { font-size: 11.5px; letter-spacing: .1em; color: var(--muted); border-bottom-color: var(--hairline); }
   td { font-size: 12.5px; color: var(--ink-2); border-bottom-color: var(--gray-100); }
   tbody tr:hover td { background: var(--gray-50); }
   .kpi-value { color: var(--ink); }
@@ -2226,7 +2229,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .policy-scope-btn { font-size: 13.5px; padding: 10px 12px; border-radius: 0; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .policy-scope-btn.active { background: none; box-shadow: none; color: var(--ink); border-bottom-color: var(--ink); }
   .policy-scope-sep {
-    font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
     margin-left: 22px; padding-right: 6px; border-left: 1px solid var(--hairline); padding-left: 18px;
   }
   .rules-legend { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; font-size: 13px; color: var(--ink-2); margin: 2px 0 14px; }
@@ -2265,14 +2268,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .mcp-avatar { width: 28px; height: 28px; border-radius: 7px; background: var(--md-primary-soft); color: var(--ink); display: inline-grid; place-items: center; font-weight: 700; font-size: 13px; }
   .mcp-name { font-family: var(--font-mono); font-size: 15px; font-weight: 600; }
   .mcp-head-right { margin-left: auto; }
-  .mcp-kind { font-size: 11px; font-weight: 500; }
+  .mcp-kind { font-size: 12px; font-weight: 500; }
   .mcp-kind-gw { color: var(--ok); background: var(--ok-soft); }
   .mcp-kind-mirror { color: #6d4c0c; background: #fbf3e4; }
   .mcp-kind-direct { color: var(--bad); background: #fbeeec; }
   .mcp-kind-seen { color: #3f5470; background: #eef2f6; }
   .mcp-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); margin: 4px 0; min-width: 0; }
-  .mcp-meta code { font-family: var(--font-mono); font-size: 11.5px; background: var(--gray-100); border-radius: 4px; padding: 2px 6px; max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mcp-meta-k { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .mcp-meta code { font-family: var(--font-mono); font-size: 12px; background: var(--gray-100); border-radius: 4px; padding: 2px 6px; max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mcp-meta-k { font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
   .mcp-meta-src { color: var(--muted); font-size: 12px; }
   .mcp-muted { color: var(--muted); }
   .mcp-usage { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); margin: 14px 0; }
@@ -2423,7 +2426,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <!-- ═══ PAGE: MCP PLAYGROUND ══════════════════════════════════════ -->
 <div id="page-mcpservers" class="page">
   <div class="section"><h2>MCP Servers</h2><div class="rule"></div>
-    <span class="hint">every MCP server declared on this machine: where it is configured, whether its calls pass through Prismor, what it has been doing in the last 7 days, and how each tool is handled</span>
+    <span class="hint">where each server is configured, and how its tools are handled</span>
   </div>
   <div id="mcpSummary" class="kpi-strip mcp-summary" hidden></div>
   <div id="mcpServersList"><div class="empty">Loading MCP servers…</div></div>
@@ -2431,7 +2434,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
 <div id="page-files" class="page">
   <div class="section" style="margin-top:0"><h2>Files</h2><div class="rule"></div>
-    <span class="hint">every file an agent wrote, and each session that touched it: what it was asked, and the change it made</span>
+    <span class="hint">every file an agent wrote, and the session that changed it</span>
   </div>
   <div class="ext-layout files-layout">
     <div class="card">
@@ -2448,7 +2451,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
 <div id="page-extensions" class="page">
   <div class="section"><h2>Extensions</h2><div class="rule"></div>
-    <span class="hint">Everything your agents reach for outside themselves: the skills, MCP servers, plugins and third-party hooks installed on this machine, the secrets they used and the packages they installed. Pick a kind to see each one, then open it for every session that used it. Prismor records an installed extension when it first appears and again when its files change, so you can read it once and know it has not moved since.</span>
+    <span class="hint">Skills, MCP servers, plugins and hooks installed here. Flagged again if their files change.</span>
   </div>
   <div class="ext-views ext-kinds" id="extKinds"></div>
   <div id="extSummary" class="ext-summary"></div>
@@ -2467,7 +2470,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
 <div id="page-docs" class="page">
   <div class="section"><h2>Docs</h2><div class="rule"></div>
-    <span class="hint">The Prismor docs shipped with this install. Browse or search without leaving the dashboard.</span>
+    <span class="hint">Docs shipped with this install</span>
   </div>
   <div class="docs-search">
     <svg class="icon"><use href="#i-search"/></svg>
@@ -2500,7 +2503,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <div class="kpi-label">Needs attention</div>
       <h1 id="attnTitle" class="attn-title">Checking…</h1>
       <ul id="attnList" class="attn-list"></ul>
-      <p class="attn-sub">Prismor screens every tool call your agents make on this machine and decides it against the policy in force before it runs. Words used here: a <b>call</b> is one tool use; the <b>decision</b> is allowed, warned or blocked; a <b>rule fired</b> is one policy rule that matched, block or not.</p>
+      <p class="attn-sub">Every tool call is checked against your policy before it runs.</p>
       <div class="hero-actions">
         <button class="btn-ok" onclick="document.querySelector('.tab-btn[data-tab=&quot;sessions&quot;]')?.click()"><svg class="icon"><use href="#i-play"/></svg> Open sessions</button>
         <button class="btn-line" onclick="gotoPolicy()"><svg class="icon"><use href="#i-shield"/></svg> Policy control</button>
@@ -2533,7 +2536,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="kpi-strip">
     <div><div class="kpi-label" title="Tool calls that went through a Prismor hook and got a decision.">Calls screened <i class="help">?</i></div><div id="kpiToolCalls" class="kpi-big">-</div><div id="kpiToolsDelta" class="kpi-sub kpi-delta neutral"></div></div>
     <div><div class="kpi-label" title="Calls a rule stopped before they ran. Warn-only matches are not counted here.">Blocked <i class="help">?</i></div><div id="kpiDangerous" class="kpi-big">-</div><div id="kpiDangerousDelta" class="kpi-sub kpi-delta"></div></div>
-    <div><div class="kpi-label" title="Sessions with at least one call in this window.">Sessions <i class="help">?</i></div><div id="kpiSessions" class="kpi-big">-</div><div class="kpi-sub"><span id="kpiAgentCount">–</span> agents registered on this machine</div></div>
+    <div><div class="kpi-label" title="Sessions with at least one call in this window.">Sessions <i class="help">?</i></div><div id="kpiSessions" class="kpi-big">-</div><div class="kpi-sub"><span id="kpiAgentCount">–</span> agents registered</div></div>
     <div><div class="kpi-label" title="Every rule match, blocking or not, by the severity the rule carries. One call can fire several rules.">Rules fired <i class="help">?</i></div><div id="kpiFindings" class="kpi-big">-</div><div class="kpi-sub"><span id="sevCritical">-</span> critical · <span id="sevHigh">-</span> high · <span id="sevMedium">-</span> medium · <span id="sevLow">-</span> low</div></div>
   </div>
 
@@ -2552,8 +2555,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="bar" style="margin-bottom:14px">
       <div>
         <div class="card-title">Recent Sessions</div>
-        <div style="font-size:11px;color:var(--gray-500);margin-top:4px">
-          Clean runs appear here too, even when there are no findings.
+        <div style="font-size: 12px;color:var(--gray-500);margin-top:4px">
+          Clean runs appear here too.
         </div>
       </div>
       <div class="bar-right">
@@ -2574,7 +2577,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="bar" style="margin-bottom:14px">
       <div>
         <div class="card-title">Top network calls</div>
-        <div style="font-size:11px;color:var(--gray-500);margin-top:4px" id="netSub">
+        <div style="font-size: 12px;color:var(--gray-500);margin-top:4px" id="netSub">
           Every destination your sessions reached, busiest first.
         </div>
       </div>
@@ -2670,7 +2673,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   </div>
 
   <div class="section">
-    <h2>Developer</h2><div class="rule"></div><span class="hint">where agents keep failing. Who changed which file is under Files</span>
+    <h2>Developer</h2><div class="rule"></div><span class="hint">where agents keep failing</span>
   </div>
 
   <div class="grid" style="grid-template-columns:1fr">
@@ -2774,17 +2777,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div id="page-agents" class="page">
   <div class="section" style="margin-top:0">
     <h2>Agent Control</h2><div class="rule"></div>
-    <span class="hint">per-agent kill switch, enforcement mode &amp; IAM profile; live agents pick changes up within 30 s</span>
+    <span class="hint">kill switch, mode and IAM profile, per agent</span>
   </div>
 
   <div class="banner banner-info">
     <span class="banner-icon"><svg class="icon"><use href="#i-bot"/></svg></span>
     <div class="banner-text">
       <strong>Manage every agent from one place</strong>
-      Claude Code, Codex, Cursor, and other agents auto-register the first time they run in a
-      Prismor-enabled workspace. <strong>Blocked</strong> denies every tool call from that agent
-      (kill switch) · <strong>Observe</strong> logs threats without blocking ·
-      <strong>Enforce</strong> blocks them in real time. Saved to <code>.prismor/agents.yaml</code>.
+      <strong>Blocked</strong> = kill switch · <strong>Observe</strong> = log only ·
+      <strong>Enforce</strong> = block. Saved to <code>.prismor/agents.yaml</code>.
     </div>
   </div>
 
@@ -2815,7 +2816,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div id="page-sessions" class="page">
   <div class="section" style="margin-top:0">
     <h2>Live Sessions</h2><div class="rule"></div>
-    <span class="hint">pause Prismor, clear scope, or unblock a stuck agent. Per-agent kill switch lives in the Agents tab</span>
+    <span class="hint">pause, clear scope, or unblock a stuck agent</span>
   </div>
 
   <div id="enrollBannerSess"></div>
@@ -2866,7 +2867,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   <div class="section">
     <h2>All Sessions</h2><div class="rule"></div>
-    <span class="hint">full session log: click session row above for controls</span>
+    <span class="hint">full session log</span>
   </div>
 
   <div class="card">
@@ -3042,7 +3043,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       </div>
     </div>
     <div class="node-panel" id="sessNodePanel">
-      <div class="node-panel-empty">Select a node in the flow to inspect the tool call, its verdict, and the policy that decided it.</div>
+      <div class="node-panel-empty">Select a node to see its verdict.</div>
     </div>
   </div>
 </div>
@@ -3051,7 +3052,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div id="page-policy" class="page">
   <div class="section" style="margin-top:0">
     <h2>Policy Control</h2><div class="rule"></div>
-    <span class="hint">human-only; changes take effect within 30 s on running agents</span>
+    <span class="hint">human-only · live within 30 s</span>
   </div>
 
   <div id="enrollBanner"></div>
@@ -3079,9 +3080,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div id="pscope-rules" class="policy-scope-pane active">
     <div class="rules-legend">
       <span><span class="rule-verdict blocks">blocks</span> stops the call</span>
-      <span><span class="rule-verdict reports">reports</span> records it, the call proceeds</span>
-      <span><span class="rule-lock"><svg class="icon"><use href="#i-lock"/></svg> Pinned</span> safety floor, cannot be turned off</span>
-      <span class="rules-legend-note">A toggle decides whether a rule runs at all. Whether it blocks or reports comes from the policy's enforce selection. Saved to the project policy file; agents pick it up within 30&nbsp;s.</span>
+      <span><span class="rule-verdict reports">reports</span> call proceeds</span>
+      <span><span class="rule-lock"><svg class="icon"><use href="#i-lock"/></svg> Pinned</span> cannot be turned off</span>
+      <span class="rules-legend-note">Toggle = rule on or off. Block vs report comes from the policy mode.</span>
     </div>
     <div class="rules-toolbar">
       <input id="rulesSearch" class="rules-search" type="text" spellcheck="false"
@@ -3110,10 +3111,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <span class="banner-icon"><svg class="icon"><use href="#i-globe"/></svg></span>
       <div class="banner-text">
         <strong>Where agents may connect</strong>
-        Off by default. Turn it on in <em>observe</em> first and read
-        <code>prismor egress report</code>: it lists every destination your recorded sessions
-        actually contacted, so you can see what enforcing would have broken before it breaks it.
-        Saved to <code>.prismor/policy.yaml</code> under <code>settings.egress</code>.
+        Off by default. Start in <em>observe</em>, then read
+        <code>prismor egress report</code> to see what enforcing would break.
       </div>
     </div>
 
@@ -3170,10 +3169,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <span class="banner-icon"><svg class="icon"><use href="#i-globe"/></svg></span>
       <div class="banner-text">
         <strong>Global policy: not applied by the runtime yet</strong>
-        This file is read and written here, but the policy engine merges only the built-in
-        defaults, the project file, and any org policy, so edits below do not currently change
-        what agents are allowed to do. Use the <strong>Project</strong> tab, or
-        <code>prismor setup</code>, to change enforcement.
+        Edits here do not change what agents may do. Use the <strong>Project</strong> tab.
         Path: <code id="globalPolicyPath">~/.prismor/policy.yaml</code>
       </div>
     </div>
@@ -3209,9 +3205,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <span class="banner-icon"><svg class="icon"><use href="#i-folder"/></svg></span>
       <div class="banner-text">
         <strong>Project policy</strong>
-        Overrides global settings for this project only. Stored in
-        <code id="projectPolicyPath">.prismor/policy.yaml</code> alongside your code.
-        Merge precedence: enterprise &gt; project &gt; global.
+        Overrides global for this project. Stored in
+        <code id="projectPolicyPath">.prismor/policy.yaml</code>.
+        Precedence: enterprise &gt; project &gt; global.
       </div>
     </div>
     <div class="policy-header">
@@ -3253,7 +3249,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <textarea id="enterprisePolicyEditor" class="yaml-editor" readonly spellcheck="false"
       placeholder="# No enterprise policy: device is not enrolled."></textarea>
     <div class="policy-actions">
-      <span style="font-size:11px;color:var(--gray-400)">Read-only: managed by your org admin in the Prismor web dashboard.</span>
+      <span style="font-size: 12px;color:var(--gray-400)">Read-only: managed by your org admin in the Prismor web dashboard.</span>
     </div>
   </div>
 
@@ -3263,8 +3259,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <span class="banner-icon"><svg class="icon"><use href="#i-merge"/></svg></span>
       <div class="banner-text">
         <strong>Effective policy</strong>
-        What actually runs on this machine right now: global + project + enterprise merged together.
-        Enterprise settings take precedence; core protections can never be disabled.
+        What runs right now: global + project + enterprise merged.
+        Core protections can never be disabled.
       </div>
     </div>
     <div class="policy-header">
@@ -3275,7 +3271,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <textarea id="effectivePolicyEditor" class="yaml-editor" readonly spellcheck="false"
       placeholder="# Loading effective policy…"></textarea>
     <div class="policy-actions">
-      <span style="font-size:11px;color:var(--gray-400)">Read-only: edit Global or Project to change this.</span>
+      <span style="font-size: 12px;color:var(--gray-400)">Read-only: edit Global or Project to change this.</span>
     </div>
   </div>
 </div>
@@ -3324,7 +3320,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div class="prismor-cta">
   <div class="prismor-cta-text">
     <strong>Rolling Prismor out to a team?</strong>
-    <span>This local dashboard stays free and open source. Enterprise adds fleet visibility, signed remote policy, org kill switch, and audit history.</span>
+    <span>Free and open source. Enterprise adds fleet visibility, remote policy and audit history.</span>
   </div>
   <a class="prismor-cta-btn" href="#" onclick="openUpgradeModal();return false">Talk to us</a>
 </div>
@@ -3759,7 +3755,7 @@ function renderExtensionHead(r) {
       '<span class="ext-kind">' + safe(r.kind || '') + '</span><b>' + safe(r.name || r.id) + '</b>' +
       (r.capabilities || []).map(c => '<span class="ext-cap ' + safeAttr(c) + '">' + safe(c.replace(/_/g, ' ')) + '</span>').join('') + '</div>' +
     '<dl class="ext-kv">' + kv + '</dl>' +
-    (r.status && r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">You have read what it does. Prismor stops flagging it, and flags it again if its files change.</span>' : '');
+    (r.status && r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>' : '');
 }
 function renderDepHead(it) {
   document.getElementById('extdCrumb').textContent = it.name;
@@ -3828,7 +3824,7 @@ const SESS_CAP = {runs_code: 'runs code', network: 'uses the network', remote_in
 function sessCaps(x) { return (x.capabilities || []).map(c => '<span class="ext-cap ' + safeAttr(c) + '">' + safe(SESS_CAP[c] || c.replace(/_/g, ' ')) + '</span>').join(''); }
 function sessReviewBadge(x) {
   return x.reviewed ? '<span class="ext-badge approved" title="Someone marked it reviewed, and its files have not changed since.">reviewed</span>'
-    : '<span class="ext-badge new" title="New or changed since anyone looked at it. Open it to read what it does.">not reviewed</span>';
+    : '<span class="ext-badge new" title="New or changed since last looked at">not reviewed</span>';
 }
 function sessExtRow(x, calls) {
   const mine = calls.filter(ev => ev.extension && ev.extension.id === x.id);
@@ -3847,7 +3843,7 @@ function sessExtRow(x, calls) {
       (hook && hook.prismor ? '<span class="ext-badge approved" title="Prismor\'s own screening hook.">prismor</span>' : sessReviewBadge(x)) + what + sessCaps(x) + use +
       (hook ? '' : '<span class="ext-origin">' + safe(x.origin || '') + '</span>') + '</div>' +
     '<div class="ext-body"><dl class="ext-kv">' + kv + docs + '</dl>' +
-      (x.reviewed || (hook && hook.prismor) ? '' : '<button class="ext-approve" onclick="extApprove(\'' + id + '\')">Mark reviewed</button><span class="ext-review-note">Once you have read what it does. Prismor flags it again if its files change.</span>') +
+      (x.reviewed || (hook && hook.prismor) ? '' : '<button class="ext-approve" onclick="extApprove(\'' + id + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>') +
       ' <a class="ext-sess" style="margin-left:10px" onclick="openExtension(\'' + id + '\')">every session that used it →</a></div></div>';
 }
 function renderSessionExtensions() {
@@ -3874,7 +3870,7 @@ function renderSessionExtensions() {
   el.innerHTML = '<details class="sess-ext-all"' + (_sessExtOpen.__all ? ' open' : '') + ' ontoggle="_sessExtOpen.__all=this.open"><summary class="sess-ext-head">' +
       '<span class="sess-dot ' + (unrev || hookUnrev ? 'warn' : 'ok') + '"></span><span class="sess-ran-title">Extensions in this session</span>' +
       '<span class="sess-sum">' + line + '</span><span class="sess-ext-toggle">details</span></summary>' +
-    '<div class="sess-sub">Skills and MCP servers the agent chose to use</div>' +
+    '<div class="sess-sub">Skills and MCP servers used</div>' +
     (used.length ? used.map(x => sessExtRow(x, calls)).join('') : '<div class="ext-quiet sess-none">None in this session.</div>') +
     (hooks.length ? '<div class="sess-sub">Background hooks <span>run automatically on agent events (start, each tool call, stop); the agent does not choose them</span></div>' + hookGroups : '') +
     '</details>';
@@ -4132,10 +4128,10 @@ function renderExtensions() {
   const sess = d.sessions || [], unrev = sess.filter(s => s.unreviewed).length;
   const review = d.rows.filter(r => r.needs_review).length, idle = d.rows.filter(r => r.never_used).length;
   document.getElementById('extSummary').innerHTML = [
-    [review, 'Need review', 'New or changed since anyone looked. Read each one, then mark it reviewed.', review ? 'warn' : '', "_extView='installed';_extFilter='review';renderExtensions()"],
-    [d.rows.filter(r => (r.used_in || []).length).length, 'Used by a session', 'Loaded by at least one recorded agent session.', '', "_extView='installed';_extFilter='all';renderExtensions()"],
-    [d.rows.length, 'Installed on this machine', idle + ' never used by any session', '', "_extView='installed';_extFilter='all';renderExtensions()"],
-    [unrev, 'Sessions that ran unreviewed code', unrev ? 'An agent loaded something nobody had read yet.' : 'Every session so far loaded only reviewed extensions.', unrev ? 'warn' : '', "_extView='sessions';renderExtensions()"]]
+    [review, 'Need review', 'New or changed', review ? 'warn' : '', "_extView='installed';_extFilter='review';renderExtensions()"],
+    [d.rows.filter(r => (r.used_in || []).length).length, 'Used by a session', 'Loaded in a recorded session', '', "_extView='installed';_extFilter='all';renderExtensions()"],
+    [d.rows.length, 'Installed', idle + ' never used', '', "_extView='installed';_extFilter='all';renderExtensions()"],
+    [unrev, 'Ran unreviewed code', unrev ? 'Loaded something unread' : 'All reviewed', unrev ? 'warn' : '', "_extView='sessions';renderExtensions()"]]
     .map(([n, label, sub, cls, go]) => '<div class="ext-stat ' + cls + '" onclick="' + go + '"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
   document.getElementById('extViews').style.display = '';
   document.getElementById('extViews').innerHTML = [['sessions', 'By session', sess.length], ['agents', 'By agent', (d.agents || []).length], ['installed', 'Installed', d.rows.length]]
@@ -4176,7 +4172,7 @@ function renderExtensions() {
         '<span class="ext-origin">' + safe(r.origin || '') + '</span>' +
         (r.agents || []).filter(a => a !== 'any').map(a => '<span class="ext-agent">' + agentIcon(a) + safe(a) + '</span>').join('') + '</div>' +
       '<div class="ext-body"><dl class="ext-kv">' + kv + used + docs + '</dl>' +
-        (r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">You have read what it does. Prismor stops flagging it, and flags it again if its files change.</span>' : '') +
+        (r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>' : '') +
       '</div></div>';
   }).join('') + (rows.length > 300 ? '<div class="empty">Showing 300 of ' + rows.length + '. Narrow with a filter.</div>' : '')
     : '<div class="empty">Nothing here. ' + (_extFilter === 'review' ? 'Every extension on this machine has been seen before.' : '') + '</div>';
@@ -4337,11 +4333,11 @@ function renderExtensionUsage(it) {
     ['First used', first ? extWhen(first) : '-'], ['Last used', last ? extWhen(last) : '-']];
   const target = {mcp: ['Tools called', r => r.target], package: ['Versions and verdicts', r => [r.target, r.note].filter(Boolean).join(' ')]}[it.kind];
   el.innerHTML = '<div class="extd-kpis">' + kpis.map(([l, v]) => '<div><b>' + safe(String(v)) + '</b>' + l + '</div>').join('') + '</div>' +
-    extBars(extActivity(deps, 30), 'big') + '<div class="ext-quiet" style="font-size:11px">calls over the window, by the day each session last used it</div>' +
+    extBars(extActivity(deps, 30), 'big') + '<div class="ext-quiet" style="font-size: 12px">calls over the window, by the day each session last used it</div>' +
     '<div class="extd-break">' + (target ? '<div><h4>' + target[0] + '</h4>' + extTally(deps, target[1]) + '</div>' : '') +
       '<div><h4>By agent</h4>' + extTally(deps, r => r.agent) + '</div>' +
       '<div><h4>By project</h4>' + extTally(deps, r => r.workspace.split('/').pop() || r.workspace) + '</div></div>' +
-    '<h4 class="ext-quiet" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:4px 0 6px">Sessions</h4>' +
+    '<h4 class="ext-quiet" style="font-size: 12px;text-transform:uppercase;letter-spacing:.06em;margin:4px 0 6px">Sessions</h4>' +
     sess.slice(0, 200).map(s => '<div class="ext-row"><div class="ext-use" onclick="navigateToSession(\'' + safeJsArg(s.session) + '\', \'' + safeJsArg(s.workspace) + '\')">' +
       '<span class="ext-agent">' + agentIcon(s.agent) + safe(extAgentName(s.agent)) + '</span><span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
       '<span class="ext-quiet">' + s.calls + ' call' + (s.calls === 1 ? '' : 's') + '</span><span class="ext-origin">' + safe(s.workspace) + '</span>' +
@@ -4401,7 +4397,7 @@ function mcpRiskChip(s) {
 }
 function mcpDeclaredMarkup(s) {
   const decl = s.declared_in || [];
-  if (!decl.length) return '<div class="mcp-meta mcp-muted">Not declared in any config Prismor scans' + (s.kind === 'mirror' ? ', served in-process by the gateway.' : (s.kind === 'seen' ? ', known only from calls the agent made.' : ', listed because this workspace\'s policy scope names it.')) + '</div>';
+  if (!decl.length) return '<div class="mcp-meta mcp-muted">Not in any scanned config' + (s.kind === 'mirror' ? ' \u00b7 served by the gateway' : (s.kind === 'seen' ? ' \u00b7 seen in calls only' : ' \u00b7 named by policy scope')) + '</div>';
   return decl.map(d => {
     const how = d.url ? '<code>' + safe(d.url) + '</code>' : (d.command ? '<code>' + safe(d.command) + '</code>' : '');
     return '<div class="mcp-meta">' +
@@ -4703,7 +4699,7 @@ async function fetchAndRenderDrawer() {
     if (e.name === 'AbortError') return;
     if (sessId !== _drawerSessId) return;
     document.getElementById('sessDrawerBody').innerHTML =
-      '<div style="color:#b91c1c;font-size:11px">Failed to load session: ' + safe(e.message) + '</div>';
+      '<div style="color:#b91c1c;font-size: 12px">Failed to load session: ' + safe(e.message) + '</div>';
   } finally {
     if (_drawerAbort === controller) _drawerAbort = null;
   }
@@ -4754,14 +4750,14 @@ function renderDrawerContent(sessId, ws, data) {
         '<div class="drawer-rule-row"><span class="drawer-rule-label">Normalized type</span>' +
           '<span class="scoped-tag tag-allow">' + safe(ev.actionType || 'event') + '</span></div>' +
         '<div class="drawer-rule-row" style="align-items:flex-start;margin-bottom:0"><span class="drawer-rule-label">Action</span>' +
-          '<div style="font-size:11px;color:var(--gray-600);line-height:1.5;word-break:break-word">' + safe(ev.action || '') + '</div></div>' +
+          '<div style="font-size: 12px;color:var(--gray-600);line-height:1.5;word-break:break-word">' + safe(ev.action || '') + '</div></div>' +
         (policy.ruleId || policy.title || policy.evidence || categoryLabel ?
           '<div class="drawer-policy-card ' + (blocked ? '' : 'allowed') + '">' +
             '<div class="drawer-rule-row"><span class="drawer-rule-label">Policy</span>' +
-              '<div><div style="font-size:11px;font-weight:600;color:var(--gray-800)">' + safe(ruleLabel(policy.ruleId || policy.id || 'runtime-policy')) + '</div>' +
-              (categoryLabel ? '<div style="font-size:10px;color:var(--gray-500);margin-top:2px">' + safe(categoryLabel) + '</div>' : '') + '</div></div>' +
-            (policy.title ? '<div class="drawer-rule-row"><span class="drawer-rule-label">Rule</span><div style="font-size:11px;color:var(--gray-700);line-height:1.4">' + safe(policy.title) + '</div></div>' : '') +
-            (policy.evidence ? '<div class="drawer-rule-row"><span class="drawer-rule-label">Reason</span><div style="font-size:11px;color:var(--gray-700);line-height:1.4">' + safe(policy.evidence) + '</div></div>' : '') +
+              '<div><div style="font-size: 12px;font-weight:600;color:var(--gray-800)">' + safe(ruleLabel(policy.ruleId || policy.id || 'runtime-policy')) + '</div>' +
+              (categoryLabel ? '<div style="font-size: 11px;color:var(--gray-500);margin-top:2px">' + safe(categoryLabel) + '</div>' : '') + '</div></div>' +
+            (policy.title ? '<div class="drawer-rule-row"><span class="drawer-rule-label">Rule</span><div style="font-size: 12px;color:var(--gray-700);line-height:1.4">' + safe(policy.title) + '</div></div>' : '') +
+            (policy.evidence ? '<div class="drawer-rule-row"><span class="drawer-rule-label">Reason</span><div style="font-size: 12px;color:var(--gray-700);line-height:1.4">' + safe(policy.evidence) + '</div></div>' : '') +
             '<div class="drawer-rule-row" style="margin-bottom:0"><span class="drawer-rule-label">Mode</span>' +
               '<span class="scoped-tag ' + (policy.mode === 'enforce' || blocked ? 'tag-deny' : 'tag-net') + '">' + safe(policy.mode || (blocked ? 'enforce' : 'observe')) + '</span>' +
               (policy.action ? '<span class="scoped-tag ' + (policy.action === 'block' ? 'tag-deny' : 'tag-allow') + '">' + safe(policy.action) + '</span>' : '') +
@@ -4802,7 +4798,7 @@ function renderDrawerContent(sessId, ws, data) {
             '</div>' +
             '<div class="trail-action">' + safe(item.action || 'event') + '</div>' +
             (blocked && (policy.ruleId || policy.evidence) ?
-              '<div style="font-size:10px;color:var(--gray-500);margin-top:3px">' +
+              '<div style="font-size: 11px;color:var(--gray-500);margin-top:3px">' +
                 safe(policy.ruleId || 'runtime-policy') + (policy.evidence ? ' · ' + safe(policy.evidence) : '') +
               '</div>' : '') +
           '</div>' +
@@ -4832,7 +4828,7 @@ function renderDrawerContent(sessId, ws, data) {
   const rulesDiv = document.createElement('div');
   rulesDiv.id = 'scopeRulesView';
   if (!scoped) {
-    rulesDiv.innerHTML = '<div style="font-size:11px;color:var(--gray-400)">No scope set: full default policy applies.</div>';
+    rulesDiv.innerHTML = '<div style="font-size: 12px;color:var(--gray-400)">No scope set: full default policy applies.</div>';
   } else {
     renderScopeView(rulesDiv, scoped);
   }
@@ -4844,7 +4840,7 @@ function renderDrawerContent(sessId, ws, data) {
   blkSec.className = 'drawer-section';
   blkSec.innerHTML = '<div class="drawer-section-title">Recent blocks in this session</div>';
   if (!blocks.length) {
-    blkSec.innerHTML += '<div style="font-size:11px;color:var(--gray-400)">No blocks recorded for this session.</div>';
+    blkSec.innerHTML += '<div style="font-size: 12px;color:var(--gray-400)">No blocks recorded for this session.</div>';
   } else {
     blkSec.innerHTML += blocks.map(b =>
       '<div class="drawer-block-item">' +
@@ -4852,7 +4848,7 @@ function renderDrawerContent(sessId, ws, data) {
         '<div class="drawer-block-body">' +
           '<div class="drawer-block-title">' + safe(b.title) + '</div>' +
           '<div class="drawer-block-meta">' + safe(CAT_LABELS[b.category] || b.category) + ' · ' + safe(b.ts || '') + '</div>' +
-          (b.evidence ? '<div style="margin-top:4px;font-size:10px;color:var(--gray-500)">' + safe(b.evidence) + '</div>' : '') +
+          (b.evidence ? '<div style="margin-top:4px;font-size: 11px;color:var(--gray-500)">' + safe(b.evidence) + '</div>' : '') +
         '</div>' +
       '</div>'
     ).join('');
@@ -4881,7 +4877,7 @@ function renderScopeView(container, scoped) {
   const netOk   = !scoped.deny_network;
   let html = '';
   if (scoped.paused) {
-    html += '<div style="margin-bottom:8px"><span class="scoped-tag" style="background:#fef9c3;color:#92400e;padding:3px 10px;border-radius:4px;font-size:11px"><svg class="icon"><use href="#i-pause"/></svg> Immunity is paused</span></div>';
+    html += '<div style="margin-bottom:8px"><span class="scoped-tag" style="background:#fef9c3;color:#92400e;padding:3px 10px;border-radius:4px;font-size: 12px"><svg class="icon"><use href="#i-pause"/></svg> Immunity is paused</span></div>';
   }
   if (allowed.length) html += '<div class="drawer-rule-row"><span class="drawer-rule-label">Allowed tools</span><div class="drawer-rule-tags">' + allowed.map(t => '<span class="scoped-tag tag-allow">' + safe(t) + '</span>').join('') + '</div></div>';
   if (denied.length)  html += '<div class="drawer-rule-row"><span class="drawer-rule-label">Denied tools</span><div class="drawer-rule-tags">'  + denied.map(t  => '<span class="scoped-tag tag-deny">'  + safe(t) + '</span>').join('') + '</div></div>';
@@ -4930,7 +4926,7 @@ function renderScopeEditor(container, scoped) {
       '<span class="drawer-rule-label" style="padding-top:4px">Allowed tools</span>' +
       '<div>' +
         '<div class="drawer-rule-tags" id="editTagsAllow">' +
-          (allowed.length ? allowed.map(t => tagX('allow', t, 'tag-allow')).join('') : '<span style="font-size:11px;color:var(--gray-300)">none</span>') +
+          (allowed.length ? allowed.map(t => tagX('allow', t, 'tag-allow')).join('') : '<span style="font-size: 12px;color:var(--gray-300)">none</span>') +
         '</div>' +
         '<div class="tool-add-row">' +
           '<select class="tool-add-select" id="addToolAllow"><option value="">+ add tool…</option>' + addOpts('allow') + '</select>' +
@@ -4944,7 +4940,7 @@ function renderScopeEditor(container, scoped) {
       '<span class="drawer-rule-label" style="padding-top:4px">Denied tools</span>' +
       '<div>' +
         '<div class="drawer-rule-tags" id="editTagsDeny">' +
-          (denied.length ? denied.map(t => tagX('deny', t, 'tag-deny')).join('') : '<span style="font-size:11px;color:var(--gray-300)">none</span>') +
+          (denied.length ? denied.map(t => tagX('deny', t, 'tag-deny')).join('') : '<span style="font-size: 12px;color:var(--gray-300)">none</span>') +
         '</div>' +
         '<div class="tool-add-row">' +
           '<select class="tool-add-select" id="addToolDeny"><option value="">+ add tool…</option>' + addOpts('deny') + '</select>' +
@@ -4965,7 +4961,7 @@ function renderScopeEditor(container, scoped) {
     '<div class="scope-save-row">' +
       '<button class="btn-primary" onclick="scopeSave()">Save changes</button>' +
       '<button class="btn-ghost"   onclick="toggleScopeEdit()">Cancel</button>' +
-      '<span id="scopeSaveStatus" style="font-size:11px;color:var(--gray-400);margin-left:4px"></span>' +
+      '<span id="scopeSaveStatus" style="font-size: 12px;color:var(--gray-400);margin-left:4px"></span>' +
     '</div>';
 }
 
@@ -5126,11 +5122,11 @@ function renderPolicyPrecedenceHtml(precedence, opts = {}) {
   const intro = opts.intro || 'Highest active layer wins.';
   if (!chain.length) {
     return '<div class="drawer-section-title">' + safe(title) + '</div>' +
-      '<div style="font-size:11px;color:var(--gray-500);margin-top:4px">' + safe(intro) + '</div>' +
-      '<div style="font-size:11px;color:var(--gray-400);margin-top:8px">No policy layers loaded yet.</div>';
+      '<div style="font-size: 12px;color:var(--gray-500);margin-top:4px">' + safe(intro) + '</div>' +
+      '<div style="font-size: 12px;color:var(--gray-400);margin-top:8px">No policy layers loaded yet.</div>';
   }
   return '<div class="drawer-section-title">' + safe(title) + '</div>' +
-    '<div style="font-size:11px;color:var(--gray-500);margin-top:4px;margin-bottom:10px">' + safe(intro) + '</div>' +
+    '<div style="font-size: 12px;color:var(--gray-500);margin-top:4px;margin-bottom:10px">' + safe(intro) + '</div>' +
     chain.map((entry, idx) => {
       const badges = [
         entry.winning ? '<span class="scoped-tag tag-allow">takes precedence</span>' : '',
@@ -5143,8 +5139,8 @@ function renderPolicyPrecedenceHtml(precedence, opts = {}) {
       const card = '<div class="drawer-policy-card ' + (entry.winning ? '' : ' allowed') + '">' +
         '<div class="drawer-rule-row"><span class="drawer-rule-label">' + safe(entry.label || entry.scope) + '</span>' +
           '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + badges + openBtn + '</div></div>' +
-        '<div style="font-size:11px;color:var(--gray-600);line-height:1.5">' + safe(entry.summary || '') + '</div>' +
-        (entry.path ? '<div style="font-size:10px;color:var(--gray-400);margin-top:4px;word-break:break-all">' + safe(entry.path) + '</div>' : '') +
+        '<div style="font-size: 12px;color:var(--gray-600);line-height:1.5">' + safe(entry.summary || '') + '</div>' +
+        (entry.path ? '<div style="font-size: 11px;color:var(--gray-400);margin-top:4px;word-break:break-all">' + safe(entry.path) + '</div>' : '') +
       '</div>';
       const row = '<div class="prec-row"><div class="prec-rank">' + (idx + 1) + '</div>' + card + '</div>';
       const arrow = idx < chain.length - 1 ? '<div class="prec-arrow">&#8595;</div>' : '';
@@ -5830,7 +5826,7 @@ function renderNodePanelDefault(data){
   const blocks=(data&&data.recent_blocked)||[];
   let html='<h4>Session summary</h4>';
   if (blocks.length){
-    html+='<div style="font-size:11px;color:var(--gray-500);margin-bottom:8px">'+blocks.length+' block'+(blocks.length===1?'':'s')+' in this session.</div>';
+    html+='<div style="font-size: 12px;color:var(--gray-500);margin-bottom:8px">'+blocks.length+' block'+(blocks.length===1?'':'s')+' in this session.</div>';
     html+=blocks.slice(0,4).map(b=>'<div class="drawer-block-item">'+
       '<span class="blocked-sev"><span class="sev-badge '+sevClass(b.severity)+'">'+safe(b.severity)+'</span></span>'+
       '<div class="drawer-block-body"><div class="drawer-block-title">'+safe(b.title)+'</div>'+
@@ -5862,23 +5858,23 @@ function renderNodePanel(ev){
         '<span class="scoped-tag tag-net">'+safe(ev.toolTag||ev.type||'unknown')+'</span></div>'+
       '<div class="drawer-rule-row"><span class="drawer-rule-label">Type</span>'+
         '<span class="scoped-tag tag-allow">'+safe(ev.type||'event')+'</span></div>'+      ((ev.agentEvent || ev.hookMs != null) ? '<div class="drawer-rule-row"><span class="drawer-rule-label">Hook</span>'+
-        '<span style="font-size:11px;color:var(--gray-600)">'+safe(ev.agentEvent||'hook')+(ev.hookMs != null ? ' '+fmtMs(ev.hookMs) : '')+
+        '<span style="font-size: 12px;color:var(--gray-600)">'+safe(ev.agentEvent||'hook')+(ev.hookMs != null ? ' '+fmtMs(ev.hookMs) : '')+
         (ev.postHookMs != null ? ' &middot; PostToolUse '+fmtMs(ev.postHookMs) : '')+'</span></div>' : '')+
       hookRunsHtml(ev)+
       (ev.extension ? '<div class="drawer-rule-row stack"><span class="drawer-rule-label">Caused by</span>'+
-        '<div style="font-size:11px;line-height:1.5;color:var(--gray-600)">'+extCauseChip(ev.extension)+
+        '<div style="font-size: 12px;line-height:1.5;color:var(--gray-600)">'+extCauseChip(ev.extension)+
         '<div>The '+safe(ev.extension.kind)+' '+safe(ev.extension.via||'caused this call')+'.'+
         (ev.extension.reviewed ? '' : ' No human has reviewed it.')+'</div></div></div>' : '')+
       '<div class="drawer-rule-row" style="align-items:flex-start"><span class="drawer-rule-label">When</span>'+
-        '<div style="font-size:11px;color:var(--gray-600)">'+safe(ev.tsAbs||ev.ts||'')+'</div></div>'+
+        '<div style="font-size: 12px;color:var(--gray-600)">'+safe(ev.tsAbs||ev.ts||'')+'</div></div>'+
       '<div class="drawer-rule-row stack" style="margin-bottom:0"><span class="drawer-rule-label">Action</span>'+
         '<div class="drawer-code">'+safe(ev.action||'')+'</div></div>'+
       ((policy.ruleId||policy.title||policy.evidence||categoryLabel)?
         '<div class="drawer-policy-card '+({allow:'allowed',warn:'warned',block:''})[v]+'">'+
           '<div class="drawer-rule-row"><span class="drawer-rule-label">Policy</span>'+
-            '<div><div style="font-size:11px;font-weight:600;color:var(--gray-800)">'+safe(policy.ruleId||policy.id||'runtime-policy')+'</div>'+
-            (categoryLabel?'<div style="font-size:10px;color:var(--gray-500);margin-top:2px">'+safe(categoryLabel)+'</div>':'')+'</div></div>'+
-          (policy.title?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Rule</span><div style="font-size:11px;color:var(--gray-700);line-height:1.4">'+safe(policy.title)+'</div></div>':'')+
+            '<div><div style="font-size: 12px;font-weight:600;color:var(--gray-800)">'+safe(policy.ruleId||policy.id||'runtime-policy')+'</div>'+
+            (categoryLabel?'<div style="font-size: 11px;color:var(--gray-500);margin-top:2px">'+safe(categoryLabel)+'</div>':'')+'</div></div>'+
+          (policy.title?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Rule</span><div style="font-size: 12px;color:var(--gray-700);line-height:1.4">'+safe(policy.title)+'</div></div>':'')+
           (policy.matched?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Matched</span><div class="match-hit">'+safe(policy.matched)+'</div></div>':'')+
           (policy.pattern?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Pattern</span><div><details><summary>Show the regex ('+String(policy.pattern).length+' chars)</summary><div class="match-pattern">'+safe(policy.pattern)+'</div></details></div></div>':'')+
           (policy.evidence?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Why it matched</span>'+reasonHtml(policy)+'</div>':'')+
@@ -5915,7 +5911,7 @@ function reasonHtml(policy){
   const m = ev.match(/Heuristic pre-screen score:\s*([\d.]+)\s*Heuristic signals found:\s*([^\n]*)/);
   if (!m) return '<div class="drawer-code">' + highlightHit(ev, policy.matched) + '</div>';
   const score = parseFloat(m[1]), signals = m[2].trim() === 'none' ? [] : m[2].split(',').map(x => x.trim().replace(/_/g, ' ')).filter(Boolean);
-  return '<div style="font-size:11.5px;line-height:1.5;color:var(--gray-700)">The text scored <b>' + Math.round(score * 100) + '/100</b> on the ' +
+  return '<div style="font-size: 12px;line-height:1.5;color:var(--gray-700)">The text scored <b>' + Math.round(score * 100) + '/100</b> on the ' +
     'prompt-injection pre-screen' + (signals.length ? ', because it looks like: ' + signals.map(x => '<span class="scoped-tag tag-net">' + safe(x) + '</span>').join(' ') : '') + '.' +
     '<div style="color:var(--gray-500);margin-top:4px">The full text it read is under <a class="ext-sess" onclick="document.querySelector(\'#sessNodePanel .art-row\')?.scrollIntoView({behavior:\'smooth\'})">Artefacts</a>.</div></div>';
 }
@@ -5926,7 +5922,7 @@ function modeHtml(policy, v){
   const text = v === 'block' ? 'Blocked. The rule says ' + (act || 'block') + ' and Prismor is enforcing.'
     : act === 'block' && mode === 'observe' ? 'Only logged. The rule says block, but Prismor is in observe mode, so the call went through.'
     : 'Logged as a warning' + (act ? ' (rule action: ' + act + ')' : '') + '. The call went through.';
-  return '<div style="font-size:11.5px;line-height:1.5;color:var(--gray-700)">' + safe(text) + '</div>';
+  return '<div style="font-size: 12px;line-height:1.5;color:var(--gray-700)">' + safe(text) + '</div>';
 }
 function highlightHit(text, hit){
   const body = String(text||'');
@@ -6020,7 +6016,7 @@ let donutChart, ringChart, lineChart, agentBarChart, toolBarChart, mcpBarChart, 
 function initCharts() {
   const theme = chartTheme();
   COLORS = theme.palette;
-  Chart.defaults.font.family = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+  Chart.defaults.font.family = 'Verdana, Geneva, "DejaVu Sans", sans-serif';
   Chart.defaults.font.size = 10;
   Chart.defaults.color = theme.text;
   ringChart = new Chart(document.getElementById('ringChart'), {
@@ -6237,7 +6233,7 @@ function renderFindings(rows){
       '<td class="finding-ev-cell" colspan="6">'+
         '<div>'+safe(f.evidence||'No evidence recorded.')+'</div>'+
         triggerBlock+
-        '<div style="margin-top:8px;font-size:10px;color:var(--gray-400)">session: <span title="'+safeAttr(f.sessionId)+'">'+safe(shortId(f.sessionId,32))+'</span></div>'+
+        '<div style="margin-top:8px;font-size: 11px;color:var(--gray-400)">session: <span title="'+safeAttr(f.sessionId)+'">'+safe(shortId(f.sessionId,32))+'</span></div>'+
       '</td>'+
     '</tr>';
   }).join('');
@@ -6386,7 +6382,7 @@ function onEventClick(sessionId, workspace, toolTagEnc, actionTypeEnc, actionEnc
   if (!sessionId) {
     const t = document.createElement('div');
     t.textContent = 'No session ID recorded for this event.';
-    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#f9fafb;font-size:11px;padding:8px 16px;border-radius:6px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
+    t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#f9fafb;font-size: 12px;padding:8px 16px;border-radius:6px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.2)';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
     return;
@@ -6415,9 +6411,9 @@ let _attn = {ext: null};
 function renderAttention(k){
   const items = [];
   const win = String(k.days)==='1' ? 'last 24 hours' : 'last '+k.days+' days';
-  if (k.blocked) items.push({n:k.blocked, t:'call'+(k.blocked===1?'':'s')+' blocked in the '+win, d:'See which rule stopped each one and whether it was right.', go:"document.querySelector('.tab-btn[data-tab=\\'sessions\\']')?.click()"});
+  if (k.blocked) items.push({n:k.blocked, t:'call'+(k.blocked===1?'':'s')+' blocked in the '+win, d:'See which rule stopped each one.', go:"document.querySelector('.tab-btn[data-tab=\\'sessions\\']')?.click()"});
   const ext = _attn.ext;
-  if (ext && ext.review) items.push({n:ext.review, t:'extension'+(ext.review===1?'':'s')+' waiting for review', d:'New or changed skills, MCP servers and hooks that put instructions into your agents. Read them once and mark reviewed.', go:"_extView='installed';_extFilter='review';document.querySelector('.tab-btn[data-tab=\\'extensions\\']')?.click()"});
+  if (ext && ext.review) items.push({n:ext.review, t:'extension'+(ext.review===1?'':'s')+' waiting for review', d:'New or changed skills, servers and hooks. Review once.', go:"_extView='installed';_extFilter='review';document.querySelector('.tab-btn[data-tab=\\'extensions\\']')?.click()"});
   if (!k.total) items.push({n:'', t:'No calls screened yet', d:'Run an agent in a hooked workspace, or run `prismor setup` to install the hooks.', go:''});
   // Headline is the first item; its own "what to do" line leads the list.
   document.getElementById('attnTitle').textContent = items.length ? (items[0].n ? fmtNum(items[0].n)+' '+items[0].t : items[0].t) : 'All clear';
@@ -6575,7 +6571,7 @@ async function loadSupplyChain(){
       const badge=b.verdict==='block'?'<span class="sev-badge sev-critical">block</span>':'<span class="sev-badge sev-medium">warn</span>';
       const ver=b.version?'<span class="pkg-ver">@'+safe(b.version)+'</span>':'';
       const adv=(b.advisoryIds||[]).slice(0,2).map(a=>'<span class="adv-pill" title="'+safeAttr(a)+'">'+safe(a)+'</span>').join('');
-      const more=(b.advisoryIds||[]).length>2?'<span style="font-size:10px;color:var(--gray-400)">+'+(b.advisoryIds.length-2)+'</span>':'';
+      const more=(b.advisoryIds||[]).length>2?'<span style="font-size: 11px;color:var(--gray-400)">+'+(b.advisoryIds.length-2)+'</span>':'';
       const sugg=b.recommended?'<span class="sugg-pill">'+safe(b.package+'@'+b.recommended)+'</span>':'<span class="sugg-none">-</span>';
       return '<tr title="'+safeAttr(b.installCmd||'')+'">'+
         '<td>'+badge+' <span class="pkg-name">'+safe(b.package)+'</span>'+ver+'</td>'+
@@ -6667,9 +6663,8 @@ function renderAgents(data) {
     agents.length + ' agent' + (agents.length === 1 ? '' : 's') + ' registered';
   const tbody = document.getElementById('agentsBody');
   if (!agents.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">No agents discovered yet. Agents ' +
-      'auto-register the first time they run in a Prismor-enabled workspace. ' +
-      'Install hooks with <code>prismor install</code>, then start Claude Code, Codex, or Cursor.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No agents yet. Run <code>prismor install</code>, '  +
+      'then start Claude Code, Codex, or Cursor.</td></tr>';
     return;
   }
   tbody.innerHTML = agents.map(a => {
@@ -6854,7 +6849,7 @@ async function toggleSessDetail(detailId, sessId, ws, idx) {
   if (!detail) return;
   const isOpen = detail.classList.contains('open');
   if (isOpen) { detail.classList.remove('open'); detail.innerHTML = ''; return; }
-  detail.innerHTML = '<div style="font-size:11px;color:var(--gray-400)">Loading…</div>';
+  detail.innerHTML = '<div style="font-size: 12px;color:var(--gray-400)">Loading…</div>';
   detail.classList.add('open');
   try {
     const params = ws ? `?workspace=${encodeURIComponent(ws)}` : '';
@@ -6864,7 +6859,7 @@ async function toggleSessDetail(detailId, sessId, ws, idx) {
     const pill = document.getElementById('pill-' + idx);
     if (pill) pill.innerHTML = statusPill({blockCount: (data.recent_blocked||[]).length}, data.scoped);
   } catch(e) {
-    detail.innerHTML = '<div style="font-size:11px;color:#b91c1c">Failed to load: ' + safe(e.message) + '</div>';
+    detail.innerHTML = '<div style="font-size: 12px;color:#b91c1c">Failed to load: ' + safe(e.message) + '</div>';
   }
 }
 
@@ -6879,25 +6874,25 @@ function renderSessDetail(el, data, idx) {
     const net = scoped.deny_network ? '<span class="scoped-tag tag-deny">network denied</span>' : '<span class="scoped-tag tag-net">network allowed</span>';
     const paused = scoped.paused ? '<span class="scoped-tag" style="background:#fef9c3;color:#92400e"><svg class="icon"><use href="#i-pause"/></svg> prismor paused</span>' : '';
     scopedHtml = '<div style="margin-bottom:8px">' +
-      '<div style="font-size:10px;color:var(--gray-400);margin-bottom:4px">Scoped rules</div>' +
+      '<div style="font-size: 11px;color:var(--gray-400);margin-bottom:4px">Scoped rules</div>' +
       paused +
-      (allowed ? '<div style="margin-bottom:2px"><span style="font-size:10px;color:var(--gray-500)">allow: </span>' + allowed + '</div>' : '') +
-      (denied ? '<div style="margin-bottom:2px"><span style="font-size:10px;color:var(--gray-500)">deny: </span>' + denied + '</div>' : '') +
+      (allowed ? '<div style="margin-bottom:2px"><span style="font-size: 11px;color:var(--gray-500)">allow: </span>' + allowed + '</div>' : '') +
+      (denied ? '<div style="margin-bottom:2px"><span style="font-size: 11px;color:var(--gray-500)">deny: </span>' + denied + '</div>' : '') +
       net +
     '</div>';
   } else {
-    scopedHtml = '<div style="font-size:11px;color:var(--gray-400);margin-bottom:8px">No session scope: default policy applies.</div>';
+    scopedHtml = '<div style="font-size: 12px;color:var(--gray-400);margin-bottom:8px">No session scope: default policy applies.</div>';
   }
 
   let blocksHtml = '';
   if (blocks.length) {
     blocksHtml = '<div class="blocked-list">' +
-      '<div style="font-size:10px;color:var(--gray-400);margin-bottom:6px">Recent blocks in this session</div>' +
+      '<div style="font-size: 11px;color:var(--gray-400);margin-bottom:6px">Recent blocks in this session</div>' +
       blocks.map(b =>
         '<div class="blocked-item">' +
           '<span class="blocked-sev"><span class="sev-badge ' + sevClass(b.severity) + '">' + safe(b.severity) + '</span></span>' +
           '<div><div style="font-weight:500">' + safe(b.title) + '</div>' +
-          '<div style="font-size:10px;color:var(--gray-400);margin-top:2px">' + safe(b.category) + ' · ' + safe(b.ts||'') + '</div></div>' +
+          '<div style="font-size: 11px;color:var(--gray-400);margin-top:2px">' + safe(b.category) + ' · ' + safe(b.ts||'') + '</div></div>' +
         '</div>'
       ).join('') +
     '</div>';
