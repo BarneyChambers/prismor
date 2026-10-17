@@ -801,19 +801,25 @@ def _own_prompt_injection(finding: Dict[str, Any], event: Dict[str, Any]) -> boo
     never blocks. Hidden-text injection keeps blocking: the person may not
     have seen what they pasted.
     """
+    from prismor.runtime.policy_engine import is_user_prompt
     return (
-        str(event.get("agent_event", "")) in ("UserPromptSubmit", "beforeSubmitPrompt")
-        and finding.get("category") == "prompt_injection"
+        is_user_prompt(event)
+        and finding.get("category") in ("prompt_injection", "prompt_injection_semantic")
         and finding.get("ruleId") != "prompt-injection-hidden"
     )
 
 
 def is_subagent_report(event: Dict[str, Any]) -> bool:
-    """Claude Code hands a finished background subagent's result to the main
-    agent as a UserPromptSubmit whose prompt is a <task-notification>. It is
-    tool output the person never typed, not their prompt."""
-    return (str(event.get("agent_event", "")) == "UserPromptSubmit"
-            and str(event.get("prompt") or "").lstrip().startswith("<task-notification>"))
+    """A wrapped subagent hand-back is tool output, not the person's prompt."""
+    from prismor.runtime.policy_engine import is_subagent_prompt
+    return is_subagent_prompt(event)
+
+
+def _subagent_injection_report(finding: Dict[str, Any], event: Dict[str, Any]) -> bool:
+    # Deliver returned text with an untrusted-content notice, as for post-tool
+    # output. A wrapper must never waive independent IAM or secret protections.
+    return (finding.get("category") in ("prompt_injection", "prompt_injection_semantic")
+            and is_subagent_report(event))
 
 
 def should_block(
@@ -823,13 +829,6 @@ def should_block(
 ) -> Dict[str, Any] | None:
     if not _is_pre_action(str(event.get("agent_event", ""))):
         return None
-    # Like any tool output, a subagent report is screened but never blocked:
-    # blocking it dropped the report (live, 2026-10-14 - the subagent had
-    # correctly reported a planted injection, and the judge blocked the quote)
-    # and showed the person raw XML. The dispatcher marks it untrusted instead.
-    if is_subagent_report(event):
-        return None
-
     # Authoritative enforce lever is the per-finding `mode` (derived from the
     # rule's mode, else the policy's default_mode — both default to "observe").
     # A finding blocks only when its effective mode is "enforce". block_categories
@@ -841,7 +840,8 @@ def should_block(
     for finding in findings:
         # A match inside inert text (commit message, PR body, grep pattern)
         # describes an action instead of performing it -- report, never block.
-        if finding.get("contextInert") or _own_prompt_injection(finding, event):
+        if (finding.get("contextInert") or _own_prompt_injection(finding, event)
+                or _subagent_injection_report(finding, event)):
             continue
         if str(finding.get("mode", "observe")).lower() == "enforce":
             # Reads are generally safe, so they only block for secret access —
@@ -876,10 +876,11 @@ def legacy_should_block(
     from prismor.runtime.contract import BLOCK, VERDICTS
     if not block_categories:
         return None
-    if not _is_pre_action(str(event.get("agent_event", ""))) or is_subagent_report(event):
+    if not _is_pre_action(str(event.get("agent_event", ""))):
         return None
     for finding in findings:
-        if finding.get("contextInert") or _own_prompt_injection(finding, event):
+        if (finding.get("contextInert") or _own_prompt_injection(finding, event)
+                or _subagent_injection_report(finding, event)):
             continue
         if str(finding.get("action") or BLOCK).lower() not in VERDICTS:
             continue

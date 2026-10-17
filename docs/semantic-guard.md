@@ -28,6 +28,26 @@ production workloads. The rest is handled in under a millisecond.
 command output, or fetched page is screened alongside the arguments, which is
 where injected text usually arrives.
 
+### Text provenance on coding-agent hooks
+
+Visible text submitted on a human prompt hook is reported, but neither regex nor
+semantic prompt-injection findings block that request or mark it as an injected
+session. Hidden instructions in pasted HTML still get the structural checks.
+Secret protection, IAM, and checks on the requested tool actions still apply.
+
+Prompts beginning with `<agent-message …>` or `<task-notification …>` are returned
+subagent text, not human requests. Their findings carry `source: tool_output`.
+Injection findings do not discard the report: on agents supporting prompt context,
+the dispatcher delivers it with an untrusted-content notice. Other agents retain
+stderr and audit findings. The wrapper does not exempt unrelated security rules.
+
+For a parent-written subagent brief, heuristic-only semantic findings are capped
+at warnings. A completed LLM judgment can still block the launch when its score
+meets the configured threshold. Independently enforced regex rules still apply
+to the brief. The child's tool calls and returned tool output
+keep their normal checks; the cap does not apply to a completed Agent/Task call's
+output. These source distinctions do not change standalone text checks.
+
 ## Attack Families Detected
 
 The heuristic layer covers:
@@ -107,7 +127,10 @@ an `api` judge one model round trip (about 1-3s), a CLI judge 8-35s.
 
 ![prismor setup picking the Codex CLI as judge, then a 0.55 heuristic score escalating to a 0.92 block](judge-provider.gif)
 
-Live inside `claude --dangerously-skip-permissions` with the Codex judge: a benign
+The recordings below show earlier prompt-hook behavior, before the human-prompt
+exemption described above. Tool-action enforcement remains separate.
+
+Recorded inside `claude --dangerously-skip-permissions` with the Codex judge: a benign
 prompt that trips the authority-claim heuristic (0.67) is cleared and the edit goes
 through; the credential-exfiltration prompt is blocked at 0.98.
 
