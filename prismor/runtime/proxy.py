@@ -479,9 +479,30 @@ def response_tool_calls(provider: str, body: Dict[str, Any]) -> List[Tuple[str, 
             calls.append((str(fn.get("name") or ""), _loads(fn.get("arguments"))))
     # Responses API
     for item in body.get("output") or []:
-        if isinstance(item, dict) and item.get("type") in ("function_call", "tool_call"):
-            calls.append((str(item.get("name") or ""), _loads(item.get("arguments"))))
+        call = _response_item_call(item)
+        if call is not None:
+            calls.append(call)
     return calls
+
+
+def _response_item_call(item: Any) -> Optional[Tuple[str, Any]]:
+    """``(tool_name, arguments)`` for a Responses API output item that runs something.
+
+    Not only ``function_call``: Codex's ``apply_patch`` arrives as a
+    ``custom_tool_call`` whose argument is a raw patch string, and the built-in
+    shell as a ``local_shell_call`` carrying an ``action``. Matching only
+    ``function_call`` handed both to the agent unscreened, enforce mode or not.
+    """
+    if not isinstance(item, dict):
+        return None
+    kind = item.get("type")
+    if kind in ("function_call", "tool_call"):
+        return str(item.get("name") or ""), _loads(item.get("arguments"))
+    if kind == "custom_tool_call":
+        return str(item.get("name") or ""), {"input": str(item.get("input") or "")}
+    if kind == "local_shell_call":
+        return "local_shell", item.get("action") or {}
+    return None
 
 
 def _loads(value: Any) -> Any:
@@ -1358,10 +1379,11 @@ class StreamScreen:
         """
         etype = event.get("type")
         item = event.get("item") if isinstance(event.get("item"), dict) else {}
-        is_call = item.get("type") in ("function_call", "tool_call")
+        call = _response_item_call(item)
+        is_call = call is not None
         if etype == "response.output_item.added" and is_call:
             self._holding = True
-            self._tool_name = str(item.get("name") or "")
+            self._tool_name = call[0]
             self._tool_json = []
             self._tool_index = int(event.get("output_index") or 0)
             self._pending = [chunk]
@@ -1372,10 +1394,14 @@ class StreamScreen:
             if etype == "response.function_call_arguments.delta":
                 self._tool_json.append(str(event.get("delta") or ""))
             elif etype == "response.output_item.done" and is_call:
-                if item.get("arguments"):   # the full arguments, authoritative
-                    self._tool_json = [str(item["arguments"])]
-                reason = self._verdict(self._tool_name,
-                                       _loads("".join(self._tool_json) or "{}"))
+                if item.get("type") in ("function_call", "tool_call"):
+                    if item.get("arguments"):   # the full arguments, authoritative
+                        self._tool_json = [str(item["arguments"])]
+                    arguments = _loads("".join(self._tool_json) or "{}")
+                else:
+                    # custom_tool_call / local_shell_call: the done item is whole.
+                    arguments = call[1]
+                reason = self._verdict(self._tool_name, arguments)
                 held, self._pending = b"".join(self._pending), []
                 self._holding = False
                 if reason is None:
@@ -2244,14 +2270,17 @@ def _strip_blocked_calls(provider: str, body: Dict[str, Any],
     # still handed back to the agent -- and gpt-6-luna forces this endpoint for
     # any request with tools, so enforce mode was silently a no-op for it.
     items = body.get("output")
-    if isinstance(items, list) and any(
-            isinstance(i, dict) and i.get("type") in ("function_call", "tool_call")
-            and i.get("name") in blocked for i in items):
+
+    def _denied_name(item: Any) -> Optional[str]:
+        call = _response_item_call(item)
+        return call[0] if call is not None and call[0] in blocked else None
+
+    if isinstance(items, list) and any(_denied_name(i) for i in items):
         kept_items, refusals = [], []
         for item in items:
-            if (isinstance(item, dict) and item.get("type") in ("function_call", "tool_call")
-                    and item.get("name") in blocked):
-                refusals.append(blocked[item["name"]])
+            name = _denied_name(item)
+            if name:
+                refusals.append(blocked[name])
             else:
                 kept_items.append(item)
         # A message item carrying the refusal, so an agent that reads output
@@ -2262,7 +2291,7 @@ def _strip_blocked_calls(provider: str, body: Dict[str, Any],
                                "type": "message", "role": "assistant", "status": "completed",
                                "content": [{"type": "output_text", "text": "\n".join(refusals), "annotations": []}]})
         body["output"] = kept_items
-        if not any(isinstance(i, dict) and i.get("type") in ("function_call", "tool_call") for i in kept_items):
+        if not any(_response_item_call(i) is not None for i in kept_items):
             body["status"] = "completed"
     return body
 

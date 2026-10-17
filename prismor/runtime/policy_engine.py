@@ -181,6 +181,35 @@ _EVENT_SOURCE: Dict[str, str] = {
     "memory_integrity": "memory_integrity",
 }
 
+
+def is_subagent_prompt(event: Dict[str, Any]) -> bool:
+    """A returned subagent message on a prompt hook, never a human exemption.
+
+    Recognize protocol tag boundaries, not arbitrary mentions or claimed source
+    fields. A wrapper only removes human trust; it does not exempt other rules.
+    """
+    if event.get("type") != "prompt" or event.get("agent_event") not in ("UserPromptSubmit", "beforeSubmitPrompt"):
+        return False
+    text = str(event.get("prompt") or "").lstrip()
+    return any(text.startswith(tag) and (len(text) == len(tag)
+               or text[len(tag)] == ">" or text[len(tag)].isspace())
+               for tag in ("<agent-message", "<task-notification"))
+
+
+def is_user_prompt(event: Dict[str, Any]) -> bool:
+    """Only the normalized human prompt hook gets principal-origin trust."""
+    return (event.get("type") == "prompt"
+            and event.get("agent_event") in ("UserPromptSubmit", "beforeSubmitPrompt")
+            and not is_subagent_prompt(event))
+
+
+def _event_source(event: Dict[str, Any]) -> str:
+    if is_subagent_prompt(event):
+        return "tool_output"
+    event_type = str(event.get("type", ""))
+    return _EVENT_SOURCE.get(event_type, event_type)
+
+
 # Provenance stamped on a finding raised from the body of a script the agent
 # executes, rather than from the command text itself (PrismorSec/prismor#27).
 _SCRIPT_SOURCE = "executed_script"
@@ -1642,6 +1671,11 @@ class PolicyEngine:
 
         # Pre-extract fields that rules might match against.
         field_values = _extract_fields(event)
+        subagent_report = is_subagent_prompt(event)
+        if subagent_report:
+            # Output-specific rules must see the returned text too, without
+            # duplicating it in combined_text or changing the prompt protocol.
+            field_values["response"] = field_values["combined_text"]
         findings: List[Dict[str, Any]] = []
 
         # An MCP tool call classifies as `network` (remote) or `tool_result`
@@ -1689,6 +1723,8 @@ class PolicyEngine:
                 if _TEXT_CONTENT_TYPES.isdisjoint(rule.event_types):
                     continue
             elif event_type in rule.event_types:
+                pass
+            elif subagent_report and "tool_result" in rule.event_types:
                 pass
             elif is_mcp_event and "mcp" in rule.event_types:
                 # Rule opted into the MCP alias and this is an MCP call.
@@ -1960,7 +1996,7 @@ class PolicyEngine:
                 # Provenance of the authorizing instruction — lets telemetry and
                 # the dashboard distinguish a directive from live user input,
                 # untrusted tool output, or project memory (issue #155).
-                "source": _EVENT_SOURCE.get(event_type, event_type),
+                "source": _event_source(event),
                 # Effective observe/enforce for this finding — see _resolve_mode.
                 "mode": self._resolve_mode(rule),
                 # True when the match sits in inert text rather than executable
@@ -2399,7 +2435,8 @@ class PolicyEngine:
         # later GET into a CRITICAL "secret exfil" (#404).
         taint = None if event.get("_script_line") else self._get_taint(session_id)
         if taint is not None and any(
-            (f.get("category") == "prompt_injection_semantic" and f.get("judged"))
+            (f.get("category") == "prompt_injection_semantic" and f.get("judged")
+             and not is_user_prompt(event))
             or (f.get("category") == "prompt_injection" and f.get("severity") == "CRITICAL")
             for f in findings
         ):
@@ -2894,6 +2931,15 @@ class PolicyEngine:
         if not judged:
             block_t = max(block_t, float(cfg.get("heuristic_block_threshold", 0.85)))
         action = "block" if score >= block_t else "warn"
+        # A parent's security-analysis brief can quote attack fixtures, as can
+        # a child's report. Keyword scoring alone cannot distinguish those from
+        # directives; a model verdict still uses the normal blocking threshold.
+        # Post-tool Agent/Task output keeps full screening even though the hook
+        # normalizer retains the subagent_spawn type for that completed call.
+        if not judged and (is_subagent_prompt(event) or (
+            event.get("type") == "subagent_spawn" and _is_pre_action_event(event)
+        )):
+            action = "warn"
         severity = "CRITICAL" if action == "block" else "HIGH"
         category = "prompt_injection_semantic"
         rule_id = "semantic-guard-hybrid" if str(cfg.get("mode", "hybrid")).lower() in ("auto", "hybrid") else "semantic-guard"
@@ -2905,8 +2951,6 @@ class PolicyEngine:
         evidence = f"category={sem_cat} score={score:.2f} reason={reason}"
         # True only when an LLM judge answered; a heuristic-only verdict is a
         # keyword hit, not a judgement (taint marking keys off this).
-        judged = str(getattr(risk, "mode", "")) in ("api", "local_llm", "hybrid_api", "hybrid_local_llm")
-
         return {
             "id": prefixed_id,
             "severity": severity,
@@ -2918,7 +2962,7 @@ class PolicyEngine:
             "action": action,
             "judged": judged,
             # Same provenance tag the rule findings carry (#155).
-            "source": _EVENT_SOURCE.get(str(event.get("type", "")), str(event.get("type", ""))),
+            "source": _event_source(event),
         }
 
     def _score_package(

@@ -3272,11 +3272,13 @@ def record_tool_output_size(
 
 
 def get_sessions_token_usage(session_ids: List[str]) -> Dict[str, Dict[str, Any]]:
-    """Per-session, per-model token sums: {session_id: {"by_model": {...}, "turns": n}}.
+    """Per-session, per-model token sums plus each request's buckets:
+    {session_id: {"by_model": {...}, "requests": {model: [...]}, "turns": n}}.
 
-    Sessions with no rows are absent from the result (caller decides
-    "unknown" vs "$0"). Reads the shared home DB, which every workspace
-    writes to.
+    Requests stay separate because long-context tiers are chosen per request;
+    pricing a SUM would put ten 50k requests in the >200k tier. Sessions with
+    no rows are absent from the result (caller decides "unknown" vs "$0").
+    Reads the shared home DB, which every workspace writes to.
     """
     if not session_ids:
         return {}
@@ -3287,21 +3289,23 @@ def get_sessions_token_usage(session_ids: List[str]) -> Dict[str, Dict[str, Any]
     try:
         marks = ",".join("?" * len(session_ids))
         for r in conn.execute(
-            "SELECT session_id, model, COUNT(*) as turns,"  # nosec B608
-            "       COALESCE(SUM(input_tokens),0) as inp, COALESCE(SUM(output_tokens),0) as out,"
-            "       COALESCE(SUM(cache_read_tokens),0) as cread,"
-            "       COALESCE(SUM(cache_creation_tokens),0) as ccreate,"
-            "       COALESCE(SUM(cache_1h_tokens),0) as c1h"
-            f"  FROM token_usage WHERE session_id IN ({marks}) GROUP BY session_id, model"
-            "  HAVING inp + out + cread + ccreate > 0",  # older rows from zero-usage placeholder turns
+            "SELECT session_id, model, COALESCE(input_tokens,0) as input,"  # nosec B608 - only placeholders are interpolated
+            "       COALESCE(output_tokens,0) as output, COALESCE(cache_read_tokens,0) as cache_read,"
+            "       COALESCE(cache_creation_tokens,0) - COALESCE(cache_1h_tokens,0) as cache_5m,"
+            "       COALESCE(cache_1h_tokens,0) as cache_1h"
+            f"  FROM token_usage WHERE session_id IN ({marks})"
+            "   AND COALESCE(input_tokens,0) + COALESCE(output_tokens,0) + COALESCE(cache_read_tokens,0)"
+            "       + COALESCE(cache_creation_tokens,0) > 0",  # older rows from zero-usage placeholder turns
             list(session_ids),
         ):
-            entry = out.setdefault(r["session_id"], {"by_model": {}, "turns": 0})
-            entry["turns"] += r["turns"]
-            entry["by_model"][r["model"] or "unknown"] = {
-                "input": r["inp"], "output": r["out"], "cache_read": r["cread"],
-                "cache_5m": r["ccreate"] - r["c1h"], "cache_1h": r["c1h"],
-            }
+            entry = out.setdefault(r["session_id"], {"by_model": {}, "requests": {}, "turns": 0})
+            model = r["model"] or "unknown"
+            req = {k: r[k] for k in ("input", "output", "cache_read", "cache_5m", "cache_1h")}
+            entry["turns"] += 1
+            entry["requests"].setdefault(model, []).append(req)
+            totals = entry["by_model"].setdefault(model, dict.fromkeys(req, 0))
+            for k, v in req.items():
+                totals[k] += v
     finally:
         conn.close()
     return out

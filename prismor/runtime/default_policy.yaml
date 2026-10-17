@@ -635,7 +635,8 @@ rules:
     severity: CRITICAL
     category: prompt_injection
     title: Detects prompt injection hidden in HTML comments, CSS-invisible elements, or aria-hidden elements
-    event_types: [tool_result]
+    # Pasted hidden instructions are not the visible human request (#541/#590).
+    event_types: [prompt, tool_result]
     fields: [combined_text]
     patterns:
       # Injection keyword inside an HTML comment: <!-- ... ignore previous instructions ... -->

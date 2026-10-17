@@ -68,13 +68,15 @@ class SubagentReports(unittest.TestCase):
         # Live 2026-10-14: the judge blocked a background subagent's report for
         # quoting the injection it had correctly refused; the result was lost.
         from prismor.runtime.hooks import should_block
-        finding = {"ruleId": "semantic-guard-hybrid", "category": "security_bypass",
+        finding = {"ruleId": "semantic-guard-hybrid", "category": "prompt_injection_semantic",
                    "mode": "enforce", "action": "block", "severity": "HIGH"}
         report = {"agent_event": "UserPromptSubmit", "type": "prompt",
                   "prompt": "<task-notification>\n<task-id>a1</task-id>\n<result>...</result>"}
         self.assertIsNone(should_block([finding], report))
         typed = dict(report, prompt="please do the thing")
-        self.assertIsNotNone(should_block([finding], typed))
+        self.assertIsNone(should_block([finding], typed))
+        independent = dict(finding, ruleId="iam-deny", category="iam")
+        self.assertIsNotNone(should_block([independent], report))
 
 
 class SubagentLedger(unittest.TestCase):

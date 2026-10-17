@@ -280,10 +280,11 @@ already opted into them by installing prismor.
 | `git push` to main/master, `terraform apply`, `kubectl`/`helm` changes, mutating cloud CLI or `gh` calls, `sudo` | Run it only if the user asked for that change, and say it raised a change-control warning | These `change_control` rules warn by default rather than block; a workspace can opt a rule into `mode: enforce`, and then it blocks like any other. |
 | Retrying a blocked command with different wording | Don't. Fix the command, or relay the unblock steps. | Prismor scores similarity against recently blocked commands and raises an evasion finding on a near-miss retry — rephrasing reads as evasion, not as a fresh attempt. |
 
-Two caveats when you are *writing* rather than running:
+When writing or delegating:
 
 - **The engine screens the whole command string.** A heredoc that documents a destructive command is still a command containing one. Write that content with a file-writing tool instead of a shell redirect.
 - **Security documentation can trip the semantic guard.** Prose that quotes attack patterns scores like the attack. If a legitimate write is blocked on `semantic-guard-hybrid`, that's the block to relay to the user — not to reword around.
+- **Prompt provenance matters.** Visible human prompts are reported rather than injection-blocked; hidden pasted instructions and requested tool actions still get checked. Wrapped subagent reports are untrusted tool output and may arrive with a security notice. Heuristic-only semantic findings warn on parent-written subagent briefs; a judge-confirmed attack can still block the launch. See [semantic guard](docs/semantic-guard.md#text-provenance-on-coding-agent-hooks).
 
 Two patterns that come up often:
 

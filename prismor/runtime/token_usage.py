@@ -26,7 +26,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from prismor.runtime import store
 from prismor.runtime.hooks import _is_pre_action
-from prismor.runtime.pricing import cost_usd, normalize_model
+from prismor.runtime.pricing import cost_usd, normalize_model, price_for, request_cost
 
 _TAIL_BYTES = 32_000
 _LABEL_MAX = 200
@@ -236,7 +236,7 @@ def backfill_session(workspace: Path, session_id: str, transcript_path: Optional
 
 
 def sessions_cost(workspace: Path, session_ids: List[str], backfill: bool = True) -> Dict[str, Dict[str, Any]]:
-    """{session_id: {known, priced, usd, tokens, by_model, unpriced, turns}}.
+    """{session_id: {known, priced, usd, tokens, by_model, cost_by_model, unpriced, turns}}.
 
     ``known`` False = no usage rows and no transcript (agent we can't meter);
     ``priced`` False = usage exists but no model matched the price table.
@@ -251,11 +251,16 @@ def sessions_cost(workspace: Path, session_ids: List[str], backfill: bool = True
         if not entry:
             out[sid] = {"known": False, "priced": False, "usd": None}
             continue
-        total, unpriced, tokens = 0.0, [], {"input": 0, "output": 0, "cache_read": 0, "cache_5m": 0, "cache_1h": 0}
+        total, unpriced, cost_by_model = 0.0, [], {}
+        tokens = {"input": 0, "output": 0, "cache_read": 0, "cache_5m": 0, "cache_1h": 0}
         for model, t in entry["by_model"].items():
             for k in tokens:
                 tokens[k] += t[k]
-            usd = cost_usd(t, model)
+            # Priced per request at today's rates: long-context tiers depend on
+            # each request's size, and a price refresh corrects history too.
+            rate = price_for(model)
+            usd = None if rate is None else sum(request_cost(r, rate) for r in entry["requests"][model])
+            cost_by_model[model] = usd
             if usd is None:
                 unpriced.append(model)
             else:
@@ -263,7 +268,8 @@ def sessions_cost(workspace: Path, session_ids: List[str], backfill: bool = True
         priced = len(unpriced) < len(entry["by_model"])
         out[sid] = {
             "known": True, "priced": priced, "usd": total if priced else None,
-            "tokens": tokens, "by_model": entry["by_model"], "unpriced": unpriced, "turns": entry["turns"],
+            "tokens": tokens, "by_model": entry["by_model"], "cost_by_model": cost_by_model,
+            "unpriced": unpriced, "turns": entry["turns"],
         }
     return out
 

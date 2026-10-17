@@ -1455,7 +1455,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             args.input = args.file
         # If no input specified, use most recent session
         if args.input:
-            events = parse_jsonl(read_text(args.input))
+            events = load_input_events(args.input, workspace=workspace)
         else:
             # Find most recent session in current workspace
             sessions = list_sessions(workspace, limit=1)
@@ -1485,7 +1485,7 @@ def main(argv: Optional[List[str]] = None) -> None:
                 "ingest requires --input <file>, or --discover to sweep this "
                 "machine's agent transcripts"
             )
-        events = parse_jsonl(read_text(args.input))
+        events = load_input_events(args.input, workspace=workspace)
         result = analyze_events(events, repo_root=repo_root, workspace=workspace)
         session_id = args.session_id or derive_session_id(events)
         db_path = save_session_snapshot(
@@ -7065,6 +7065,52 @@ def _ingest_discover(args, *, workspace: Path, repo_root: Path) -> None:
         )
 
 
+_ENGINE_EVENT_TYPES = frozenset({
+    "shell", "file_read", "file_write", "network", "prompt", "tool_result",
+    "memory", "skill_manifest", "subagent_spawn", "text",
+})
+
+
+def load_input_events(input_path: str, *, workspace: Path) -> List[Dict[str, Any]]:
+    """Events for `analyze/ingest --input`.
+
+    Engine events and live hook payloads pass through unchanged. A raw on-disk
+    agent transcript (Claude/Codex/Hermes) goes through the same
+    adapter -> normalize_payload chain as `ingest --discover`; fed raw, the
+    engine understood none of its records and reported 0 findings.
+    """
+    records = parse_jsonl(read_text(input_path))
+    if not records or any(
+        not isinstance(r, dict) or r.get("hook_event_name") or r.get("type") in _ENGINE_EVENT_TYPES
+        for r in records
+    ):
+        return records
+    from prismor.runtime.transcripts.adapters import ADAPTERS
+    from prismor.runtime.transcripts.base import DiscoveredSession
+
+    for cls in ADAPTERS.values():
+        adapter = cls()
+        session = DiscoveredSession(agent=adapter.agent, path=Path(input_path),
+                                    session_id="input", mtime=0.0)
+        events: List[Dict[str, Any]] = []
+        for record in records:
+            try:
+                payloads = list(adapter.record_to_payloads(record, session))
+            except Exception:  # one odd record must not sink the file, as in a sweep
+                continue
+            for payload in payloads:
+                try:
+                    normalized = normalize_payload(agent=adapter.agent, payload=payload, workspace=workspace)
+                except Exception:
+                    continue
+                event = normalized.get("event") if isinstance(normalized, dict) else None
+                if isinstance(event, dict):
+                    events.append(event)
+        if events:
+            return events
+    return records
+
+
 def parse_jsonl(text: str) -> List[Dict[str, Any]]:
     events = []
     for index, line in enumerate(text.splitlines(), start=1):
@@ -7374,7 +7420,7 @@ def _fmt_cost(cost: Dict[str, Any]) -> str:
 
 
 def format_session_tokens(payload: Dict[str, Any]) -> str:
-    from prismor.runtime.pricing import cost_usd, fmt_usd
+    from prismor.runtime.pricing import fmt_usd
     lines = [f"Session {payload['sessionId']}", "=" * 40]
     if not payload.get("known"):
         lines.append("No token usage recorded and no local transcript for this session.")
@@ -7390,7 +7436,8 @@ def format_session_tokens(payload: Dict[str, Any]) -> str:
         "", "By model", "--------",
     ])
     for model, mt in payload["by_model"].items():
-        lines.append(f"  {model:<32} {fmt_usd(cost_usd(mt, model)):>10}   in {mt['input']:,}  out {mt['output']:,}")
+        usd = payload["cost_by_model"].get(model)
+        lines.append(f"  {model:<32} {fmt_usd(usd):>10}   in {mt['input']:,}  out {mt['output']:,}")
     return "\n".join(lines)
 
 
