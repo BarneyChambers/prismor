@@ -1648,19 +1648,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         _perf.lap()
         payload = json.loads(sys.stdin.read() or "{}")
         _hook_claimed = True   # set for real just before evaluation
-        # A subagent finished: queue a line telling the person what Prismor did
-        # inside it. Its blocks and warnings went to the subagent; a background
-        # subagent's work never shows in the main chat. The line is shown by the
-        # next main-thread hook (see subagents.queue_notice). Never blocks.
-        if str(payload.get("hook_event_name") or "") == "SubagentStop":
-            try:
-                from prismor.runtime import subagents as _subagents
-                if _claim_hook_call(payload, args.agent):
-                    _subagents.queue_notice(str(payload.get("session_id") or ""),
-                                            _subagents.summary(payload))
-            except Exception:
-                pass
-            return
         # A global (~/.claude) hook carries no --workspace: attribute the call
         # to the repo the agent is actually running in (payload cwd → git root),
         # not to whichever directory `setup --scope global` happened to run
@@ -1671,6 +1658,27 @@ def main(argv: Optional[List[str]] = None) -> None:
             if isinstance(_cwd, str) and _cwd:
                 workspace = _git_root_or_self(Path(_cwd))
         register_workspace(workspace)
+
+        # A subagent finished: queue a line telling the person what Prismor did
+        # inside it. Its blocks and warnings went to the subagent; a background
+        # subagent's work never shows in the main chat. The line is shown by the
+        # next main-thread hook (see subagents.queue_notice). The stop itself is
+        # recorded (its name and final message are the session view's card for
+        # it) in observe mode, and no decision is printed: blocking SubagentStop
+        # would tell the agent to keep the subagent running.
+        if str(payload.get("hook_event_name") or "") == "SubagentStop":
+            try:
+                from prismor.runtime import subagents as _subagents
+                if _claim_hook_call(payload, args.agent):
+                    _subagents.queue_notice(str(payload.get("session_id") or ""),
+                                            _subagents.summary(payload))
+                    if payload.get("session_id"):
+                        evaluate_tool_call(event=_subagents.finish_event(payload, args.agent),
+                                           workspace=workspace, agent=args.agent, mode="observe",
+                                           session_id=str(payload["session_id"]), flush_at_exit=False)
+            except Exception:
+                pass
+            return
 
         # The call already failed: nothing to screen, only a retry loop to name.
         if payload.get("hook_event_name") == "PostToolUseFailure":

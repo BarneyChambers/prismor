@@ -1291,6 +1291,30 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .art-pre::-webkit-scrollbar { width:8px; height:8px; }
   .art-pre::-webkit-scrollbar-thumb { background:var(--gray-300); border-radius:4px; }
   .sess-tree { padding:8px 6px 14px; font-size:12.5px; }
+  /* Subagent cards: what each one was asked, how it went, what it concluded. */
+  .sa-head { margin:12px 8px 8px 30px; font-size:12.5px; color:var(--gray-500); }
+  .sa-head b { color:var(--gray-900); font-weight:600; }
+  .sa-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; margin:0 8px 12px 30px; }
+  .sa-card { border:1px solid var(--gray-200); border-radius:10px; padding:11px 12px 9px; background:var(--surface); display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .sa-card.open { grid-column:1/-1; }
+  .sa-card.bad { border-color:var(--bad); }
+  .sa-title { font-weight:600; color:var(--gray-900); font-size:13px; line-height:1.35; }
+  .sa-meta { color:var(--gray-500); font-size:11.5px; display:flex; flex-wrap:wrap; gap:4px 10px; }
+  /* Theme tokens only, so both themes hold up. "No finish recorded" is a
+     gap in what Codex/Claude reported, not an alarm, so it stays neutral. */
+  .sa-st { font-weight:600; } .sa-st.done { color:var(--ok); } .sa-st.run { color:var(--gray-600); } .sa-st.fail { color:var(--danger-ink); }
+  .sa-badge { font-size:11px; font-weight:600; border-radius:4px; padding:1px 6px; }
+  .sa-badge.block { color:var(--danger-ink); background:color-mix(in srgb, var(--bad) 13%, transparent); }
+  .sa-badge.warn { color:var(--gray-800); background:color-mix(in srgb, var(--warn) 22%, transparent); }
+  .sa-out { color:var(--gray-700); font-size:12px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .sa-card.open .sa-out { -webkit-line-clamp:unset; white-space:pre-wrap; }
+  .sa-files { color:var(--gray-500); font-size:11px; font-family:var(--mono, ui-monospace, monospace); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .sa-more { align-self:flex-start; border:0; background:none; padding:2px 0; color:var(--gray-600); font-size:11.5px; cursor:pointer; }
+  .sa-more:hover { color:var(--gray-900); text-decoration:underline; }
+  .sa-more:focus-visible { outline:2px solid var(--gray-700); outline-offset:2px; border-radius:3px; }
+  .sa-calls.hidden { display:none; }
+  .sa-minor { margin:-4px 8px 10px 30px; } .sa-minor-calls { margin:0 8px 10px 30px; }
+  .sa-calls { border-top:1px solid var(--gray-100); padding-top:4px; }
   /* A turn is the unit people scan for, so it gets the separator and the
      breathing room; lanes and rows inside it stay quiet. */
   .tree-turn { margin-bottom:2px; padding-bottom:2px; }
@@ -5591,8 +5615,39 @@ function turnKeyOf(ev){
   const a = ev.artifacts || {};
   return (a.user_message || a.prompt || eventSummary(ev) || '').slice(0, 400);
 }
+// A subagent's calls arrive interleaved with the main agent's, so each one gets
+// its own group keyed 'sub:<id>'. The launch row's response names the id it
+// started, which files the launch in the same group and gives it a title.
+function subagentOf(ev){
+  const a = ev.artifacts || {};
+  if (a.subagent_id) return a.subagent_id;
+  if (ev.type === 'subagent_spawn') return (String(a.response||'').match(/"agentId":\s*"([^"]+)"/)||[])[1] || '';
+  return '';
+}
 function groupTrail(trail){
   const turns = [];
+  const subs = {};
+  trail.forEach(ev=>{
+    const id = subagentOf(ev); if (!id) return;
+    const a = ev.artifacts || {}, s = subs[id] || (subs[id] = {type:'', desc:''});
+    if (ev.type === 'subagent_spawn' && a.description) s.desc = String(a.description);
+    if (a.subagent_type && !s.type) s.type = String(a.subagent_type);
+  });
+  // How a subagent ended: Codex (and Claude, from 1.6x) send SubagentStop with
+  // its name and last message; Claude's task notification adds a status.
+  trail.forEach(ev=>{
+    if (ev.type !== 'subagent_stop') return;
+    const a = ev.artifacts || {}, id = a.subagent_id; if (!id || !subs[id]) return;
+    if (a.description && !subs[id].desc) subs[id].desc = String(a.description);
+    subs[id].done = Object.assign({status:'completed', took:'', result: String(a.response||'')}, subs[id].done || {});
+  });
+  trail.forEach(ev=>{
+    const n = taskNote(ev); if (!n || !subs[n.id]) return;
+    const t = (ev.artifacts||{}).user_message || (ev.artifacts||{}).prompt || '';
+    subs[n.id].done = { status: (t.match(/<status>([^<]*)</)||[])[1] || 'completed', took: n.took,
+      result: ((t.match(/<result>([\s\S]*?)(?:<\/result>|$)/)||[])[1] || '').trim() };
+  });
+  const subTurn = {};
   let cur = null;
   trail.forEach((ev,i)=>{
     // A new turn starts at a prompt the agent has not just been given. The
@@ -5618,10 +5673,17 @@ function groupTrail(trail){
       return;  // already represented by the turn it opened
     }
     if (isTurnStart && !cur.sub) cur.sub = eventSummary(ev).slice(0,90);
-    const lane = eventLane(ev);
-    if (!cur.lanes.has(lane)) cur.lanes.set(lane, []);
-    cur.lanes.get(lane).push({ev, i});
-    cur.count++;
+    const note = taskNote(ev);
+    const sid = subagentOf(ev) || (note && subs[note.id] ? note.id : '');
+    // Async subagents keep working (and report back) after later prompts;
+    // their calls stay with the turn that launched them.
+    const home = sid ? (subTurn[sid] || (subTurn[sid] = cur)) : cur;
+    const lane = sid ? 'sub:'+sid : eventLane(ev);
+    if (sid) home.subs = subs;
+    if ((note && sid) || ev.type === 'subagent_stop') return;  // the card's outcome, not a row
+    if (!home.lanes.has(lane)) home.lanes.set(lane, []);
+    home.lanes.get(lane).push({ev, i});
+    home.count++;
   });
   turns.forEach(t=>{ if(!t.sub && t.lanes.size) t.sub = eventSummary([...t.lanes.values()][0][0].ev).slice(0,90); });
   return turns;
@@ -5653,6 +5715,71 @@ function treeLeafEl(ev, idx){
     '<span class="tree-ts">'+safe(ev.ts||'')+((ev.hookMs != null || ev.postHookMs != null) ? ' &middot; '+fmtMs((ev.hookMs||0)+(ev.postHookMs||0)) : '')+'</span>';
   return btn;
 }
+function saDur(ms){ const m = Math.round(ms/60000); return m < 1 ? '<1m' : m < 60 ? m+'m' : Math.floor(m/60)+'h '+(m%60)+'m'; }
+function saTime(ev){ const t = Date.parse(String(ev.tsAbs||'').replace(' UTC','Z').replace(' ','T')); return isNaN(t) ? null : t; }
+function subagentCards(turn, lanes){
+  const wrap = document.createElement('div');
+  const cards = lanes.map(lane=>{
+    const id = lane.slice(4), sa = (turn.subs||{})[id] || {}, items = turn.lanes.get(lane);
+    const calls = items.filter(x=>x.ev.type !== 'subagent_spawn' && x.ev.type !== 'subagent_stop');
+    const ts = calls.map(x=>saTime(x.ev)).filter(t=>t!=null);
+    const v = calls.map(x=>flowVerdict(x.ev));
+    const blocked = v.filter(x=>x==='block').length, warned = v.filter(x=>x==='warn').length;
+    const files = [...new Set(calls.filter(x=>x.ev.lane==='files').map(x=>String((x.ev.artifacts||{}).path||'').split('/').pop()).filter(Boolean))];
+    const d = sa.done, failed = d && !/complete/i.test(d.status);
+    return {id, sa, items, calls, blocked, warned, files, d, failed, start: ts.length ? Math.min(...ts) : null, end: ts.length ? Math.max(...ts) : null};
+  });
+  // How many ran at once, so "6 subagents" also says whether they overlapped.
+  // An id-only subagent (no task, no type, no report) with a call or two is
+  // noise next to the real ones; it folds into one line instead of a card.
+  // Codex never reports a task, but does send a type, so its subagents stay.
+  const minor = cards.filter(c=>!c.sa.desc && !c.sa.type && !c.d && c.calls.length <= 2);
+  const major = cards.filter(c=>!minor.includes(c));
+  let peak = 0; major.forEach(c=>{ if (c.start==null) return;
+    peak = Math.max(peak, major.filter(o=>o.start!=null && o.start<=c.start && o.end>=c.start).length); });
+  wrap.innerHTML = '<div class="sa-head"><b>'+major.length+' subagent'+(major.length===1?'':'s')+'</b>'+
+    (peak > 1 ? ', up to '+peak+' running at once' : '')+'</div>';
+  const grid = document.createElement('div'); grid.className = 'sa-grid';
+  major.forEach(c=>{
+    const el = document.createElement('div'); el.className = 'sa-card'+(c.failed ? ' bad' : '');
+    const st = c.d ? (c.failed ? '<span class="sa-st fail">'+safe(c.d.status)+'</span>' : '<span class="sa-st done">Finished</span>')
+                   : '<span class="sa-st run">No finish recorded</span>';
+    const took = (c.d && c.d.took) || (c.start!=null && c.end>c.start ? saDur(c.end-c.start) : '');
+    // The report as the subagent wrote it: drop the harness's own [harness: …]
+    // preface, decode the entities it escaped, and flatten markdown markers.
+    const out = c.d && c.d.result ? c.d.result.replace(/^\[harness:[\s\S]*?\]\n+/, '')
+      .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')
+      .replace(/^#+\s*/gm,'').replace(/\*\*/g,'').replace(/`/g,'').trim() : '';
+    el.innerHTML =
+      '<div class="sa-title">'+safe(c.sa.desc || 'Subagent '+c.id.slice(0,8))+'</div>'+
+      '<div class="sa-meta">'+st+(took?'<span>'+safe(took)+'</span>':'')+'<span>'+c.calls.length+' call'+(c.calls.length===1?'':'s')+'</span>'+
+        (c.sa.type ? '<span>'+safe(c.sa.type)+'</span>' : '')+
+        (c.blocked ? '<span class="sa-badge block">'+c.blocked+' blocked</span>' : '')+
+        (c.warned ? '<span class="sa-badge warn">'+c.warned+' warned</span>' : '')+'</div>'+
+      (out ? '<div class="sa-out">'+safe(out)+'</div>' : '')+
+      (c.files.length ? '<div class="sa-files" title="'+safeAttr(c.files.join(', '))+'">Changed: '+safe(c.files.slice(0,4).join(', '))+(c.files.length>4?' +'+(c.files.length-4):'')+'</div>' : '');
+    const more = document.createElement('button'); more.className = 'sa-more';
+    const list = document.createElement('div'); list.className = 'sa-calls hidden';
+    c.items.forEach(({ev,i})=>list.appendChild(treeLeafEl(ev,i)));
+    const label = open => (open ? 'Hide calls ▾' : 'Show '+c.calls.length+' call'+(c.calls.length===1?'':'s')+' ▸');
+    more.textContent = label(false); more.setAttribute('aria-expanded', 'false');
+    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; el.classList.toggle('open', open);
+      more.textContent = label(open); more.setAttribute('aria-expanded', String(open)); };
+    el.appendChild(more); el.appendChild(list); grid.appendChild(el);
+  });
+  wrap.appendChild(grid);
+  if (minor.length){
+    const n = minor.reduce((k,c)=>k+c.calls.length, 0);
+    const more = document.createElement('button'); more.className = 'sa-more sa-minor';
+    const list = document.createElement('div'); list.className = 'sa-calls hidden sa-minor-calls';
+    minor.forEach(c=>c.items.forEach(({ev,i})=>list.appendChild(treeLeafEl(ev,i))));
+    const label = open => (open ? 'Hide ' : '+ ')+minor.length+' minor subagent'+(minor.length===1?'':'s')+' ('+n+' call'+(n===1?'':'s')+', no task or report recorded)'+(open?' ▾':' ▸');
+    more.textContent = label(false); more.setAttribute('aria-expanded', 'false');
+    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; more.textContent = label(open); more.setAttribute('aria-expanded', String(open)); };
+    wrap.appendChild(more); wrap.appendChild(list);
+  }
+  return wrap;
+}
 function renderSessionFlow(trail){
   const canvas = document.getElementById('sessFlowCanvas');
   _flowTrail = trail;
@@ -5664,7 +5791,13 @@ function renderSessionFlow(trail){
     const head = treeRowEl({cls:'turn', caret:true, label:turn.label, sub:turn.sub, count:turn.count,
       onToggle:(e)=>{ kids.classList.toggle('hidden'); e.currentTarget.classList.toggle('collapsed'); }});
     box.appendChild(head); box.appendChild(kids);
+    const subLanes = [...turn.lanes.keys()].filter(l=>l.startsWith('sub:'));
+    // Read order: what was asked, what the subagents did, then the main
+    // agent's own calls.
+    let cardsShown = !subLanes.length;
+    const showCards = ()=>{ if (!cardsShown){ cardsShown = true; kids.appendChild(subagentCards(turn, subLanes)); } };
     LANE_ORDER.filter(l=>turn.lanes.has(l)).forEach(lane=>{
+      if (lane !== 'prompt' && lane !== 'context') showCards();
       const items = turn.lanes.get(lane);
       const laneKids = document.createElement('div'); laneKids.className='tree-children';
       const laneHead = treeRowEl({cls:'lane', caret:true, label:LANE_LABEL[lane], sub:'', count:items.length, lane,
@@ -5672,9 +5805,11 @@ function renderSessionFlow(trail){
       items.forEach(({ev,i})=>laneKids.appendChild(treeLeafEl(ev,i)));
       kids.appendChild(laneHead); kids.appendChild(laneKids);
     });
+    showCards();
     tree.appendChild(box);
   });
-  canvas.innerHTML=''; canvas.appendChild(tree);
+  canvas.innerHTML='';
+  canvas.appendChild(tree);
 }
 function treeToggleAll(collapse){
   document.querySelectorAll('#sessFlowCanvas .tree-children').forEach(el=>el.classList.toggle('hidden', collapse));

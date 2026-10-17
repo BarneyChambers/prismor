@@ -131,8 +131,8 @@ class HookDispatchForSubagents(unittest.TestCase):
         self.env.update(HOME=str(self.root / "home"), PRISMOR_HOME=str(self.root / "home" / ".prismor"),
                         PYTHONPATH=ROOT)
 
-    def _dispatch(self, payload):
-        r = subprocess.run([sys.executable, "-m", "prismor.runtime.cli", "hook-dispatch", "--agent", "claude",
+    def _dispatch(self, payload, agent="claude"):
+        r = subprocess.run([sys.executable, "-m", "prismor.runtime.cli", "hook-dispatch", "--agent", agent,
                             "--workspace", str(self.ws), "--mode", "enforce"],
                            input=json.dumps({"session_id": "s9", "cwd": str(self.ws), **payload}),
                            text=True, capture_output=True, env=self.env, timeout=120)
@@ -166,6 +166,36 @@ class HookDispatchForSubagents(unittest.TestCase):
         self.assertIn("Prismor · Explore (a7)", out["systemMessage"])
         code, out = self._dispatch({"hook_event_name": "UserPromptSubmit", "prompt": "thanks"})
         self.assertNotIn("Explore (a7)", json.dumps(out or {}))  # shown once
+
+    def test_codex_subagent_stop_is_recorded_with_name_and_report(self):
+        # Payload shape from codex-cli 0.163.0 (live on st3ve, 2026-10-17): the
+        # stop carries the subagent's last message, and its transcript's first
+        # line names it by spawn path.
+        transcript = self.root / "rollout-sub.jsonl"
+        transcript.write_text(json.dumps({"type": "session_meta", "payload": {"source": {"subagent": {
+            "thread_spawn": {"parent_thread_id": "s9", "agent_path": "/root/fix_build"}}}}}) + "\n")
+        code, out = self._dispatch({"hook_event_name": "SubagentStop", "turn_id": "u1",
+                                    "agent_id": "01a1-sub", "agent_type": "default",
+                                    "agent_transcript_path": str(transcript), "stop_hook_active": False,
+                                    "last_assistant_message": "Prismor blocked chmod; nothing changed."},
+                                   agent="codex")
+        self.assertEqual(code, 0)
+        self.assertIsNone(out)  # informational: never a decision, so it can never block
+        import sqlite3
+        db = self.root / "home" / ".prismor" / "prismor.db"
+        row = sqlite3.connect(db).execute(
+            "select raw_json from events where session_id='s9' and type='subagent_stop'").fetchone()
+        ev = json.loads(row[0])
+        self.assertEqual(ev["description"], "fix build")
+        self.assertEqual(ev["response"], "Prismor blocked chmod; nothing changed.")
+        self.assertEqual(ev["metadata"]["subagent_id"], "01a1-sub")
+
+    def test_codex_install_registers_subagent_stop(self):
+        from prismor.runtime.hooks import _merge_codex
+        cfg = _merge_codex({}, "prismor-hook")
+        self.assertEqual(cfg["hooks"]["SubagentStop"][0]["hooks"][0]["command"], "prismor-hook")
+        # Re-running the installer does not duplicate it.
+        self.assertEqual(len(_merge_codex(cfg, "prismor-hook")["hooks"]["SubagentStop"]), 1)
 
 
 if __name__ == "__main__":
