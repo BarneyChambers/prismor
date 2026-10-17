@@ -367,13 +367,17 @@ _TOOL_ALIASES = {
                            "run_shell_command", "exec_command", "execute_command", "execute_shell",
                            "shell_command", "local_shell", "container.exec", "run_terminal_cmd")},
     **{n: "Read" for n in ("read", "read_file", "cat_file", "view_file", "open_file")},
-    **{n: "Write" for n in ("write", "write_file", "create_file", "save_file")},
-    **{n: "Edit" for n in ("edit", "edit_file", "str_replace", "replace_in_file")},
+    # apply_patch (Codex, Capy) creates/overwrites files from a patch string:
+    # judged as a Write on the patch's first target, with the whole patch as content.
+    **{n: "Write" for n in ("write", "write_file", "create_file", "save_file", "apply_patch")},
+    **{n: "Edit" for n in ("edit", "edit_file", "str_replace", "replace_in_file",
+                           "multi_edit", "multiedit")},
     **{n: "WebFetch" for n in ("webfetch", "web_fetch", "fetch", "fetch_url", "http_get", "browse")},
     "glob": "Glob", "grep": "Grep",
 }
 _SHELLISH_NAME = re.compile(r"shell|exec|command|terminal|bash|cmd")
 _COMMAND_KEYS = ("command", "cmd", "script")
+_PATCH_TARGET = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.M)
 
 
 def native_tool(tool_name: str, arguments: Any = None) -> Optional[str]:
@@ -409,9 +413,17 @@ def native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
             cmd = shlex.join(str(c) for c in cmd)
         args["command"] = "" if cmd is None else str(cmd)
     elif tool in ("Read", "Write", "Edit"):
-        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file") or "")
+        patch = args.get("input") or args.get("patch")
+        patch = patch if isinstance(patch, str) else ""
+        target = _PATCH_TARGET.search(patch) if patch else None
+        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file")
+                        or (target.group(1).strip() if target else ""))
         if tool == "Write":
-            args.setdefault("content", args.get("text") or args.get("contents") or "")
+            args.setdefault("content", args.get("text") or args.get("contents") or patch)
+        if tool == "Edit" and "new_string" not in args and isinstance(args.get("edits"), list):
+            # multi_edit: every replacement is written text, so all of it is screened.
+            args["new_string"] = "\n".join(str(e.get("new_string") or "")
+                                           for e in args["edits"] if isinstance(e, dict))
     elif tool == "WebFetch":
         args.setdefault("url", args.get("uri") or args.get("href") or "")
     return tool, args

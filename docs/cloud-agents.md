@@ -63,6 +63,7 @@ a failed setup script is a silently unscreened agent. With
 | <img src="https://thesvg.org/icons/openhands/default.svg" width="16" height="16" alt=""> | OpenHands Cloud | `.openhands/setup.sh` | Repo `.openhands/hooks.json` |
 | <img src="https://thesvg.org/icons/codex/light.svg" width="16" height="16" alt=""> | Codex cloud | Settings → Environments → Setup script | See [Codex](#codex) |
 | <img src="https://replicas.dev/R-logo-new.svg" width="16" height="16" alt=""> | Replicas | Environment start hook | Home or repo: a stock CLI with a normal `$HOME`. See [Replicas](#replicas) |
+| | Capy | `.capy/setup.json` `initialize` | None: hooks are ignored. Use the proxy, see [Capy](#capy) |
 
 Most of these snapshot the VM after the script runs. Install there; run
 `prismor enroll` per boot, never in the snapshotted step, or one device identity
@@ -129,6 +130,42 @@ What bit on the way to that script:
 - **Plugins are out of reach.** Replicas' Stripe, Salesforce and similar
   connectors are TypeScript SDK calls, not MCP servers. The hook sees the `Bash`
   call that launched the script, not the write inside it.
+
+## Capy
+
+[Capy](https://docs.capy.ai) runs its own agent loop, not a stock CLI, in cloud
+VMs. Its tools are `bash_run`, `read`, `write`, `edit`, `multi_edit`, `glob` and
+`grep`. **No hook file reaches it.** Plugins load, but Capy keeps only their MCP
+servers and skills. Its docs say: "Capy ignores hooks, commands, subagents, LSP
+servers, and ChatGPT app connectors". So a Claude Code or Codex plugin that
+installs Prismor hooks does nothing there.
+
+The surface that does govern it is the [LLM proxy](llm-proxy.md). Capy accepts
+any OpenAI-compatible server under **Settings → Models → Custom endpoint**, and
+the proxy screens every tool call the model proposes before Capy sees it.
+
+```bash
+prismor proxy --mode enforce --host 0.0.0.0 --port 7080   # behind a TLS tunnel
+```
+
+Capy calls the endpoint from its cloud, so the base URL must be a public
+`https` hostname (a Cloudflare Tunnel works), never `localhost`. Add the model
+by id (for example `gpt-5.6-luna`) and pin the endpoint with a virtual key in
+`proxy.json` so the Capy side never holds the provider key.
+
+- **gpt-5.6-luna on `/v1/chat/completions` needs `reasoning_effort: "none"`**
+  for tool calls. OpenAI rejects the request otherwise; `/v1/responses` has no
+  such limit. The proxy relays OpenAI's 400 unchanged.
+- **Capy's own tool hooks** (app settings, `pre`/`post` on `bash_run`, `edit`
+  and the rest) are not wired yet: their docs don't say whether a failing `pre`
+  hook blocks the call.
+
+Verified with real `gpt-5.6-luna` behind the proxy, enforce mode, Capy's seven
+tool definitions, both APIs, streamed and buffered: the model proposed a setuid
+`chmod`, `rm -rf ~/`, `curl | sh`, a read of `~/.ssh/id_rsa`, a write to
+`.prismor/policy.yaml`, and `ls` plus a setuid `chmod` in one turn. All 24
+were replaced with a refusal; `echo hello` and a one-line edit ran (8/8). Not run
+inside Capy itself.
 
 ## What was run to verify this
 
