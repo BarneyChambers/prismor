@@ -1326,6 +1326,11 @@ def event_artifacts(raw: Dict[str, Any]) -> Dict[str, Any]:
 
     # user_message and system are the prompt taken apart again: what the person
     # typed, and the instructions the workflow wraps around it.
+    # Codex events recorded before its adapter promoted agent_id still carry
+    # it in the raw hook payload; read it there so old sessions group too.
+    hook = meta.get("raw") if isinstance(meta.get("raw"), dict) else {}
+    if not meta.get("subagent_id") and hook.get("agent_id"):
+        meta = {**meta, "subagent_id": hook["agent_id"], "subagent_type": hook.get("agent_type")}
     for key in ("user_message", "system", "model", "provider", "surface", "cwd",
                 "subagent_id", "subagent_type", "agent_name", "tool_name"):
         if meta.get(key):

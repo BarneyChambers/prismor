@@ -1778,6 +1778,12 @@ def _merge_codex(config: Dict[str, Any], command: str) -> Dict[str, Any]:
                 "hooks": [{"type": "command", "command": command}],
             },
         )
+    # SubagentStop (Codex 0.16x): records the subagent's name and final message
+    # and tells the person what Prismor did inside it. Informational; never blocks.
+    hooks["SubagentStop"] = _merge_claude_entries(
+        hooks.get("SubagentStop", []),
+        {"matcher": "*", "hooks": [{"type": "command", "command": command}]},
+    )
     return {**config, "hooks": hooks}
 
 
@@ -2210,7 +2216,12 @@ def _normalize_codex(payload: Dict[str, Any], session_id: str, workspace: Path) 
         "session_id": session_id,
         "agent": "codex",
         "agent_event": hook_event,
-        "metadata": {"cwd": payload.get("cwd"), "tool_name": tool_name, "raw": payload},
+        # Codex sends a subagent's calls under the parent's session_id, with
+        # agent_id set to the subagent's own thread id; without these the
+        # dashboard credits them to the main agent.
+        "metadata": {"cwd": payload.get("cwd"), "tool_name": tool_name,
+                     "subagent_id": payload.get("agent_id"),
+                     "subagent_type": payload.get("agent_type"), "raw": payload},
     }
     if hook_event == "UserPromptSubmit":
         return {**base, "type": "prompt", "prompt": payload.get("prompt", "")}

@@ -76,6 +76,38 @@ def record_call(payload: Dict[str, Any], findings: List[Dict[str, Any]],
         pass
 
 
+def _name_from_transcript(path: str) -> str:
+    """A subagent's own name, from the first line of its transcript. Codex
+    writes its spawn path there ({"source": {"subagent": {"thread_spawn":
+    {"agent_path": "/root/fix_build"}}}}); Claude does not, so this is ""."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            meta = json.loads(fh.readline() or "{}").get("payload") or {}
+        spawn = ((meta.get("source") or {}).get("subagent") or {}).get("thread_spawn") or {}
+        return str(spawn.get("agent_path") or "").rsplit("/", 1)[-1].replace("_", " ")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def finish_event(payload: Dict[str, Any], agent: str) -> Dict[str, Any]:
+    """The event recorded when a subagent stops: which one, what it was
+    called, and the last thing it said (its report)."""
+    from datetime import datetime, timezone
+
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "session_id": str(payload.get("session_id") or ""),
+        "agent": agent,
+        "agent_event": "SubagentStop",
+        "type": "subagent_stop",
+        "description": _name_from_transcript(str(payload.get("agent_transcript_path") or "")),
+        "response": str(payload.get("last_assistant_message") or "")[:8000],
+        "metadata": {"subagent_id": subagent_of(payload),
+                     "subagent_type": payload.get("agent_type") or payload.get("agentType"),
+                     "raw": {k: v for k, v in payload.items() if k != "last_assistant_message"}},
+    }
+
+
 def queue_notice(session_id: str, message: str) -> None:
     """Hold a line for the main chat. Claude Code files a SubagentStop hook's
     systemMessage under the subagent's own (sidechain) transcript, so printed

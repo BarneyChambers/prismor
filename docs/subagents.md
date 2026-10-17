@@ -8,6 +8,12 @@ about it: a subagent's blocks go to the subagent, and a background subagent's
 work never shows in the main chat. From the release after 1.61.0 (#628),
 Prismor tells the person what happened inside each subagent.
 
+Codex (0.16x, `spawn_agent`) works the same way at the hook level: a
+subagent's calls arrive under the parent's session with the subagent's own
+thread id in `agent_id`, and Codex sends `SubagentStop` with the subagent's
+last message. Prismor attributes those calls to the subagent and enforces the
+same rules on them.
+
 ## What is enforced
 
 - **Every rule that applies to the main agent applies inside a subagent.**
@@ -50,6 +56,19 @@ main-thread hook: after the `Agent` tool returns for a foreground subagent, or
 with the task-notification prompt for a background one, so it appears as the
 subagent finishes. A subagent that made no screened calls adds no line.
 
+## In the session view
+
+`prismor dashboard` shows each turn's subagents as cards under the prompt that
+launched them: the task they were given, finished or not, how long they ran,
+their call count, blocked and warned counts, the files they changed, and the
+start of their own final report. "Show N calls" opens a subagent's calls. Work
+a subagent does after a later prompt stays with the turn that launched it.
+
+The task name comes from the launch row for Claude Code (the `Agent` tool's
+description) and from the subagent's spawn path for Codex (`/root/fix_build`
+shows as "fix build"), read from its transcript at `SubagentStop`. The report
+is Claude's `<task-notification>` result, or Codex's `last_assistant_message`.
+
 ## Subagent reports
 
 A background subagent hands its report back as a `<task-notification>`
@@ -65,14 +84,22 @@ at `SubagentStop`.
 
 ## Setup
 
-Claude Code hooks register `SubagentStop` from the release after 1.61.0. Existing installs get
-it by re-running `prismor setup` or `prismor install-hooks --agent claude`.
-`prismor doctor` reports the event in its hook health check.
+Claude Code hooks register `SubagentStop` from the release after 1.61.0, and
+Codex hooks from the release after 1.61.5. Existing installs get it by
+re-running `prismor setup` or `prismor install-hooks --agent claude|codex`.
+`prismor doctor` reports the event in its hook health check. Codex versions
+that predate `SubagentStop` ignore the entry; their other hooks keep running
+(checked on Codex 0.145).
 
 ## Limits
 
-- Subagent attribution, the step-up refusal and the summary line are Claude
-  Code features: other agents don't tag subagent calls with an `agent_id`.
+- Subagent attribution and enforcement cover Claude Code and Codex. Other
+  agents don't tag subagent calls with an `agent_id`.
+- The summary line reaches the person in Claude Code only. For Codex it is
+  queued, but no main-thread hook Prismor installs fires at a point where
+  Codex shows it; the dashboard has the same information.
+- Codex encrypts the brief it hands a subagent, so a Codex card is named by
+  the subagent's spawn path, not the task text.
 - Without a semantic judge, file and shell output inside a subagent is not
   screened for prompt injection (the injection patterns only cover tool
   results). See [Semantic Guard](semantic-guard.md).
