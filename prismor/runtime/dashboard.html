@@ -410,7 +410,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .drawer-policy-card {
     border: 1px solid var(--gray-200); background: var(--gray-50);
     border-left: 3px solid #ef4444;
-    border-radius: 6px; padding: 9px 10px; margin-top: 8px; min-width: 0;
+    /* Square the left corners so the colour reads as a flat strip, not a
+       rounded tab; the right corners stay rounded with the card. */
+    border-radius: 0 6px 6px 0; padding: 9px 10px; margin-top: 8px; min-width: 0;
   }
   .drawer-policy-card.allowed { border-left-color: #22c55e; }
   .drawer-policy-card.warned  { border-left-color: #f59e0b; }
@@ -1109,10 +1111,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-stat b { display:block; color:var(--gray-900); font-size:22px; font-weight:700; line-height:1.1; }
   .ext-stat span { font-size: 12px; color:var(--gray-500); text-transform:uppercase; letter-spacing:.04em; }
   .ext-stat em { font-style:normal; font-size: 12px; font-weight:600; color:#b45309; margin-left:6px; }
-  .ext-views { display:inline-flex; gap:2px; padding:3px; margin-bottom:14px; border:1px solid var(--gray-200); border-radius:9px; background:var(--gray-100); }
-  .ext-view { font-size:12.5px; font-weight:600; padding:6px 14px; border-radius:6px; border:0; background:none; color:var(--gray-500); cursor:pointer; }
+  .ext-views { display:inline-flex; gap:4px; padding:5px; margin-bottom:16px; border:1px solid var(--gray-200); border-radius:11px; background:var(--gray-100); }
+  .ext-view { font-size:14px; font-weight:600; padding:11px 22px; border-radius:8px; border:0; background:none; color:var(--gray-500); cursor:pointer; }
   .ext-view.on { background:var(--surface); color:var(--gray-900); box-shadow:0 1px 2px rgba(0,0,0,.12); }
-  .ext-view small { font-weight:600; color:var(--gray-400); margin-left:5px; }
+  .ext-view small { font-size:12.5px; font-weight:600; color:var(--gray-400); margin-left:7px; }
   .ext-use { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; padding:10px 12px; cursor:pointer; }
   .ext-use:hover { background:var(--gray-100); border-radius:10px; }
   .ext-use-id { font-family:var(--mono,ui-monospace,monospace); font-size:12px; color:var(--gray-900); font-weight:600; }
@@ -2146,6 +2148,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   /* hairline KPI strip */
   .strip-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; }
+  /* Global time window: lives in the top bar so every tab shares one control. */
+  .topbar-days { font-size: 12.5px; padding: 6px 10px; border-radius: 6px; }
   .kpi-label { font-size: 12px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
   .kpi-strip {
     display: grid; grid-template-columns: repeat(4, 1fr);
@@ -2413,6 +2417,13 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span id="breadcrumbLabel">Overview</span>
   </div>
   <div class="topbar-right">
+    <select id="globalDays" class="fsel topbar-days" title="Time window, applied across the dashboard">
+      <option value="1">Last 1 day</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
     <span id="lastUpdated" class="last-updated"></span>
     <button id="modeChip" class="mode-chip unknown" onclick="gotoPolicy()"
             title="Effective enforcement mode: click to manage in Policy Control">
@@ -2525,13 +2536,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   <div class="strip-head">
     <span class="kpi-label">Agent activity · <span id="hintActivity">last 7 days</span></span>
-    <select id="globalDays" class="fsel">
-      <option value="1" selected>Last 1 day</option>
-      <option value="7">Last 7 days</option>
-      <option value="14">Last 14 days</option>
-      <option value="30">Last 30 days</option>
-      <option value="90">Last 90 days</option>
-    </select>
   </div>
   <div class="kpi-strip">
     <div><div class="kpi-label" title="Tool calls that went through a Prismor hook and got a decision.">Calls screened <i class="help">?</i></div><div id="kpiToolCalls" class="kpi-big">-</div><div id="kpiToolsDelta" class="kpi-sub kpi-delta neutral"></div></div>
@@ -4210,14 +4214,13 @@ async function extApprove(id) {
 // on the ledger side; skills and MCP servers have both.
 const EXT_KINDS = [['skill', 'Skills'], ['mcp', 'MCP servers'], ['secret', 'Secrets'], ['package', 'Packages'], ['plugin', 'Plugins'], ['hook', 'Hooks']];
 const EXT_DAYS = [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last year']];
-let _depCache = null, _depDays = 30, _extTab = 'all', _extQuery = '';
+let _depCache = null, _extTab = 'all', _extQuery = '';
+// The time window is one global control in the top bar; Extensions reads it
+// rather than keeping a second, competing selector.
+let _depDays = +(document.getElementById('globalDays') || {}).value || 7;
 async function loadDependencies() {
   try { _depCache = await apiFetch('/api/dependencies?days=' + _depDays, {timeoutMs: 30000}); }
   catch (e) { _depCache = {rows: [], error: e.message}; }
-}
-function extDaysSelect(onchange) {
-  return '<select class="fsel" style="margin-right:6px" onchange="' + onchange + '">' + EXT_DAYS.map(([d, l]) =>
-    '<option value="' + d + '"' + (_depDays === d ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
 }
 function extItems(kind) {
   const items = new Map();
@@ -4281,7 +4284,7 @@ function renderExtKind(kind) {
       : [new Set([].concat(...items.map(it => it.deps.map(r => r.target)))).size, 'Ecosystems', 'registries installed from']]
     .map(([n, label, sub, cls]) => '<div class="ext-stat ' + (cls || '') + '" style="cursor:default"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
   document.getElementById('extViews').style.display = 'none';
-  document.getElementById('extFilters').innerHTML = extDaysSelect('_depDays=+this.value;loadDependencies().then(renderExtensions)') +
+  document.getElementById('extFilters').innerHTML =
     '<input class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Filter ' + safeAttr(extKindNoun(kind)) + '…" value="' + safeAttr(_extQuery) + '" oninput="_extQuery=this.value;renderExtKindList()" style="min-width:220px" />';
   renderExtKindList();
   if (ledgerKind) renderExtEvents({events: ((_extCache || {}).events || []).filter(e => e.kind === kind)});
@@ -6598,7 +6601,12 @@ async function loadSupplyChain(){
     ).join('');}
   }catch(e){console.error('[prismor] supply-chain:',e);}
 }
-document.getElementById('globalDays').addEventListener('change',()=>{loadStats();loadSupplyChain();loadNetworkCalls();});
+document.getElementById('globalDays').addEventListener('change',function(){
+  _depDays = +this.value || 7;
+  loadStats(); loadSupplyChain(); loadNetworkCalls();
+  // Extensions is driven by the same window; refresh it if it has data.
+  if (_depCache) { _depCache = null; loadDependencies().then(renderExtensions); }
+});
 
 // ══════════════════════════════════════════════════════════════════════════
 // AGENTS TAB: per-agent kill switch, mode override, IAM profile
