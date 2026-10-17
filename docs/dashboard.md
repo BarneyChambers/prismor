@@ -265,6 +265,16 @@ offline machines; `PRISMOR_PRICING_OFFLINE=1` never fetches). Drop a
 means no transcript is on this machine for that agent; `—` means the model has
 no known price.
 
+Each request is priced on its own, at current rates, before costs are summed,
+so a price refresh or `pricing.json` change also corrects past sessions. When a
+model has long-context pricing (LiteLLM's `*_above_<N>k_tokens` fields: 200k for
+Claude Sonnet 4/4.5 and Gemini 2.5 Pro, 272k for recent GPT models), the higher
+rates apply to the whole request once its input plus cache read/write tokens
+exceed the threshold; output tokens never select the tier. Custom rates take
+`long_context_threshold` plus `input_long_context`, `output_long_context`,
+`cache_read_long_context`, `cache_write_long_context` and `cache_1h_long_context`;
+a missing tier rate keeps that bucket's base rate.
+
 ---
 
 ## Offline analysis: `analyze` and `ingest`
