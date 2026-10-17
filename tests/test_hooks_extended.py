@@ -916,6 +916,25 @@ class TestNormalizePayloadClaude(unittest.TestCase):
         self.assertEqual(event["type"], "subagent_spawn")
         self.assertEqual(event["subagent_type"], "general-purpose")
 
+    def test_codex_subagent_call_keeps_its_agent_id(self):
+        # Codex sends a subagent's tool calls under the parent's session_id and
+        # names the subagent's thread in agent_id (payload captured live from
+        # codex-cli 0.163.0); the main agent's own calls have no agent_id.
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "session_id": "01a14991-b90c-7eb2-8e13-11d823b0242f",
+            "agent_id": "01a14992-a6ad-74d3-876b-bbe987e82e22",
+            "agent_type": "default",
+            "tool_name": "Bash",
+            "tool_input": {"command": "echo prismor-sub-one"},
+        }
+        meta = normalize_payload(agent="codex", payload=payload, workspace=Path("/tmp"))["event"]["metadata"]
+        self.assertEqual(meta["subagent_id"], "01a14992-a6ad-74d3-876b-bbe987e82e22")
+        self.assertEqual(meta["subagent_type"], "default")
+        del payload["agent_id"], payload["agent_type"]
+        meta = normalize_payload(agent="codex", payload=payload, workspace=Path("/tmp"))["event"]["metadata"]
+        self.assertIsNone(meta["subagent_id"])
+
     def test_ephemeral_session_id_when_missing(self):
         payload = {"hook_event_name": "Stop"}
         result = normalize_payload(agent="claude", payload=payload, workspace=Path("/tmp"))

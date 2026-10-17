@@ -54,3 +54,28 @@ def test_subagent_calls_group_under_launching_turn():
     sa = first["subs"]["abc"]
     assert sa["desc"] == "Audit A" and sa["type"] == "fork"
     assert sa["done"]["status"] == "completed" and sa["done"]["result"] == "All good."
+
+
+_CODEX = r"""
+const h = require('fs').readFileSync(process.argv[1], 'utf8');
+const src = h.slice(h.indexOf('const LANE_LABEL'), h.indexOf('function treeRowEl'));
+const groupTrail = new Function(src + '; return groupTrail;')();
+// Codex: no readable launch row, so the stop names the subagent and reports.
+const trail = [
+  {type:'prompt', lane:'prompt', artifacts:{user_message:'fix the build'}},
+  {type:'shell', lane:'shell', artifacts:{command:'make build', subagent_id:'x1', subagent_type:'default'}},
+  {type:'subagent_stop', lane:'other', artifacts:{subagent_id:'x1', subagent_type:'default',
+    description:'fix build', response:'Build fixed.'}},
+];
+const t = groupTrail(trail)[0];
+console.log(JSON.stringify({lanes: Object.fromEntries([...t.lanes].map(([k, v]) => [k, v.length])), sub: t.subs.x1}));
+"""
+
+
+@pytest.mark.skipif(_NODE is None, reason="node not installed")
+def test_codex_subagent_stop_names_the_card_and_is_its_outcome():
+    out = subprocess.run([_NODE, "-e", _CODEX, str(_HTML)], capture_output=True, text=True, check=True)
+    got = json.loads(out.stdout)
+    assert got["lanes"] == {"prompt": 1, "sub:x1": 1}   # the stop is the outcome, not a row
+    assert got["sub"]["desc"] == "fix build"
+    assert got["sub"]["done"]["result"] == "Build fixed."

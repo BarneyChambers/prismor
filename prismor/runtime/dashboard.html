@@ -1292,23 +1292,26 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .art-pre::-webkit-scrollbar-thumb { background:var(--gray-300); border-radius:4px; }
   .sess-tree { padding:8px 6px 14px; font-size:12.5px; }
   /* Subagent cards: what each one was asked, how it went, what it concluded. */
-  .sa-head { margin:10px 8px 6px 30px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--gray-500); }
-  .sa-head b { color:var(--gray-800); }
+  .sa-head { margin:12px 8px 8px 30px; font-size:12.5px; color:var(--gray-500); }
+  .sa-head b { color:var(--gray-900); font-weight:600; }
   .sa-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px; margin:0 8px 12px 30px; }
   .sa-card { border:1px solid var(--gray-200); border-radius:10px; padding:11px 12px 9px; background:var(--surface); display:flex; flex-direction:column; gap:6px; min-width:0; }
   .sa-card.open { grid-column:1/-1; }
-  .sa-card.bad { border-color:#fca5a5; }
-  .sa-title { display:flex; gap:7px; align-items:flex-start; font-weight:600; color:var(--gray-900); font-size:13px; line-height:1.35; }
-  .sa-title .icon { margin-top:2px; color:var(--gray-500); }
+  .sa-card.bad { border-color:var(--bad); }
+  .sa-title { font-weight:600; color:var(--gray-900); font-size:13px; line-height:1.35; }
   .sa-meta { color:var(--gray-500); font-size:11.5px; display:flex; flex-wrap:wrap; gap:4px 10px; }
-  .sa-st { font-weight:600; } .sa-st.done { color:var(--green-600, #16a34a); } .sa-st.run { color:#b45309; } .sa-st.fail { color:#b91c1c; }
-  .sa-badge { font-size:11px; font-weight:600; border-radius:5px; padding:1px 6px; }
-  .sa-badge.block { color:#b91c1c; background:#fee2e2; } .sa-badge.warn { color:#92400e; background:#fef3c7; }
+  /* Theme tokens only, so both themes hold up. "No finish recorded" is a
+     gap in what Codex/Claude reported, not an alarm, so it stays neutral. */
+  .sa-st { font-weight:600; } .sa-st.done { color:var(--ok); } .sa-st.run { color:var(--gray-600); } .sa-st.fail { color:var(--danger-ink); }
+  .sa-badge { font-size:11px; font-weight:600; border-radius:4px; padding:1px 6px; }
+  .sa-badge.block { color:var(--danger-ink); background:color-mix(in srgb, var(--bad) 13%, transparent); }
+  .sa-badge.warn { color:var(--gray-800); background:color-mix(in srgb, var(--warn) 22%, transparent); }
   .sa-out { color:var(--gray-700); font-size:12px; line-height:1.45; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .sa-card.open .sa-out { -webkit-line-clamp:unset; white-space:pre-wrap; }
   .sa-files { color:var(--gray-500); font-size:11px; font-family:var(--mono, ui-monospace, monospace); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .sa-more { align-self:flex-start; border:0; background:none; padding:2px 0; color:var(--gray-600); font-size:11.5px; cursor:pointer; }
-  .sa-more:hover { color:var(--gray-900); }
+  .sa-more:hover { color:var(--gray-900); text-decoration:underline; }
+  .sa-more:focus-visible { outline:2px solid var(--gray-700); outline-offset:2px; border-radius:3px; }
   .sa-calls.hidden { display:none; }
   .sa-minor { margin:-4px 8px 10px 30px; } .sa-minor-calls { margin:0 8px 10px 30px; }
   .sa-calls { border-top:1px solid var(--gray-100); padding-top:4px; }
@@ -1321,7 +1324,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .tree-row:hover { background:var(--gray-50); }
   .tree-row.turn { padding:7px 8px; }
   .tree-row.lane .tree-lane-label { font-size:11px; text-transform:uppercase; color:var(--gray-500); }
-  .tree-row.lane.subagent .tree-lane-label { color:var(--gray-700); font-weight:600; }
   .tree-caret { width:12px; flex:none; color:var(--gray-400); transition:transform .12s ease; }
   .tree-row.collapsed .tree-caret { transform:rotate(-90deg); }
   .tree-turn-label { font-weight:700; color:var(--gray-800); }
@@ -2341,7 +2343,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <symbol id="kl-other" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12H5.01M12 12H12.01M19 12H19.01"/></symbol>
   <symbol id="kl-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 3 C20.6569 3 22 4.3431 22 6 C22 7.6569 20.6569 9 19 9 C17.3431 9 16 7.6569 16 6 C16 4.3431 17.3431 3 19 3 ZM12.668 3.0179 C12.4456 3.006 12.2228 3 12 3 C6.4772 3 2 6.5817 2 11 C2 12.9769 2.915 14.8839 4.5686 16.353 L5 21 L9.5808 18.7624 C10.3721 18.9202 11.1845 19 12 19 C16.8496 19 21.0003 16.2162 21.8466 12.3961" fill="none"/></symbol>
   <symbol id="kl-shell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5L10.5571 10.6204C10.7899 10.8199 10.7899 11.1801 10.5571 11.3796L4 17M20 19H13"/></symbol>
-  <symbol id="kl-subagent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
   <symbol id="kl-task" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v6l4 2M22 12c0 5.5228-4.4772 10-10 10S2 17.5228 2 12 6.4772 2 12 2s10 4.4772 10 10Z"/></symbol>
   <symbol id="kl-tools" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.682 8.8536L20.2678 7.2678C20.4553 7.0802 20.7097 6.9749 20.9749 6.9749C21.4902 6.9749 21.9211 7.3664 21.9703 7.8794C21.9901 8.0857 22 8.2928 22 8.5C22 12.0899 19.0899 15 15.5 15C11.9101 15 9 12.0899 9 8.5C9 4.9101 11.9101 2 15.5 2C15.7072 2 15.9143 2.0099 16.1206 2.0297C16.6336 2.0789 17.0251 2.5098 17.0251 3.0251C17.0251 3.2903 16.9198 3.5447 16.7322 3.7322L15.1464 5.318C14.6776 5.7869 14.4142 6.4227 14.4142 7.0858C14.4142 8.4665 15.5335 9.5858 16.9142 9.5858C17.5773 9.5858 18.2131 9.3224 18.682 8.8536ZM15.3955 14.9992C15.3688 14.9987 15.342 14.9985 15.3152 14.9985C13.9891 14.9985 12.7173 15.5253 11.7797 16.463L7.1213 21.1213C6.5587 21.6839 5.7956 22 5 22C3.3431 22 2 20.6569 2 19C2 18.2044 2.3161 17.4413 2.8787 16.8787L7.537 12.2203C8.4747 11.2827 9.0015 10.0109 9.0015 8.6848C9.0015 8.658 9.0013 8.6312 9.0008 8.6045"/></symbol>
 </svg>
@@ -5632,7 +5633,14 @@ function groupTrail(trail){
     if (ev.type === 'subagent_spawn' && a.description) s.desc = String(a.description);
     if (a.subagent_type && !s.type) s.type = String(a.subagent_type);
   });
-  // A subagent's finish notice says how it ended and carries its final report.
+  // How a subagent ended: Codex (and Claude, from 1.6x) send SubagentStop with
+  // its name and last message; Claude's task notification adds a status.
+  trail.forEach(ev=>{
+    if (ev.type !== 'subagent_stop') return;
+    const a = ev.artifacts || {}, id = a.subagent_id; if (!id || !subs[id]) return;
+    if (a.description && !subs[id].desc) subs[id].desc = String(a.description);
+    subs[id].done = Object.assign({status:'completed', took:'', result: String(a.response||'')}, subs[id].done || {});
+  });
   trail.forEach(ev=>{
     const n = taskNote(ev); if (!n || !subs[n.id]) return;
     const t = (ev.artifacts||{}).user_message || (ev.artifacts||{}).prompt || '';
@@ -5672,7 +5680,7 @@ function groupTrail(trail){
     const home = sid ? (subTurn[sid] || (subTurn[sid] = cur)) : cur;
     const lane = sid ? 'sub:'+sid : eventLane(ev);
     if (sid) home.subs = subs;
-    if (note && sid) return;  // shown as the card's outcome, not as a row
+    if ((note && sid) || ev.type === 'subagent_stop') return;  // the card's outcome, not a row
     if (!home.lanes.has(lane)) home.lanes.set(lane, []);
     home.lanes.get(lane).push({ev, i});
     home.count++;
@@ -5713,7 +5721,7 @@ function subagentCards(turn, lanes){
   const wrap = document.createElement('div');
   const cards = lanes.map(lane=>{
     const id = lane.slice(4), sa = (turn.subs||{})[id] || {}, items = turn.lanes.get(lane);
-    const calls = items.filter(x=>x.ev.type !== 'subagent_spawn');
+    const calls = items.filter(x=>x.ev.type !== 'subagent_spawn' && x.ev.type !== 'subagent_stop');
     const ts = calls.map(x=>saTime(x.ev)).filter(t=>t!=null);
     const v = calls.map(x=>flowVerdict(x.ev));
     const blocked = v.filter(x=>x==='block').length, warned = v.filter(x=>x==='warn').length;
@@ -5722,14 +5730,15 @@ function subagentCards(turn, lanes){
     return {id, sa, items, calls, blocked, warned, files, d, failed, start: ts.length ? Math.min(...ts) : null, end: ts.length ? Math.max(...ts) : null};
   });
   // How many ran at once, so "6 subagents" also says whether they overlapped.
-  // An id-only subagent with a call or two and no report is noise next to the
-  // real ones; it folds into one line at the end instead of taking a card.
-  const minor = cards.filter(c=>!c.sa.desc && !c.d && c.calls.length <= 2);
+  // An id-only subagent (no task, no type, no report) with a call or two is
+  // noise next to the real ones; it folds into one line instead of a card.
+  // Codex never reports a task, but does send a type, so its subagents stay.
+  const minor = cards.filter(c=>!c.sa.desc && !c.sa.type && !c.d && c.calls.length <= 2);
   const major = cards.filter(c=>!minor.includes(c));
   let peak = 0; major.forEach(c=>{ if (c.start==null) return;
     peak = Math.max(peak, major.filter(o=>o.start!=null && o.start<=c.start && o.end>=c.start).length); });
   wrap.innerHTML = '<div class="sa-head"><b>'+major.length+' subagent'+(major.length===1?'':'s')+'</b>'+
-    (peak > 1 ? ' · up to '+peak+' at the same time' : '')+'</div>';
+    (peak > 1 ? ', up to '+peak+' running at once' : '')+'</div>';
   const grid = document.createElement('div'); grid.className = 'sa-grid';
   major.forEach(c=>{
     const el = document.createElement('div'); el.className = 'sa-card'+(c.failed ? ' bad' : '');
@@ -5742,7 +5751,7 @@ function subagentCards(turn, lanes){
       .replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&')
       .replace(/^#+\s*/gm,'').replace(/\*\*/g,'').replace(/`/g,'').trim() : '';
     el.innerHTML =
-      '<div class="sa-title"><svg class="icon"><use href="#i-bot"/></svg><span>'+safe(c.sa.desc || 'Subagent '+c.id.slice(0,8))+'</span></div>'+
+      '<div class="sa-title">'+safe(c.sa.desc || 'Subagent '+c.id.slice(0,8))+'</div>'+
       '<div class="sa-meta">'+st+(took?'<span>'+safe(took)+'</span>':'')+'<span>'+c.calls.length+' call'+(c.calls.length===1?'':'s')+'</span>'+
         (c.sa.type ? '<span>'+safe(c.sa.type)+'</span>' : '')+
         (c.blocked ? '<span class="sa-badge block">'+c.blocked+' blocked</span>' : '')+
@@ -5753,8 +5762,9 @@ function subagentCards(turn, lanes){
     const list = document.createElement('div'); list.className = 'sa-calls hidden';
     c.items.forEach(({ev,i})=>list.appendChild(treeLeafEl(ev,i)));
     const label = open => (open ? 'Hide calls ▾' : 'Show '+c.calls.length+' call'+(c.calls.length===1?'':'s')+' ▸');
-    more.textContent = label(false);
-    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; el.classList.toggle('open', open); more.textContent = label(open); };
+    more.textContent = label(false); more.setAttribute('aria-expanded', 'false');
+    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; el.classList.toggle('open', open);
+      more.textContent = label(open); more.setAttribute('aria-expanded', String(open)); };
     el.appendChild(more); el.appendChild(list); grid.appendChild(el);
   });
   wrap.appendChild(grid);
@@ -5764,8 +5774,8 @@ function subagentCards(turn, lanes){
     const list = document.createElement('div'); list.className = 'sa-calls hidden sa-minor-calls';
     minor.forEach(c=>c.items.forEach(({ev,i})=>list.appendChild(treeLeafEl(ev,i))));
     const label = open => (open ? 'Hide ' : '+ ')+minor.length+' minor subagent'+(minor.length===1?'':'s')+' ('+n+' call'+(n===1?'':'s')+', no task or report recorded)'+(open?' ▾':' ▸');
-    more.textContent = label(false);
-    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; more.textContent = label(open); };
+    more.textContent = label(false); more.setAttribute('aria-expanded', 'false');
+    more.onclick = ()=>{ const open = list.classList.toggle('hidden') === false; more.textContent = label(open); more.setAttribute('aria-expanded', String(open)); };
     wrap.appendChild(more); wrap.appendChild(list);
   }
   return wrap;
