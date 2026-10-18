@@ -2296,6 +2296,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .pc-sub-btn { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); color: var(--muted); cursor: pointer; }
   .pc-sub-btn.active { color: var(--ink); border-color: var(--ink); }
   #pcAgent { min-width: 180px; }
+  .upgrade-btn.rt-update { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+  html[data-theme="dark"] .upgrade-btn.rt-update { color: #93c5fd; border-color: rgba(147,197,253,.35); background: rgba(147,197,253,.08); }
   #pcAgentControls, #globalToolGrid .tp-block { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 4px 18px; }
   #globalToolGrid .tp-block { padding: 14px 18px; }
   .rt-bar { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 12px 18px; margin-bottom: 14px; font-size: 13.5px; color: var(--ink); }
@@ -2507,6 +2509,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <option value="30">Last 30 days</option>
       <option value="90">Last 90 days</option>
     </select>
+    <span id="rtVersion" class="last-updated"></span>
     <span id="lastUpdated" class="last-updated"></span>
     <button id="modeChip" class="mode-chip unknown" onclick="gotoPolicy()"
             title="Effective enforcement mode: click to manage in Policy Control">
@@ -3152,7 +3155,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="rt-cell"><label class="kpi-label" for="pcAgent">Applies to</label>
       <select id="pcAgent" class="fsel" onchange="setPolicyAgent(this.value)"><option value="">All agents</option></select></div>
     <div class="rt-cell rt-grow"><span id="rtPolicy">…</span></div>
-    <div class="rt-cell"><span class="kpi-label">Version</span><span id="rtVersion">…</span></div>
   </div>
 
   <div id="enrollBanner"></div>
@@ -7420,9 +7422,9 @@ async function loadPolicy() {
 // ── Version + pause bar on the policy page ─────────────────────────────────
 function renderRuntime(r) {
   const v = document.getElementById('rtVersion');
-  if (v) v.innerHTML = safe(r.version) + (r.update_available
-    ? ' <button class="btn-ghost" onclick="openChangelog()">Update to ' + safe(r.latest) + '</button>'
-    : (r.latest ? ' <span style="color:var(--muted)">latest</span>' : ''));
+  if (v) v.innerHTML = r.update_available
+    ? '<button class="upgrade-btn rt-update" title="You have ' + safeAttr(r.version) + '. See what changed and update." onclick="openChangelog()">Update to ' + safe(r.latest) + '</button>'
+    : '<span title="Installed Prismor version' + (r.latest ? ': the latest release' : '') + '">v' + safe(r.version) + (r.latest ? ' · latest' : '') + '</span>';
   const p = document.getElementById('rtPause');
   if (!p) return;
   const until = r.paused_until ? 'Paused until ' + new Date(r.paused_until * 1000).toLocaleString() : 'Paused';
