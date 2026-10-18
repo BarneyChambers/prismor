@@ -25,6 +25,7 @@ Read endpoints:
     GET /api/sessions/:id/dev → what went wrong + what changed (devlog.py)
     GET /api/files         → files agents wrote (?q=… path filter)
     GET /api/blame         → agent sessions that wrote ?path=…[&line=N], with diffs
+    GET /api/hooks         → every hook run across Claude Code sessions: runs, timing, failures, sessions (?days=7)
     GET /api/friction      → failures recurring across sessions (?workspace=…&days=14)
 
 Write endpoints (human-only — localhost):
@@ -55,6 +56,7 @@ from prismor.runtime.store import (
     get_sessions_page,
     get_mcp_usage,
     get_dependency_usage,
+    get_hook_stats,
     get_network_calls,
     get_findings_page,
     get_events_page,
@@ -776,6 +778,14 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
             try:
                 days = max(1, qint("days", 7))
                 self._send_json(get_network_calls(hours=days * 24))
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=500)
+            return
+
+        if path == "/api/hooks":
+            try:
+                days = max(1, qint("days", 7))
+                self._send_json(get_hook_stats(hours=days * 24))
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
             return
