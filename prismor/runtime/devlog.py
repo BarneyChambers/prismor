@@ -519,8 +519,9 @@ def _shell_writes() -> List[Dict[str, Any]]:
     return out
 
 
-def files(query: str = "", limit: int = 200) -> Dict[str, Any]:
-    """Every file an agent is on record writing, most recently touched first."""
+def files(query: str = "", limit: int = 200, days: int = 0) -> Dict[str, Any]:
+    """Every file an agent is on record writing, most recently touched first.
+    ``days`` keeps files last written in that window (0 = all time)."""
     _ensure_path_index()
     conn = _db()
     if conn is None:
@@ -542,6 +543,10 @@ def files(query: str = "", limit: int = 200) -> Dict[str, Any]:
                 f["sids"].add(w["sessionId"])
                 f["n"] += 1  # ponytail: may double-count a session that also used Edit on the file
             f["last"] = max(f["last"], w["ts"] or "")
+    if days > 0:
+        from prismor.runtime.store import _since_filter
+        keep = _since_filter(days * 24)
+        merged = {k: f for k, f in merged.items() if keep(f["last"])}
     out = sorted(merged.values(), key=lambda f: f["last"], reverse=True)[:limit]
     return _redact({"files": [{"path": f["path"], "sessions": f["n"], "last": f["last"]} for f in out]})
 
@@ -563,7 +568,7 @@ def friction(workspace: Optional[str] = None, days: int = 14, max_sessions: int 
         return {"days": days, "sessions": 0, "patterns": []}
     try:
         sids = [r[0] for r in conn.execute(
-            "SELECT session_id FROM sessions WHERE updated_at >= datetime('now', ?) "
+            "SELECT session_id FROM sessions WHERE updated_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?) "
             "AND (? IS NULL OR workspace_path = ?) ORDER BY updated_at DESC LIMIT ?",
             (f"-{int(days)} days", workspace, workspace, max_sessions))]
     finally:

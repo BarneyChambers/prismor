@@ -2306,6 +2306,13 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .rt-bar .btn-ghost { padding: 4px 10px; font-size: 13px; }
   .rt-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #16a34a; }
   .rt-dot.off { background: #d97706; }
+  .upgrade-btn.rt-appr { color: var(--tone-warn-fg); background: var(--tone-warn-bg); border-color: transparent; font-weight: 600; }
+  .appr-list { padding: 8px 28px 22px; max-height: 60vh; overflow-y: auto; }
+  .appr-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+  .appr-row:last-child { border-bottom: 0; }
+  .appr-main { flex: 1; min-width: 0; }
+  .appr-what { font-size: 13px; color: var(--ink); overflow-wrap: anywhere; }
+  .appr-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .upgrade-btn.rt-paused { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
   html[data-theme="dark"] .upgrade-btn.rt-paused { color: #fbbf24; border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.08); }
   .cl-body { padding: 8px 28px 22px; font-size: 13px; line-height: 1.55; color: var(--gray-700); max-height: 55vh; overflow-y: auto; }
@@ -2498,6 +2505,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-drawer-close, .up-modal-close { display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-sm); height: var(--ctl-sm); padding: 0; border-radius: var(--r-ctl); }
   .tab-btn { min-height: 36px; }
   b, strong { font-weight: 600; }
+  [hidden] { display: none !important; }  /* component display rules must not resurrect hidden elements */
 
   /* Tabs: section tabs are underlined everywhere (Policy, Extensions kinds);
      the boxed segmented control is only for switching a view of the same data. */
@@ -2642,10 +2650,12 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
             title="Effective enforcement mode: click to manage in Policy Control">
       <span class="badge-dot"></span><span id="modeChipLabel">mode</span>
     </button>
+    <button id="apprBtn" class="upgrade-btn rt-appr" hidden onclick="openApprovals()" title="Blocked calls waiting for your decision"></button>
     <span id="rtPause"></span>
     <button class="upgrade-btn" onclick="openPageHelp()" title="Open the guide for this page">Help</button>
     <button id="refreshBtn" class="upgrade-btn" onclick="refreshDashboard()"><svg class="icon"><use href="#i-refresh"/></svg> Refresh</button>
-    <button class="upgrade-btn" onclick="openUpgradeModal()"><svg class="icon"><use href="#i-sparkles"/></svg> Upgrade</button>
+    <button class="upgrade-btn" id="upgradeBtn" onclick="openUpgradeModal()"><svg class="icon"><use href="#i-sparkles"/></svg> Upgrade</button>
+    <a class="upgrade-btn" id="orgBtn" hidden target="_blank" rel="noopener">Org dashboard ↗</a>
   </div>
 </div>
 
@@ -2897,7 +2907,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   <div class="grid" style="grid-template-columns:1fr">
     <div class="card">
-      <div class="card-title">Agent friction <span class="dev-quiet">failures that recur across sessions, last 14 days</span></div>
+      <div class="card-title">Agent friction <span class="dev-quiet">failures that recur across sessions in this window</span></div>
       <div id="frictionOut" class="dev-list"><div class="empty">Loading…</div></div>
     </div>
   </div>
@@ -3019,7 +3029,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <table>
         <thead><tr>
           <th>Agent</th><th>Status</th><th>Mode</th>
-          <th class="right">Calls</th><th class="right">Blocked</th><th>Last Seen</th>
+          <th class="right" title="Sessions active in the top-bar window">Sessions</th><th class="right" title="Sessions with at least one finding, in the window">Flagged</th><th>Last Seen</th>
           <th class="right" title="Off = kill switch: every tool call denied">Enabled</th>
         </tr></thead>
         <tbody id="agentsBody"><tr><td colspan="7" class="empty">Loading agents…</td></tr></tbody>
@@ -3055,7 +3065,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <option value="60">Risk ≥ 60</option>
       <option value="80">Risk ≥ 80</option>
     </select>
-    <select id="sfSince" class="fsel">
+    <select id="sfSince" class="fsel" title="Defaults to the window chosen in the top bar">
+      <option value="">Top-bar window</option>
       <option value="0">Any time</option>
       <option value="1">Active in last hour</option>
       <option value="24">Last 24 hours</option>
@@ -3528,7 +3539,13 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span class="hint">org-wide visibility across every enrolled device</span>
   </div>
 
-  <div class="locked-hero">
+  <div class="locked-hero" id="fleetEnrolled" hidden>
+    <div class="lock"><svg class="icon"><use href="#i-building"/></svg></div>
+    <h3>Your fleet lives in the org dashboard</h3>
+    <p id="fleetEnrolledText">This device is enrolled. Every enrolled device, its sessions, findings and policy status are in your organization's Prismor dashboard.</p>
+    <a class="btn-primary" id="fleetOrgLink" target="_blank" rel="noopener">Open org dashboard ↗</a>
+  </div>
+  <div class="locked-hero" id="fleetLocked">
     <div class="lock"><svg class="icon"><use href="#i-lock"/></svg></div>
     <h3>Fleet view is a Prismor Enterprise feature</h3>
     <p>
@@ -3540,7 +3557,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <button class="upgrade-btn" onclick="openUpgradeModal()"><svg class="icon"><use href="#i-sparkles"/></svg> Talk to us</button>
   </div>
 
-  <div class="fleet-preview" aria-hidden="true">
+  <div class="fleet-preview" id="fleetPreview" aria-hidden="true">
     <div class="blur">
       <table>
         <thead><tr>
@@ -3566,6 +3583,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span>Free and open source. Enterprise adds fleet visibility, remote policy and audit history.</span>
   </div>
   <a class="prismor-cta-btn" href="#" onclick="openUpgradeModal();return false">Talk to us</a>
+</div>
+
+<!-- ═══ APPROVALS ═══════════════════════════════════════════════════════ -->
+<div class="up-modal-overlay" id="apprOverlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="up-modal" role="dialog" aria-modal="true" aria-labelledby="apprTitle">
+    <div class="up-modal-hero">
+      <button class="up-modal-close" onclick="document.getElementById('apprOverlay').classList.remove('open')" aria-label="Close">✕</button>
+      <h3 id="apprTitle">Waiting for you</h3>
+      <p>Each request is one blocked call. Approving lets that exact call run once; nothing in the policy changes.</p>
+    </div>
+    <div id="apprList" class="appr-list"></div>
+  </div>
 </div>
 
 <!-- ═══ CHANGELOG / UPDATE MODAL ════════════════════════════════════════ -->
@@ -4368,7 +4397,7 @@ function setFilesView(v) {
 async function loadFiles() {
   const el = document.getElementById('filesList'), q = document.getElementById('filesSearch').value.trim();
   try {
-    _filesData = (await apiFetch('/api/files' + (q ? '?q=' + encodeURIComponent(q) : ''), {timeoutMs: 20000})).files || [];
+    _filesData = (await apiFetch('/api/files?days=' + windowDays() + (q ? '&q=' + encodeURIComponent(q) : ''), {timeoutMs: 20000})).files || [];
     if (!_filesData.length) { el.innerHTML = '<div class="empty">' + (q ? 'No agent-written file matches.' : 'No agent has written a file yet.') + '</div>'; return; }
     renderFiles();
   } catch (e) { el.innerHTML = '<div class="empty" style="color:#b91c1c">' + safe(e.message) + '</div>'; }
@@ -4425,7 +4454,7 @@ async function openFile(path) {
 async function loadFriction() {
   const out = document.getElementById('frictionOut');
   try {
-    const d = await apiFetch('/api/friction', {timeoutMs: 20000});
+    const d = await apiFetch('/api/friction?days=' + windowDays(), {timeoutMs: 20000});
     const ps = d.patterns || [];
     if (!ps.length) { out.innerHTML = '<div class="empty">No failure repeated across the last ' + d.sessions + ' sessions.</div>'; return; }
     out.innerHTML = ps.map(p => '<div class="dev-row"><div class="dev-mono"><b>' + safe(p.command) + '</b> <span class="dev-quiet">' + p.sessions + ' sessions · ' + p.failures + ' failures</span></div>' +
@@ -5833,7 +5862,7 @@ function backToSessions(){
 async function ensureAllSessions(force){
   if (_allSessionsCache.length && !force) return _allSessionsCache;
   try {
-    const data = await apiFetch('/api/sessions?page=1&limit=200&sort=updatedAt&dir=desc');
+    const data = await apiFetch('/api/sessions?page=1&limit=200&sort=updatedAt&dir=desc&since_hours=' + windowDays() * 24);
     _allSessionsCache = data.items || [];
   } catch(e){ console.error('[prismor] all sessions:', e); }
   return _allSessionsCache;
@@ -5878,15 +5907,17 @@ function renderAgentHero(agentName){
     const ico = agentIcon(agentName, a.framework);
     if (ico) avatar.innerHTML = ico;
     avatar.className = 'agent-avatar' + (ico ? ' has-ico' : '') + (a.enabled?'':' blocked');
-    status.innerHTML = a.enabled
-      ? '<span class="status-pill status-active"><span class="status-dot"></span>Active</span>'
-      : '<span class="status-pill status-blocked"><span class="status-dot"></span>Blocked</span>';
+    const quiet = a.last_seen ? (Date.now() - Date.parse(a.last_seen)) / 864e5 : Infinity;
+    status.innerHTML = !a.enabled
+      ? '<span class="status-pill status-blocked"><span class="status-dot"></span>Blocked</span>'
+      : quiet <= windowDays()
+        ? '<span class="status-pill status-active"><span class="status-dot"></span>Active</span>'
+        : '<span class="status-pill status-idle"><span class="status-dot"></span>Idle</span>';
     sub.textContent = (a.framework && a.framework!==a.name ? a.framework+' · ' : '') +
       'mode: ' + (a.mode||'inherit') + ' · last seen ' + fmtLastSeen(a.last_seen);
     stats.innerHTML =
-      agentStat('Sessions', fmtNum(sessions.length)) +
-      agentStat('Tool calls', fmtNum(a.total_calls||0)) +
-      agentStat('Blocked', fmtNum(a.blocked_calls||0), (a.blocked_calls||0)>0) +
+      agentStat('Sessions · ' + windowDays() + 'd', fmtNum(a.total_calls||0)) +
+      agentStat('Flagged sessions', fmtNum(a.blocked_calls||0), (a.blocked_calls||0)>0) +
       agentStat('Findings', fmtNum(findings), findings>0);
   } else {
     avatar.className='agent-avatar';
@@ -6617,6 +6648,8 @@ const sessState = {page:1,limit:20,sort:'updatedAt',dir:'desc',total:0,pages:1};
 // One filter bar, both lists: the control list up top and the full log below
 // read the same query, so narrowing to one agent narrows what you can pause.
 const SESS_FILTER_IDS = {q:'sfSearch', agent:'sfAgent', workspace:'sfWorkspace', findings:'sfFindings', min_risk:'sfRisk', since_hours:'sfSince'};
+// One time window for the whole dashboard (the top-bar select).
+function windowDays() { return +(document.getElementById('globalDays') || {}).value || 7; }
 function sessFilterQuery() {
   return Object.entries(SESS_FILTER_IDS).map(([k, id]) => {
     const v = (document.getElementById(id)?.value || '').trim();
@@ -6624,6 +6657,11 @@ function sessFilterQuery() {
   }).join('');
 }
 function sessFiltersActive() { return sessFilterQuery() !== ''; }
+// The Sessions filter follows the top-bar window unless it is set explicitly.
+function sessWindowQuery() {
+  const v = document.getElementById('sfSince')?.value || '';
+  return v === '' ? '&since_hours=' + windowDays() * 24 : '';
+}
 let _sessFacetsFilled = false;
 function fillSessFacets(facets) {
   if (_sessFacetsFilled || !facets) return;
@@ -6660,7 +6698,7 @@ document.getElementById('sfClear').addEventListener('click', () => {
 async function loadSessions() {
   const {page,limit,sort,dir} = sessState;
   try {
-    const data = await apiFetch(`/api/sessions?page=${page}&limit=${limit}&sort=${sort}&dir=${dir}` + sessFilterQuery());
+    const data = await apiFetch(`/api/sessions?page=${page}&limit=${limit}&sort=${sort}&dir=${dir}` + sessFilterQuery() + sessWindowQuery());
     sessState.page=data.page; sessState.pages=data.pages; sessState.total=data.total;
     fillSessFacets(data.facets);
     renderSessions(data.items);
@@ -6731,7 +6769,7 @@ document.getElementById('sessLimit').addEventListener('change',e=>{
 const findState={page:1,limit:25,agent:'',severity:'',category:'',q:'',total:0,pages:1};
 async function loadFindings(){
   const {page,limit,agent,severity,category,q}=findState;
-  const params=new URLSearchParams({page,limit,agent,severity,category,q});
+  const params=new URLSearchParams({page,limit,agent,severity,category,q,days:windowDays()});
   try{
     const data=await apiFetch('/api/findings?'+params,{timeoutMs:30000});
     findState.page=data.page; findState.pages=data.pages; findState.total=data.total;
@@ -6802,7 +6840,7 @@ let _eventsAbort = null;
 let _eventsReqId = 0;
 async function loadEvents(){
   const {page,limit,verdict,agent}=evtState;
-  const params=new URLSearchParams({page,limit,verdict,agent});
+  const params=new URLSearchParams({page,limit,verdict,agent,days:windowDays()});
   const reqId = ++_eventsReqId;
   if (_eventsAbort) _eventsAbort.abort();
   const controller = new AbortController();
@@ -7170,6 +7208,10 @@ async function loadSupplyChain(){
 document.getElementById('globalDays').addEventListener('change',function(){
   _depDays = +this.value || 7;
   loadStats(); loadSupplyChain(); loadNetworkCalls();
+  // Every list follows the same window, so the numbers agree with each other.
+  sessState.page = 1; findState.page = 1; evtState.page = 1;
+  loadSessions(); loadSessionControl(); loadFindings(); loadEvents(); loadFiles(); loadFriction();
+  loadAgents(); ensureAllSessions(true);
   // Extensions is driven by the same window; refresh it if it has data.
   if (_depCache) { _depCache = null; loadDependencies().then(renderExtensions); }
 });
@@ -7206,7 +7248,7 @@ function fmtLastSeen(iso) {
 
 async function loadAgents() {
   try {
-    const data = await apiFetch('/api/agents');
+    const data = await apiFetch('/api/agents?days=' + windowDays());
     _agentsCache = data;
     renderAgents(data);
     syncNavCounts();
@@ -7249,9 +7291,9 @@ function renderAgents(data) {
     const quietDays = a.last_seen ? (Date.now() - Date.parse(a.last_seen)) / 864e5 : Infinity;
     const status = !a.enabled
       ? '<span class="status-pill status-blocked"><span class="status-dot"></span>Blocked</span>'
-      : quietDays <= 30
-        ? '<span class="status-pill status-active" title="Seen in the last 30 days"><span class="status-dot"></span>Active</span>'
-        : '<span class="status-pill status-idle" title="Allowed to run, but not seen in over 30 days"><span class="status-dot"></span>Idle</span>';
+      : quietDays <= windowDays()
+        ? '<span class="status-pill status-active" title="Seen in the top-bar window"><span class="status-dot"></span>Active</span>'
+        : '<span class="status-pill status-idle" title="Allowed to run, but not seen in this window"><span class="status-dot"></span>Idle</span>';
     const modeOpts = [['', 'inherit (global)'], ['observe', 'observe'], ['enforce', 'enforce']]
       .map(([v, l]) => '<option value="' + v + '"' + ((a.mode || '') === v ? ' selected' : '') + '>' + l + '</option>')
       .join('');
@@ -7365,7 +7407,7 @@ async function loadSessionControl() {
   const ws = activeWorkspace();
   const { page, limit } = _sessCtrlData;
   try {
-    const data = await apiFetch(`/api/sessions?page=${page}&limit=${limit}&sort=updatedAt&dir=desc` + sessFilterQuery());
+    const data = await apiFetch(`/api/sessions?page=${page}&limit=${limit}&sort=updatedAt&dir=desc` + sessFilterQuery() + sessWindowQuery());
     fillSessFacets(data.facets);
     _sessCtrlData.items = data.items || [];
     _sessCtrlData.total = data.total || 0;
@@ -7532,6 +7574,14 @@ document.getElementById('scSessLimit').addEventListener('change', e => {
 let _policyData = null;
 let _globalPolicyOriginal = '';
 let _projectPolicyOriginal = '';
+let _policyEditorsLoaded = false;
+function _policyEditorDirty(scope) {
+  const ed = document.getElementById(scope + 'PolicyEditor');
+  if (!ed || !_policyEditorsLoaded) return false;
+  const orig = scope === 'global' ? _globalPolicyOriginal : _projectPolicyOriginal;
+  const fallback = scope === 'global' ? DEFAULT_GLOBAL_YAML : DEFAULT_PROJECT_YAML;
+  return ed.value !== (orig || fallback);
+}
 
 async function loadPolicy() {
   try {
@@ -7545,6 +7595,42 @@ async function loadPolicy() {
     if (!_agentsCache) loadAgents();  // fills "Applies to" and the Tools tab
   } catch(e) { console.error('[prismor] policy:', e); }
 }
+
+// ── Approvals: blocked calls a person can let through once ────────────────
+let _approvals = [];
+async function loadApprovals() {
+  try {
+    _approvals = (await apiFetch('/api/approvals')).requests || [];
+  } catch (e) { return; }
+  const btn = document.getElementById('apprBtn');
+  btn.hidden = !_approvals.length;
+  btn.textContent = _approvals.length + ' waiting';
+  if (document.getElementById('apprOverlay').classList.contains('open')) renderApprovals();
+}
+function openApprovals() { renderApprovals(); document.getElementById('apprOverlay').classList.add('open'); }
+function renderApprovals() {
+  const el = document.getElementById('apprList');
+  el.innerHTML = !_approvals.length ? '<div class="empty">Nothing is waiting.</div>' : _approvals.map(r => {
+    const held = r.waiting_until && r.waiting_until * 1000 > Date.now();
+    return '<div class="appr-row">'
+      + '<div class="appr-main"><div class="appr-what">' + safe(r.summary || r.title) + '</div>'
+      + '<div class="appr-meta">' + safe(r.agent || 'agent') + ' · ' + safe(r.rule) + ' · ' + safe(extWhen(new Date(r.created * 1000).toISOString()))
+      + (held ? ' · <b>the agent is waiting</b>' : '') + '</div></div>'
+      + '<button class="btn-ghost" onclick="decideApproval(\'' + safeJsArg(r.id) + '\', false)">Deny</button>'
+      + '<button class="btn-primary" onclick="decideApproval(\'' + safeJsArg(r.id) + '\', true)">Approve once</button></div>';
+  }).join('');
+}
+async function decideApproval(id, approve) {
+  try {
+    const res = await fetch('/api/approvals', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id, approve})});
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(d.error || ('HTTP ' + res.status), true); return; }
+    toast(!approve ? 'Denied' : d.was_waiting ? 'Approved: the agent continues now' : 'Approved: ask the agent to retry');
+  } catch (e) { toast(e.message, true); }
+  loadApprovals();
+}
+loadApprovals();
+setInterval(() => { if (!document.hidden) loadApprovals(); }, 5000);
 
 // ── Version + pause bar on the policy page ─────────────────────────────────
 function renderRuntime(r) {
@@ -7651,8 +7737,27 @@ function setMode(scope, mode) {
   _syncModeToggle(scope, yaml);
 }
 
+// Enrolled devices already have the team product: point at it instead of selling it.
+function applyEnrollment(enrollment) {
+  const on = !!(enrollment && enrollment.enrolled);
+  const url = on ? String(enrollment.api_base || 'https://www.prismor.dev').replace(/\/$/, '') + '/admin' : '';
+  document.getElementById('fleetEnrolled').hidden = !on;
+  document.getElementById('fleetLocked').hidden = on;
+  document.getElementById('fleetPreview').hidden = on;
+  document.getElementById('upgradeBtn').hidden = on;
+  const org = document.getElementById('orgBtn'); org.hidden = !on;
+  document.querySelector('.tab-btn[data-tab="fleet"] .tab-lock')?.toggleAttribute('hidden', on);
+  document.querySelectorAll('.prismor-cta').forEach(el => el.hidden = on);
+  if (on) {
+    org.href = url; document.getElementById('fleetOrgLink').href = url;
+    if (enrollment.org_id) document.getElementById('fleetEnrolledText').textContent =
+      'This device is enrolled in org ' + enrollment.org_id + '. Every enrolled device, its sessions, findings and policy status are in your organization\'s Prismor dashboard.';
+  }
+}
+
 function renderPolicyTab(data) {
   updateModeChip(data);
+  applyEnrollment(data.enrollment);
   const precedenceHost = document.getElementById('policyPrecedenceCard');
   if (precedenceHost) {
     precedenceHost.innerHTML = renderPolicyPrecedenceHtml(
@@ -7673,23 +7778,29 @@ function renderPolicyTab(data) {
   }
   loadRuntime();
 
-  // Global
+  // Global. A background refresh must never overwrite text someone is editing:
+  // only replace the editor when it still holds what was last loaded.
   const g = data.global || {};
-  _globalPolicyOriginal = g.yaml || '';
-  document.getElementById('globalPolicyEditor').value = g.yaml || DEFAULT_GLOBAL_YAML;
+  if (!_policyEditorDirty('global')) {
+    _globalPolicyOriginal = g.yaml || '';
+    document.getElementById('globalPolicyEditor').value = g.yaml || DEFAULT_GLOBAL_YAML;
+  }
   document.getElementById('globalPolicyPath').textContent = g.path || '~/.prismor/policy.yaml';
   document.getElementById('globalPolicyStatus').textContent = g.exists ? 'Custom global policy' : 'No custom global policy (using built-in defaults)';
   document.getElementById('globalPolicyMtime').textContent = g.mtime ? fmtMtime(g.mtime) : '';
-  _syncModeToggle('global', g.yaml || DEFAULT_GLOBAL_YAML);
+  _syncModeToggle('global', document.getElementById('globalPolicyEditor').value);
 
   // Project
   const p = data.project || {};
-  _projectPolicyOriginal = p.yaml || '';
-  document.getElementById('projectPolicyEditor').value = p.yaml || DEFAULT_PROJECT_YAML;
+  if (!_policyEditorDirty('project')) {
+    _projectPolicyOriginal = p.yaml || '';
+    document.getElementById('projectPolicyEditor').value = p.yaml || DEFAULT_PROJECT_YAML;
+  }
   document.getElementById('projectPolicyPath').textContent = p.path || '.prismor/policy.yaml';
   document.getElementById('projectPolicyStatus').textContent = p.exists ? 'Custom project policy' : 'No project policy yet';
   document.getElementById('projectPolicyMtime').textContent = p.mtime ? fmtMtime(p.mtime) : '';
-  _syncModeToggle('project', p.yaml || DEFAULT_PROJECT_YAML);
+  _syncModeToggle('project', document.getElementById('projectPolicyEditor').value);
+  _policyEditorsLoaded = true;
 
   // Enterprise
   const e = data.enterprise || {};
@@ -8216,16 +8327,20 @@ Promise.allSettled(_bootTasks).then(() => {
   if (wanted) applyViewState(wanted);
   else recordView(currentViewState(), true);
 });
+// Background refresh: nothing while the tab is hidden, and only what the page
+// in front of you shows (plus the headline numbers behind the sidebar counts).
 setInterval(() => {
-  loadStats();
-  loadSessions();
-  loadSupplyChain();
-  loadNetworkCalls();
-  loadSessionControl();
-  loadPolicy();
-  loadAgents();
-  if (findState.page===1 && !findState.agent && !findState.severity && !findState.category && !findState.q) loadFindings();
-  if (evtState.page===1 && !evtState.verdict && !evtState.agent) loadEvents();
+  if (document.hidden) return;
+  const pg = document.querySelector('.page.active')?.id || '';
+  loadStats(); loadRuntime();
+  if (pg === 'page-overview') {
+    loadSessions(); loadSupplyChain(); loadNetworkCalls();
+    if (findState.page===1 && !findState.agent && !findState.severity && !findState.category && !findState.q) loadFindings();
+    if (evtState.page===1 && !evtState.verdict && !evtState.agent) loadEvents();
+  }
+  if (pg === 'page-sessions') { loadSessions(); loadSessionControl(); }
+  if (pg === 'page-policy') loadPolicy();
+  if (pg === 'page-agents' || pg === 'page-agent') loadAgents();
 }, 30000);
 </script>
 </body>

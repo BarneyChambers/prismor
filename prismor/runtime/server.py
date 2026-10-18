@@ -770,6 +770,13 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
             self._send_json(_runtime_state())
             return
 
+        if path == "/api/approvals":
+            from prismor.runtime import approvals_local
+            reqs = [{k: v for k, v in r.items() if k != "fp"}
+                    for r in approvals_local.list_requests() if r.get("status") == "pending"]
+            self._send_json({"requests": reqs})
+            return
+
         if path == "/api/changelog":
             from prismor.runtime import __version__
             try:
@@ -883,6 +890,7 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                     severity=qstr("severity"),
                     category=qstr("category"),
                     search=qstr("q"),
+                    since_hours=qint("days", 0) * 24,
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
@@ -897,6 +905,7 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                     limit=qint("limit", 30),
                     verdict=qstr("verdict"),
                     agent=qstr("agent"),
+                    since_hours=qint("days", 0) * 24,
                 )
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
@@ -987,7 +996,7 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 workspace = _SERVER_WORKSPACE or Path.cwd()
 
                 # Merge store stats with registry config
-                store_stats = {a["name"]: a for a in get_agents_overview()}
+                store_stats = {a["name"]: a for a in get_agents_overview(qint("days", 0))}
                 registry = {a.name: a for a in list_agents(workspace)}
 
                 # Union of both — include agents seen in store but not configured yet
@@ -1024,7 +1033,7 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
             from prismor.runtime import devlog
             try:
                 if path == "/api/files":
-                    data = devlog.files(qstr("q"))
+                    data = devlog.files(qstr("q"), days=qint("days", 0))
                 elif path == "/api/blame":
                     data = devlog.blame(qstr("path"), qint("line", 0) or None)
                 else:
@@ -1083,6 +1092,28 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 })
             except Exception as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=500)
+            return
+
+        if path == "/api/approvals":
+            # Approve or deny one blocked call, once (approvals_local.py). Agents
+            # are kept off this route by prismor-self-edit; an unlock window
+            # lifts that rule, so while one is open the decision has to come
+            # from the terminal, as the CLI requires.
+            from prismor.runtime import approvals_local, unlock
+            try:
+                body = self._read_json_body()
+            except ValueError:
+                self._send_json({"error": "invalid JSON"}, status=400)
+                return
+            if unlock.is_open():
+                self._send_json({"error": "An unlock window is open, so approve from your terminal: "
+                                          "prismor approvals approve " + str(body.get("id") or "<id>")}, status=403)
+                return
+            rec = approvals_local.decide(str(body.get("id") or ""), bool(body.get("approve")))
+            if rec is None:
+                self._send_json({"error": "No such request (it may have expired)."}, status=404)
+                return
+            self._send_json({"ok": True, "status": rec.get("status"), "was_waiting": bool(rec.get("was_waiting"))})
             return
 
         if path == "/api/policy/floor-off":
