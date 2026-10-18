@@ -2140,11 +2140,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-stat { cursor: pointer; } .ext-stat.warn { border-color: #f59e0b; } .ext-stat.warn b { color: #b45309; }
   .ext-stat small { display: block; font-size: 12px; color: var(--gray-500); margin-top: 4px; line-height: 1.4; text-transform: none; letter-spacing: 0; }
   .ext-kinds { display:flex; flex-wrap:wrap; }
-  .ext-item { display:grid; grid-template-columns:minmax(0,2.4fr) 96px 70px 70px minmax(0,1fr) 80px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
+  .ext-item { display:grid; grid-template-columns:minmax(0,2.4fr) 96px 70px 70px minmax(0,1fr) 80px 48px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
   .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
-  .hook-item { grid-template-columns:minmax(170px,3fr) 124px 48px 60px 64px 64px 96px 112px; }
+  .hook-item { grid-template-columns:minmax(170px,3fr) 124px 48px 60px 64px 64px 96px 112px 48px; }
+  .ext-toggle { justify-self:end; }
+  .ext-toggle.locked .rule-track { opacity:.5; }
+  .extd-toggle { margin-left:auto; display:inline-flex; align-items:center; gap:8px; }
+  .ext-row.ext-off .ext-name { color:var(--gray-500); text-decoration:line-through; text-decoration-color:var(--gray-300); }
   .hook-launch { display:block; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hook-item .num { white-space:nowrap; }
   .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
@@ -2155,7 +2159,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .hook-sess-row.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); }
   .hook-sess-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hook-cmd { margin-top:6px; font-size:12px; color:var(--gray-500); overflow-wrap:anywhere; }
-  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } }
+  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px 48px; } }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
   .ext-spark { display:inline-flex; align-items:flex-end; gap:1px; height:22px; width:100%; }
   .ext-spark i { flex:1; min-height:1px; background:var(--accent); opacity:.75; border-radius:1px; }
@@ -2168,7 +2172,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .extd-bar { display:grid; grid-template-columns:minmax(0,1fr) 44px; gap:8px; font-size:12.5px; padding:2px 0; }
   .extd-bar span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; background:linear-gradient(90deg,var(--md-primary-soft,#e8eefc) var(--w),transparent var(--w)); border-radius:3px; padding:1px 6px; }
   .extd-bar em { font-style:normal; text-align:right; font-variant-numeric:tabular-nums; color:var(--gray-500); }
-  @media (max-width:720px) { .ext-item { grid-template-columns:minmax(0,1fr) 60px 60px; } .ext-item > :nth-child(2), .ext-item > :nth-child(5), .ext-item > :nth-child(6) { display:none; } }
+  @media (max-width:720px) { .ext-item { grid-template-columns:minmax(0,1fr) 60px 60px 48px; } .ext-item > :nth-child(2), .ext-item > :nth-child(5), .ext-item > :nth-child(6) { display:none; } }
   .dep-when { flex:none; }
   .ext-review-note { display: inline-block; margin-left: 10px; font-size: 12px; color: var(--gray-500); max-width: 460px; vertical-align: middle; }
   .btn-ok, .btn-line {
@@ -3858,7 +3862,9 @@ function renderExtensionHead(r) {
   document.getElementById('extdHead').innerHTML =
     '<div class="ext-agent-head"><span class="ext-badge ' + (reviewed ? 'approved' : 'new') + '">' + (reviewed ? 'reviewed' : 'unreviewed') + '</span>' +
       '<span class="ext-kind">' + safe(r.kind || '') + '</span><b>' + safe(r.name || r.id) + '</b>' +
-      (r.capabilities || []).map(c => '<span class="ext-cap ' + safeAttr(c) + '">' + safe(c.replace(/_/g, ' ')) + '</span>').join('') + '</div>' +
+      (r.capabilities || []).map(c => '<span class="ext-cap ' + safeAttr(c) + '">' + safe(c.replace(/_/g, ' ')) + '</span>').join('') +
+      (EXT_TOGGLE_KINDS.includes(r.kind) ? (lr => '<span class="extd-toggle"><span class="ext-quiet">' + (extIsOff(lr) ? 'Off' : 'On') + '</span>' + extToggleHtml(lr) + '</span>')(
+        ((_extCache || {}).rows || []).filter(x => x.id === r.id).concat(((_extCache || {}).rows || []).some(x => x.id === r.id) ? [] : [r])) : '') + '</div>' +
     '<dl class="ext-kv">' + kv + '</dl>' +
     (r.status && r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>' : '');
 }
@@ -4349,7 +4355,8 @@ function renderExtensions() {
 }
 function renderExtEvents(d) {
   const label = {extension_installed: 'installed', extension_changed: 'changed', extension_invoked: 'invoked',
-    remote_ref_drift: 'remote document changed', remote_ref_flagged: 'remote document flagged', hook_executed: 'hook ran'};
+    remote_ref_drift: 'remote document changed', remote_ref_flagged: 'remote document flagged', hook_executed: 'hook ran',
+    extension_disabled: 'turned off', extension_enabled: 'turned back on', hook_skipped: 'skipped (turned off)'};
   document.getElementById('extEvents').innerHTML = (d.events || []).length ? d.events.map(e => {
     const det = e.detail || {};
     const extra = [det.url, det.children_new ? 'with ' + det.children_new.length + ' new inside' : '',
@@ -4492,10 +4499,12 @@ function hookIdentity(h) {
 function renderHookList() {
   const q = _extQuery.toLowerCase(), hs = ((_hookStats || {}).hooks || []).filter(h => !q || (h.event + ' ' + h.command).toLowerCase().includes(q));
   const tone = ms => ms >= 5000 ? ' hook-bad' : ms >= HOOK_SLOW_MS ? ' hook-slow' : '';
-  const hdr = '<div class="ext-item hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  const hdr = '<div class="ext-item hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span><span class="num">On</span></div>';
   const failed = h => h.failures ? '<b class="hook-bad" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + '</b>' + (h.timeouts ? ' <small class="ext-quiet">' + h.timeouts + ' t/o</small>' : '') : '-';
   document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
     const id = hookIdentity(h), k = h.event + '|' + h.command;
+    // Prismor's own hooks have no ledger row, so no switch: they cannot be turned off here.
+    const ledger = ((_extCache || {}).rows || []).filter(r => r.id === id.id);
     const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg wait</span><span class="num">Failed</span><span>Last ran</span></div>' +
       h.sessions.map(x => '<div class="hook-sess-row" onclick="openSessionView(\'' + safeJsArg(x.sessionId) + '\')"><span class="dev-mono">' + safe(x.sessionId.slice(0, 8)) + '</span>' +
         '<span class="ext-quiet" title="' + safeAttr(x.cwd) + '">' + safe(tildify(x.cwd || '')) + '</span><span class="num">' + x.runs + '</span>' +
@@ -4505,26 +4514,64 @@ function renderHookList() {
       '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div>' +
       ((h.variants || []).length ? '<div class="empty">Also launched as:</div>' + h.variants.map(v => '<div class="hook-cmd dev-mono">' + safe(v) + '</div>').join('') : '') +
       (h.failures || h.blocked || h.cancelled ? '<div class="empty">' + [h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error', h.blocked && h.blocked + ' blocked the call (exit 2)', h.cancelled && h.cancelled + ' cancelled when the turn stopped'].filter(Boolean).join(' · ') + '</div>' : '') + '</div>' : '';
-    return '<div class="ext-row ext-item hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
+    return '<div class="ext-row ext-item hook-item' + (_hookOpen[k] ? ' open' : '') + (extIsOff(ledger) ? ' ext-off' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
       '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span>' +
         '<small class="hook-launch ext-quiet dev-mono">' + safe((h.identity || '').replace(/^(?:python|node|bash|sh)\s+(?:-m\s+)?/, '')) + '</small></span>' +
       '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
       '<span class="num' + tone(h.p50Ms) + '" title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num ext-quiet">' + fmtMs(h.p95Ms) + '</span>' +
-      '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
+      '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span>' + extToggleHtml(ledger) + '</div>' + sess;
   }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not. Widen the time window at the top to look further back.') + '</div>';
+}
+// On/off for one extension (every ledger row behind a list item). Packages
+// and secrets are records, not things an agent loads, so they have none.
+const EXT_TOGGLE_KINDS = ['plugin', 'skill', 'mcp', 'hook'];
+const EXT_TOGGLE_TIP = {
+  plugin: 'Off: Claude Code starts new sessions without this plugin (its skills, hooks and servers).',
+  skill: 'Off: Prismor blocks the agent from running this skill.',
+  mcp: 'Off: Prismor blocks the agent\'s calls to this server.',
+  hook: 'Off: Prismor skips this hook when the agent runs it.',
+};
+function extToggleHtml(ledger) {
+  const rows = (ledger || []).filter(r => EXT_TOGGLE_KINDS.includes(r.kind));
+  if (!rows.length) return '<span></span>';
+  const on = rows.every(r => r.enabled !== false), via = rows.find(r => r.offVia);
+  const tip = via ? 'Off because the plugin it ships in is off. Turn the plugin on to use it.' : EXT_TOGGLE_TIP[rows[0].kind];
+  return '<label class="rule-toggle ext-toggle' + (via ? ' locked' : '') + '" title="' + safeAttr(tip) + '" onclick="event.stopPropagation()">' +
+    '<input type="checkbox" data-ids="' + safeAttr(JSON.stringify(rows.map(r => r.id))) + '"' + (on && !via ? ' checked' : '') + (via ? ' disabled' : '') +
+    ' onchange="extToggle(this)"><span class="rule-track"></span></label>';
+}
+function extIsOff(ledger) { return (ledger || []).some(r => r.enabled === false || r.offVia); }
+async function extToggle(input) {
+  const ids = JSON.parse(input.dataset.ids || '[]'), on = input.checked;
+  input.disabled = true;
+  try {
+    let effect = '';
+    for (const id of ids) {
+      const res = await apiFetch('/api/extensions/toggle', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id, enabled: on, workspace: _serverWorkspace || undefined})});
+      effect = res.effect || effect;
+    }
+    toast(effect || (on ? 'Turned on' : 'Turned off'));
+    _extCache = null;
+    if (document.getElementById('page-extension')?.classList.contains('active')) openExtension(ids[0], true);
+    else await loadExtensions();
+  } catch (e) {
+    input.checked = !on;
+    toast('Could not change it: ' + e.message, true);
+  } finally { input.disabled = false; }
 }
 function renderExtKindList() {
   const kind = _extTab, q = _extQuery.toLowerCase();
   const items = extItems(kind).filter(it => !q || it.name.toLowerCase().includes(q));
-  const hdr = '<div class="ext-item hdr"><span>Name</span><span>Activity</span><span class="num">Sessions</span><span class="num">Calls</span><span>Agents</span><span>Last used</span></div>';
+  const hdr = '<div class="ext-item hdr"><span>Name</span><span>Activity</span><span class="num">Sessions</span><span class="num">Calls</span><span>Agents</span><span>Last used</span><span class="num">' + (EXT_TOGGLE_KINDS.includes(kind) ? 'On' : '') + '</span></div>';
   document.getElementById('extList').innerHTML = items.length ? hdr + items.slice(0, 300).map(it =>
-    '<div class="ext-row ext-item' + (it.review || it.warn ? ' review' : '') + '" onclick="openExtension(\'' + safeJsArg(it.id) + '\')">' +
+    '<div class="ext-row ext-item' + (it.review || it.warn ? ' review' : '') + (extIsOff(it.ledger) ? ' ext-off' : '') + '" onclick="openExtension(\'' + safeJsArg(it.id) + '\')">' +
       '<span class="ext-name">' + (it.review ? '<span class="ext-badge new">unreviewed</span> ' : '') + (it.warn ? '<span class="ext-cap remote_instructions">not in vault</span> ' : '') +
         safe(it.name) + (kind === 'package' && it.deps[0] ? ' <span class="ext-quiet">' + safe(it.deps[0].target) + '</span>' : '') + '</span>' +
       (it.deps.length ? extBars(extActivity(it.deps, 15)) : '<span class="ext-quiet">-</span>') +
       '<span class="num">' + (it.sessions || '<span class="ext-never">never</span>') + '</span><span class="num">' + (it.calls || '-') + '</span>' +
       '<span class="ext-item-agents">' + it.agents.slice(0, 4).map(a => '<span class="ext-agent" title="' + safeAttr(a) + '">' + (agentIcon(a, '', true) || safe(a)) + '</span>').join('') + '</span>' +
-      '<span class="ext-quiet">' + (it.last ? safe(extWhen(it.last)) : '') + '</span></div>').join('') +
+      '<span class="ext-quiet">' + (it.last ? safe(extWhen(it.last)) : '') + '</span>' + extToggleHtml(it.ledger) + '</div>').join('') +
     (items.length > 300 ? '<div class="empty">Showing 300 of ' + items.length + '. Filter by name.</div>' : '')
     : '<div class="empty">' + (q ? 'No ' + safe(extKindNoun(kind)) + ' match.' : 'Nothing recorded in this window. Prismor fills this in as your agents use them.') + '</div>';
 }

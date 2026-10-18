@@ -520,6 +520,15 @@ def evaluate_tool_call(
         except Exception as exc:
             sys.stderr.write(f"[prismor] tool-deny error: {exc}\n")
 
+    # A skill or MCP server turned off from the dashboard's Extensions page.
+    try:
+        from prismor.runtime.extensions import disabled_finding
+        _off = disabled_finding(workspace, event, session_id)
+        if _off is not None:
+            findings.append(_off)
+    except Exception as exc:
+        sys.stderr.write(f"[prismor] extension-toggle error: {exc}\n")
+
     # Per-agent "ask" tools: the console's middle state. A matched tag emits a
     # step_up finding (human approval) rather than a hard deny — the gateway's
     # await_step_up routes it to the approvals queue; interactive hosts render

@@ -38,6 +38,30 @@ After that, every new or changed extension is written once to the
 [signed audit trail](audit-trail.md) as a `record_type: "extension"` record, and
 named to the agent at session start until a human approves it.
 
+## Turning an extension off
+
+Every plugin, skill, MCP server and third-party hook has an **On** switch in the
+dashboard (Extensions, on each kind's tab and on the extension's own page).
+Each kind is switched off where it can really be switched off:
+
+| Kind | What "off" does | Takes effect |
+|---|---|---|
+| Plugin | Sets it to `false` under `enabledPlugins` in `~/.claude/settings.json`, the same switch as `claude plugin disable`. Its skills, hooks and MCP servers do not load. | New sessions |
+| Skill | Prismor blocks the agent's calls to it (rule `extension-disabled`), in observe mode too. | Next call |
+| MCP server | Prismor blocks the agent's calls to any of the server's tools. | Next call |
+| Hook | The one hook is routed through `prismor exec-hook`, which skips it (exit 0, no output). Re-applied at session start if a plugin update rewrites its `hooks.json`. | Next run |
+
+The list of what is off is kept in the ledger (`~/.prismor/extensions.json`),
+so it applies on the whole machine. Each switch is written to the signed audit
+trail as `extension_disabled` / `extension_enabled`, and every skipped hook run
+as `hook_skipped`. A skill or hook inside a plugin that is off shows as off, and
+turns back on with the plugin. Prismor's own hooks are not extensions and have
+no switch.
+
+Skills and MCP servers stay installed while off: the agent may still see them
+listed and try them, and Prismor stops the call. To remove one entirely, use the
+agent's own command (`claude mcp remove <name>`, deleting the skill folder).
+
 ## Sessions are attached to what they ran under
 
 An investigation starts from a session: someone sees a tool call and asks what

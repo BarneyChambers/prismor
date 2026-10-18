@@ -40,7 +40,7 @@ import time
 from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 __all__ = [
@@ -48,7 +48,8 @@ __all__ = [
     "match_install_command", "install_finding", "note_install_command",
     "on_skill_invoked", "fetch_allowed_by_skill", "on_remote_fetch",
     "wrap_hooks", "unwrap_hooks", "run_wrapped_hook", "why", "format_rows", "overview", "send_report", "tag_event", "session_extensions",
-    "unreviewed_in_session", "extension_detail",
+    "unreviewed_in_session", "extension_detail", "set_enabled", "disabled_ids", "disabled_finding",
+    "rewrap_disabled_hooks",
 ]
 
 _MAX_BYTES = 512 * 1024
@@ -402,7 +403,9 @@ def discover_extensions(workspace: Path) -> List[Dict[str, Any]]:
     rows = list(plugins) + _skill_rows(workspace, plugins)
     for source, plugin in _hook_sources(workspace, plugins):
         for event, h in _iter_hook_entries(_read_json(source)):
-            if not _is_own(h["command"]):
+            # Judge the command a wrapper runs, not the wrapper: the wrapper is
+            # Prismor's shim, so checking it would hide every wrapped hook.
+            if not _is_own(_unwrap(h["command"])):
                 rows.append(_hook_row(source, event, h["command"], plugin))
     rows += _mcp_rows(workspace)
     dedup: Dict[str, Dict[str, Any]] = {}
@@ -900,14 +903,19 @@ def _rewrite_hooks(workspace: Path, fn) -> List[str]:
     return touched
 
 
-def wrap_hooks(workspace: Path) -> List[str]:
+def wrap_hooks(workspace: Path, only: Optional[Set[str]] = None) -> List[str]:
     """Route every third-party hook command through ``prismor exec-hook`` so each
     run lands in the trail. A plugin update rewrites its hooks.json, so
-    SessionStart re-applies this while ``PRISMOR_WRAP_HOOKS=1``."""
+    SessionStart re-applies this while ``PRISMOR_WRAP_HOOKS=1``.
+
+    ``only``: wrap just the hooks whose command hash is in the set (a hook
+    turned off from the dashboard), leaving the rest as they are."""
     prefix = _wrapper_prefix()
 
     def _wrap(cmd: str) -> str:
         if _is_own(cmd) or f" {_WRAP_MARKER} " in cmd:
+            return cmd
+        if only is not None and _sha(cmd.encode())[:8] not in only:
             return cmd
         return f"{prefix} --id {_sha(cmd.encode())[:8]} -- {shlex.quote(cmd)}"
     return _rewrite_hooks(workspace, _wrap)
@@ -918,12 +926,19 @@ def unwrap_hooks(workspace: Path) -> List[str]:
 
 
 def run_wrapped_hook(ext_id: str, command: str) -> int:
-    """Run one third-party hook, transparent to the agent, and record that it ran."""
+    """Run one third-party hook, transparent to the agent, and record that it ran.
+    A hook turned off from the dashboard is skipped: it exits 0 with no output,
+    which every agent reads as "nothing to add"."""
     stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
     try:
         payload = json.loads(stdin or b"{}")
     except Exception:
         payload = {}
+    if _hook_disabled(ext_id):
+        _audit("hook_skipped", {"id": f"hook:{ext_id}", "kind": "hook", "name": command[:120],
+                                "sha256": _sha(command.encode())},
+               str(payload.get("session_id") or ""), hook_event=payload.get("hook_event_name"))
+        return 0
     started = time.time()
     proc = subprocess.run(command, shell=True, input=stdin, capture_output=True)  # noqa: S602 - the agent would run this exact string  # nosec B602
     sys.stdout.buffer.write(proc.stdout)
@@ -933,6 +948,123 @@ def run_wrapped_hook(ext_id: str, command: str) -> int:
            str(payload.get("session_id") or ""), exit_code=proc.returncode,
            ms=int((time.time() - started) * 1000), hook_event=payload.get("hook_event_name"))
     return proc.returncode
+
+
+# ── Turning an extension off and on ──────────────────────────────────────────
+#
+# Each kind is switched off where it can be switched off for real:
+#   plugin -- in the agent itself (Claude Code's ``enabledPlugins``), so none of
+#             its skills, hooks or servers load in new sessions;
+#   skill, mcp -- Prismor blocks the agent's calls to it, in observe mode too;
+#   hook   -- the one hook is routed through ``prismor exec-hook``, which skips it.
+# The off list lives in the ledger (``disabled``), so it is machine-wide like
+# the extensions themselves.
+
+_OFF_EFFECT = {
+    "plugin": "Turned off in Claude Code. New sessions start without it.",
+    "skill": "Prismor blocks the agent from running this skill.",
+    "mcp": "Prismor blocks the agent's calls to this server.",
+    "hook": "Prismor skips this hook when the agent runs it.",
+}
+
+
+def _claude_user_settings() -> Path:
+    return Path.home() / ".claude" / "settings.json"
+
+
+def _set_claude_plugin(plugin_id: str, enabled: bool) -> None:
+    """What ``claude plugin enable|disable`` does at user scope."""
+    path = _claude_user_settings()
+    config = _read_json(path) if path.exists() else {}
+    if not isinstance(config, dict):
+        raise ValueError(f"{path} is not a JSON object; not editing it")
+    plugins = config.get("enabledPlugins")
+    if not isinstance(plugins, dict):
+        plugins = config["enabledPlugins"] = {}
+    plugins[plugin_id] = enabled
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".prismor.tmp")
+    tmp.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _hook_disabled(hook_sha: str) -> bool:
+    # The wrapper has no workspace; the ledger is machine-wide, so read it
+    # straight from Prismor's home without the workspace migration.
+    try:
+        from prismor.runtime.store import prismor_home
+        off = (_read_json(prismor_home() / "extensions.json") or {}).get("disabled") or {}
+    except Exception:
+        return False
+    return any(eid.startswith("hook:") and eid.endswith("#" + hook_sha) for eid in off)
+
+
+def disabled_ids(workspace: Path) -> Dict[str, Any]:
+    off = _load(workspace).get("disabled")
+    return off if isinstance(off, dict) else {}
+
+
+def set_enabled(workspace: Path, ref: str, enabled: bool) -> Dict[str, Any]:
+    """Turn one extension off (``enabled=False``) or back on."""
+    data = _load(workspace)
+    rows = discover_extensions(workspace) + _observed_rows(data["items"])
+    row = next((r for r in rows if r["id"] == ref), None)
+    if row is None:
+        raise ValueError(f"no extension {ref!r}")
+    kind = row["kind"]
+    if kind == "plugin":
+        _set_claude_plugin(str(row["name"]), enabled)
+    elif kind == "hook" and not enabled and not row.get("wrapped"):
+        wrap_hooks(workspace, only={_sha(str(row.get("command") or "").encode())[:8]})
+    off = data.setdefault("disabled", {})
+    if enabled:
+        off.pop(ref, None)
+    else:
+        off[ref] = {"kind": kind, "name": row.get("name"), "at": _now()}
+    _save(workspace, data)
+    _audit("extension_enabled" if enabled else "extension_disabled", row)
+    return {"id": ref, "kind": kind, "enabled": enabled,
+            "effect": "Back on." if enabled else _OFF_EFFECT.get(kind, "")}
+
+
+def rewrap_disabled_hooks(workspace: Path) -> None:
+    """A plugin update rewrites its hooks.json and drops the wrapper; put it
+    back on the hooks that are turned off. Called at session start."""
+    shas = {eid.rpartition("#")[2] for eid in disabled_ids(workspace) if eid.startswith("hook:")}
+    if shas:
+        wrap_hooks(workspace, only=shas)
+
+
+def disabled_finding(workspace: Path, event: Dict[str, Any], session_id: str = "") -> Optional[Dict[str, Any]]:
+    """A blocking finding when this call is to a skill or MCP server that was
+    turned off. Reads the ledger file only, like ``tag_event``."""
+    off = disabled_ids(workspace)
+    if not off:
+        return None
+    meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    tool = str(meta.get("tool_name") or "")
+    hit = None
+    if tool == "Skill":
+        from prismor.runtime.scoped_agent import resolve_skill_name
+        name = (resolve_skill_name(event) or "").rpartition(":")[2]
+        hit = next((o for o in off.values() if o.get("kind") == "skill" and name and o.get("name") == name), None)
+    elif tool.startswith("mcp__"):
+        server = _mcp_server(tool)
+        hit = next((o for o in off.values() if o.get("kind") == "mcp" and _serves(str(o.get("name") or ""), server)), None)
+    if hit is None:
+        return None
+    what = "skill" if hit["kind"] == "skill" else "MCP server"
+    return {
+        "id": f"{session_id}:extension-disabled:{hit.get('name')}",
+        "ruleId": "extension-disabled",
+        "severity": "medium",
+        "category": "agent-control",  # an operator's switch: blocks in observe mode too
+        "mode": "enforce",
+        "title": f"The {what} '{hit.get('name')}' is turned off",
+        "evidence": f"{tool} belongs to the {what} '{hit.get('name')}', turned off in the Prismor dashboard",
+        "eventIndex": 0,
+        "remediation": "Turn it back on under Extensions in the Prismor dashboard.",
+    }
 
 
 # ── Views ────────────────────────────────────────────────────────────────────
@@ -995,7 +1127,14 @@ def overview(workspace: Path, events: int = 40) -> Dict[str, Any]:
     docs: Dict[str, List[Dict[str, Any]]] = {}
     for url, ref in data["remote_refs"].items():
         docs.setdefault(str(ref.get("extension")), []).append({"url": url, **ref})
+    off = data.get("disabled") if isinstance(data.get("disabled"), dict) else {}
+    claude_plugins = (_read_json(_claude_user_settings()) or {}).get("enabledPlugins") or {}
+    plugin_off = {f"plugin:{pid}" for pid, on in claude_plugins.items() if on is False}
     for r in rows:
+        # Off here, or off because the plugin it ships in is off (however
+        # that happened: this page, `claude plugin disable`, /plugin).
+        r["enabled"] = r["id"] not in off and r["id"] not in plugin_off
+        r["offVia"] = r.get("parent") if r.get("parent") in plugin_off else None
         r["invocations"] = (data["items"].get(r["id"]) or {}).get("invocations", [])
         r["remote_refs"] = docs.get(r["id"], [])
         r["approved"] = r["status"] == "approved"

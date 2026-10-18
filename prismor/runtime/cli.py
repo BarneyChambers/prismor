@@ -1980,6 +1980,8 @@ def main(argv: Optional[List[str]] = None) -> None:
                 # Wrapping rewrites Claude Code's own hook config; Claude only.
                 if args.agent == "claude" and os.environ.get("PRISMOR_WRAP_HOOKS", "").lower() in ("1", "true", "yes", "on"):
                     _ext.wrap_hooks(workspace)
+                elif args.agent == "claude":
+                    _ext.rewrap_disabled_hooks(workspace)  # a plugin update may have dropped the wrapper
                 _notices = [_ext.session_notice(workspace, normalized["sessionId"])]
                 from prismor.runtime.skills_audit import changed_or_flagged as _skills_flagged
                 _hot = _skills_flagged(workspace)[:5]
