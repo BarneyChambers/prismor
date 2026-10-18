@@ -4248,11 +4248,12 @@ function renderFiles() {
   });
   const count = n => n.files.length + Object.values(n.dirs).reduce((a, c) => a + count(c), 0);
   const open = fs.length <= 40 || document.getElementById('filesSearch').value.trim();
-  const draw = node => Object.keys(node.dirs).sort().map(name => {
+  // Large trees still open their top two levels, so the first view isn't a wall of collapsed folders.
+  const draw = (node, depth = 0) => Object.keys(node.dirs).sort().map(name => {
     let sub = node.dirs[name], label = name;
     while (!sub.files.length && Object.keys(sub.dirs).length === 1) { const k = Object.keys(sub.dirs)[0]; label += '/' + k; sub = sub.dirs[k]; }
-    return '<details class="ftree-dir"' + (open || sub.files.some(f => f.path === _filesSel) ? ' open' : '') + '><summary>' + safe(label) +
-      '/ <span class="dev-quiet">' + count(sub) + '</span></summary>' + draw(sub) + '</details>';
+    return '<details class="ftree-dir"' + (open || depth < 2 || sub.files.some(f => f.path === _filesSel) ? ' open' : '') + '><summary>' + safe(label) +
+      '/ <span class="dev-quiet">' + count(sub) + '</span></summary>' + draw(sub, depth + 1) + '</details>';
   }).join('') + node.files.slice().sort((a, b) => a.path.localeCompare(b.path)).map(f => fileRow(f, f.path.split('/').pop())).join('');
   el.innerHTML = '<div class="ftree-root" title="common folder">' + safe(parts[0].slice(0, common).join('/') + '/') + '</div><div class="ftree">' + draw(root) + '</div>';
 }
