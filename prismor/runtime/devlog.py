@@ -16,6 +16,7 @@ applies: these views print commands, errors and prompts.
 from __future__ import annotations
 
 import difflib
+import html
 import json
 import re
 import sqlite3
@@ -436,12 +437,8 @@ def blame(path: str, line: Optional[int] = None, limit: int = 20) -> Dict[str, A
             if (needle and len(needle) >= 4 and needle not in text) or call in seen:
                 continue  # one call is logged twice when the hook is installed at two scopes
             seen.add(call)
-            prompt = conn.execute(
-                "SELECT json_extract(raw_json, '$.metadata.raw.prompt') FROM events WHERE session_id = ? "
-                "AND type = 'prompt' AND id < ? ORDER BY id DESC LIMIT 1", (sid, eid),
-            ).fetchone()
             rows.append({"ts": ts, "sessionId": sid, "agent": agent or "",
-                         "prompt": str((prompt or [""])[0] or "")[:600],
+                         "prompt": _asked(conn, sid, eid),
                          **_diff_stats(_call_diff({"tool": str(hook.get("tool_name") or ""), "input": inp},
                                                   hook.get("tool_response")))})
             if len(rows) >= limit:
@@ -449,13 +446,9 @@ def blame(path: str, line: Optional[int] = None, limit: int = 20) -> Dict[str, A
         for w in _shell_writes():
             if w["path"] != target or (needle and len(needle) >= 4 and needle not in "\n".join(w["diff"])):
                 continue
-            prompt = conn.execute(
-                "SELECT json_extract(raw_json, '$.metadata.raw.prompt') FROM events WHERE session_id = ? "
-                "AND type = 'prompt' AND id < ? ORDER BY id DESC LIMIT 1", (w["sessionId"], w["id"]),
-            ).fetchone()
             agent = conn.execute("SELECT agent FROM sessions WHERE session_id = ?", (w["sessionId"],)).fetchone()
             rows.append({"ts": w["ts"], "sessionId": w["sessionId"], "agent": (agent or [""])[0] or "", "via": "shell",
-                         "prompt": str((prompt or [""])[0] or "")[:600], **_diff_stats(w["diff"])})
+                         "prompt": _asked(conn, w["sessionId"], w["id"]), **_diff_stats(w["diff"])})
     finally:
         conn.close()
     rows.sort(key=lambda r: r["ts"] or "", reverse=True)
@@ -625,6 +618,27 @@ def on_failure(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             f"({_error_line(str(payload.get('error') or ''))}). Retrying it unchanged will fail again: "
             "read the error, check the assumption behind the call, and change approach."),
     }}
+
+
+# Claude Code feeds these back as user turns; nobody typed them.
+_INJECTED_PROMPT = ("<task-notification", "<agent-message")
+
+
+def _asked(conn: sqlite3.Connection, sid: str, before_id: int) -> str:
+    """The last prompt a person typed before event ``before_id``.
+
+    A background task finishing or a subagent reporting back arrives as a
+    prompt too, so "asked:" showed a wall of escaped XML instead of the
+    request that led to the write.
+    """
+    for (text,) in conn.execute(
+        "SELECT json_extract(raw_json, '$.metadata.raw.prompt') FROM events WHERE session_id = ? "
+        "AND type = 'prompt' AND id < ? ORDER BY id DESC LIMIT 50", (sid, before_id),
+    ):
+        text = html.unescape(str(text or "")).strip()
+        if text and not text.startswith(_INJECTED_PROMPT):
+            return text[:600]
+    return ""
 
 
 def _clip(s: str, n: int = 110) -> str:
