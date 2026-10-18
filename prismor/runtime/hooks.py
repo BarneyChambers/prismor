@@ -846,14 +846,20 @@ def should_block(
         if str(finding.get("mode", "observe")).lower() == "enforce":
             # Reads are generally safe, so they only block for secret access —
             # except for IAM, where an operator has explicitly scoped which
-            # paths/tools an identity may read, and that intent must be honored.
+            # paths/tools an identity may read, and an operator's own switch
+            # (agent-control: a denied tool, a skill turned off), whose intent
+            # must be honored.
             if (
                 event.get("type") == "file_read"
-                and finding.get("category") not in ("secret_access", "iam")
+                and finding.get("category") not in _READ_BLOCK_CATEGORIES
             ):
                 continue
             eligible.append(finding)
     return strongest(eligible)
+
+
+# Finding categories that may block a plain read (see should_block).
+_READ_BLOCK_CATEGORIES = ("secret_access", "iam", "agent-control")
 
 
 def legacy_should_block(
@@ -887,7 +893,7 @@ def legacy_should_block(
         if finding.get("category") in block_categories:
             if (
                 event.get("type") == "file_read"
-                and finding.get("category") not in ("secret_access", "iam")
+                and finding.get("category") not in _READ_BLOCK_CATEGORIES
             ):
                 continue
             return finding
