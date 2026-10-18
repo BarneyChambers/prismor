@@ -1211,6 +1211,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); align-self:center; flex:none; }
   .sess-dot.ok { background:#22c55e; } .sess-dot.warn { background:#f59e0b; } .sess-dot.bad { background:#ef4444; }
   .sess-sub { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
+  .used-row { display:flex; align-items:center; gap:10px; width:100%; padding:6px 4px; background:none; border:0; border-radius:6px; font:inherit; color:var(--gray-800); text-align:left; cursor:pointer; }
+  .used-row:hover { background:var(--gray-100); }
+  .used-row .used-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size:10px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
   .sess-sub span { font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400); margin-left:6px; }
   .sess-none { padding:2px 0 6px; }
   .sess-hook-ev { font-size:10.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
@@ -1218,7 +1222,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .dev-fail-label { font-size:11px; font-weight:700; color:#b91c1c; margin-bottom:4px; }
   .dev-fail-head { display:flex; gap:8px; align-items:baseline; min-width:0; }
   .dev-fail-cmd { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .dev-fail-err:hover { -webkit-line-clamp:unset; }
   .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size:11.5px; color:var(--gray-500); }
   .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size:11.5px; }
   .dev-before { margin:-2px 0 8px 12px; }
@@ -1226,7 +1231,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #sessFlowCanvas .tree-leaf.flash { animation:devflash 1.6s ease-out; }
   @keyframes devflash { 0%,35% { box-shadow:inset 0 0 0 2px #ef4444; background:rgba(239,68,68,.12); } 100% { box-shadow:none; } }
   .dev-note { font-size:12.5px; color:var(--gray-600); background:var(--gray-50); border-radius:6px; padding:8px 10px; margin:8px 0; }
-  .sess-ext-hooks summary { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
+  .sess-ext-hooks summary:not(.sess-hook-src) { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
   .sess-ran-title { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
   .sess-ran-group { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; }
   .sess-ran-group em { font-style:normal; color:var(--gray-500); margin-right:2px; }
@@ -1772,10 +1777,32 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #page-session .sess-ran-under { margin-bottom: 8px; padding: 0 14px; }
   .sess-ext-all > summary { list-style: none; cursor: pointer; padding: 9px 0; margin: 0; }
   .sess-ext-all > summary::-webkit-details-marker { display: none; }
-  .sess-ext-toggle { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--gray-500); }
+  .sess-ext-toggle { margin-left: auto; font-size: 14px; line-height: 1; color: var(--gray-400); }
+  .sess-summary .sess-ext-head { display:grid; grid-template-columns:8px 92px minmax(0,1fr) auto; align-items:center; gap:12px; margin:0; }
+  .sess-summary .sess-sum { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sess-dot.none { background:transparent; }
+  .sess-warn { color:#d97706; font-weight:600; }
+  .sess-hook-src { display:grid; grid-template-columns:minmax(0,1.4fr) 48px 48px 64px minmax(0,2fr) 90px; align-items:center; gap:10px; padding:7px 4px; cursor:pointer; list-style:none; border-bottom:1px solid var(--gray-100); }
+  .sess-hook-src::-webkit-details-marker { display:none; }
+  .sess-hook-cols { cursor:default; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-400); padding-bottom:5px; }
+  .sess-hook-name { font-weight:600; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sess-hook-name::before { content:'\25B8'; display:inline-block; width:14px; color:var(--gray-400); transition:transform .15s; }
+  .sess-ext-hooks[open] .sess-hook-name::before { transform:rotate(90deg); }
+  .sess-hook-n { color:var(--gray-600); font-variant-numeric:tabular-nums; }
+  .sess-hook-evs { display:flex; flex-wrap:wrap; gap:4px; }
+  .sess-ext-hooks[open] > .ext-row { padding-left:18px; }
   .sess-ext-all[open] > summary { border-bottom: 1px solid var(--gray-100); margin-bottom: 10px; }
   .sess-ext-all[open] .sess-ext-toggle::after { content: ' \25B4'; }
   .sess-ext-all:not([open]) .sess-ext-toggle::after { content: ' \25BE'; }
+  /* The session's summary sections share one card; one opens at a time and
+     scrolls inside it, so opening one never shoves the flow off the page. */
+  .sess-summary { margin-bottom:8px; background:var(--surface); border:1px solid var(--gray-200); border-radius:10px; }
+  .sess-summary:not(:has(> :not([hidden]))) { display:none; }
+  #page-session .sess-summary > .sess-ran-under { margin:0; border:0; border-radius:0; background:none; }
+  .sess-summary > .sess-ran-under:not([hidden]) ~ .sess-ran-under:not([hidden]) { border-top:1px solid var(--gray-100); }
+  .sess-summary .sess-ext-all[open] { max-height:45vh; overflow:auto; overscroll-behavior:contain; }
+  .sess-summary .sess-ext-all[open] > summary { position:sticky; top:0; z-index:1; background:var(--surface); }
+  .sess-summary .sess-ext-all + .sess-ext-all { border-top:1px solid var(--gray-100); }
   .sess-ext-all > .ext-row:last-child, .sess-ext-all > .sess-ext-hooks:last-child { margin-bottom: 10px; }
   #page-session .flow-head { padding: 9px 14px; }
 
@@ -2081,6 +2108,17 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-item.hdr { cursor:default; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
+  .hook-item { display:grid; grid-template-columns:minmax(0,2.2fr) 130px 64px 70px 70px 70px 56px 110px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
+  .hook-item.hdr { cursor:default; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
+  .hook-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-item .num, .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; }
+  .hook-sess { margin:-4px 0 8px 18px; padding:6px 10px; border-left:2px solid var(--gray-200); }
+  .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size:12px; cursor:pointer; border-radius:4px; }
+  .hook-sess-row:hover:not(.hdr) { background:var(--gray-100); }
+  .hook-sess-row.hdr { cursor:default; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-400); }
+  .hook-sess-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-cmd { margin-top:6px; font-size:11px; color:var(--gray-500); overflow-wrap:anywhere; }
+  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } .hook-item > :nth-child(2), .hook-item > :nth-child(4), .hook-item > :nth-child(6), .hook-item > :nth-child(7), .hook-item > :nth-child(8) { display:none; } }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
   .ext-spark { display:inline-flex; align-items:flex-end; gap:1px; height:22px; width:100%; }
   .ext-spark i { flex:1; min-height:1px; background:var(--accent); opacity:.75; border-radius:1px; }
@@ -2996,8 +3034,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="sess-ctrl-btns" id="sessFlowActions"></div>
   </div>
 
-  <div id="sessRanUnder" class="sess-ran-under" hidden></div>
-  <div id="sessDev" class="sess-ran-under" hidden></div>
+  <div class="sess-summary">
+    <div id="sessDev" class="sess-ran-under" hidden></div>
+    <div id="sessUsed" class="sess-ran-under" hidden></div>
+    <div id="sessRanUnder" class="sess-ran-under" hidden></div>
+  </div>
 
   <div class="session-layout">
     <div>
@@ -3817,7 +3858,8 @@ function sessExtRow(x, calls) {
   const id = safeJsArg(x.id);
   const what = hook ? '<span class="sess-hook-ev">' + safe(hook.event) + '</span><span class="ext-name">' + safe(hook.script) + '</span>'
     : '<span class="ext-kind">' + safe(x.kind === 'mcp' ? 'MCP server' : x.kind) + '</span><span class="ext-name">' + safe(x.name) + '</span>';
-  const use = hook ? '' : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b style="color:#ef4444">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
+  const hr = hook ? hookRunsOf(x) : null;
+  const use = hook ? (hr.n ? '<span class="ext-quiet">' + hr.n + ' run' + (hr.n === 1 ? '' : 's') + ' · avg ' + fmtMs(hr.avg) + (hr.fail ? ' · <b style="color:#ef4444">' + hr.fail + ' failed</b>' : '') + '</span>' : '<span class="ext-quiet">no runs recorded</span>') : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b style="color:#ef4444">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
   return '<div class="ext-row' + (x.reviewed || (hook && hook.prismor) ? '' : ' review') + (_sessExtOpen[x.id] ? ' open' : '') + '">' +
     '<div class="ext-head" onclick="_sessExtOpen[\'' + id + '\']=!_sessExtOpen[\'' + id + '\'];renderSessionExtensions()">' +
       (hook && hook.prismor ? '<span class="ext-badge approved" title="Prismor\'s own screening hook.">prismor</span>' : sessReviewBadge(x)) + what + sessCaps(x) + use +
@@ -3826,6 +3868,23 @@ function sessExtRow(x, calls) {
       (x.reviewed || (hook && hook.prismor) ? '' : '<button class="ext-approve" onclick="extApprove(\'' + id + '\')">Mark reviewed</button><span class="ext-review-note">Once you have read what it does. Prismor flags it again if its files change.</span>') +
       ' <a class="ext-sess" style="margin-left:10px" onclick="openExtension(\'' + id + '\')">every session that used it →</a></div></div>';
 }
+// This session's runs of one installed hook, from the transcript runs on each
+// event. The ledger name is "Event: command", cut short, so match its start.
+function sessHookRuns() {
+  const evs = (_sessionViewState && _sessionViewState.data && _sessionViewState.data.recent_events) || [];
+  return [].concat(...evs.map(e => e.hookRuns || []));
+}
+function hookRunsOf(x, runs) {
+  const key = x.name.replace(/…$/, '');
+  const mine = (runs || sessHookRuns()).filter(r => (r.event + ': ' + r.command).startsWith(key));
+  const ms = mine.map(r => r.ms).filter(v => v != null);
+  return {n: mine.length, avg: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null, fail: mine.filter(r => !r.ok).length};
+}
+// One header shape for every summary row: status dot, short label, summary, chevron.
+function sessHead(dot, title, sum) {
+  return '<summary class="sess-ext-head"><span class="sess-dot ' + (dot || 'none') + '"></span><span class="sess-ran-title">' + title +
+    '</span><span class="sess-sum">' + sum + '</span><span class="sess-ext-toggle"></span></summary>';
+}
 function renderSessionExtensions() {
   const el = document.getElementById('sessRanUnder'), d = _sessExt;
   if (!el || !d || !(d.extensions || []).length) return;
@@ -3833,27 +3892,75 @@ function renderSessionExtensions() {
   const used = d.extensions.filter(x => x.role !== 'ambient'), hooks = d.extensions.filter(x => x.role === 'ambient');
   const unrev = used.filter(x => !x.reviewed).length;
   const hookUnrev = hooks.filter(h => !h.reviewed && !sessHookParts(h).prismor).length;
-  const names = used.slice(0, 4).map(x => '<b>' + safe(x.name) + '</b>').join(', ') + (used.length > 4 ? ' and ' + (used.length - 4) + ' more' : '');
-  const line = (used.length ? 'The agent used ' + names : 'The agent used no skills or MCP servers') +
-    (unrev ? ' · <b style="color:#d97706">' + unrev + ' not reviewed</b>' : '') +
-    (hooks.length ? ' · ' + hooks.length + ' background hook' + (hooks.length === 1 ? '' : 's') + ' ran' + (hookUnrev ? ' (<b style="color:#d97706">' + hookUnrev + ' not reviewed</b>)' : '') : '') +
-    ((d.fetched || []).length ? ' · read ' + d.fetched.length + ' web document' + (d.fetched.length === 1 ? '' : 's') + ' a skill pointed it to' : '');
+  const names = used.slice(0, 3).map(x => '<b>' + safe(x.name) + '</b>').join(', ') + (used.length > 3 ? ' +' + (used.length - 3) : '');
   // Group hooks by where they came from, so 22 rows read as 4 sources.
-  const bySrc = new Map();
+  const bySrc = new Map(), allRuns = sessHookRuns();
   hooks.forEach(h => { const k = sessHookParts(h).from; bySrc.set(k, (bySrc.get(k) || []).concat([h])); });
+  const toReview = unrev + hookUnrev;
+  const line = [used.length ? names : 'no skills or MCP',
+    hooks.length && hooks.length + ' hook' + (hooks.length === 1 ? '' : 's') + ' from ' + bySrc.size + ' source' + (bySrc.size === 1 ? '' : 's'),
+    (d.fetched || []).length && d.fetched.length + ' doc' + (d.fetched.length === 1 ? '' : 's') + ' fetched',
+    toReview && '<b class="sess-warn">' + toReview + ' to review</b>'].filter(Boolean).join(' · ');
   const hookGroups = [...bySrc].sort((a, b) => (a[0] === 'Prismor') - (b[0] === 'Prismor') || b[1].length - a[1].length).map(([src, hs]) => {
     const bad = hs.filter(h => !h.reviewed && src !== 'Prismor').length;
-    return '<details class="sess-ext-hooks"' + (_sessExtOpen['__h' + src] ? ' open' : '') + ' ontoggle="_sessExtOpen[\'__h' + safeJsArg(src) + '\']=this.open"><summary>From ' + safe(src) +
-      ' <span class="ext-quiet">' + hs.length + ' hook' + (hs.length === 1 ? '' : 's') + ' · ' + safe([...new Set(hs.map(h => sessHookParts(h).event))].join(', ')) + '</span>' +
-      (bad ? ' · <b style="color:#d97706">' + bad + ' not reviewed</b>' : '') + '</summary>' + hs.map(x => sessExtRow(x, calls)).join('') + '</details>';
+    return '<details class="sess-ext-hooks"' + (_sessExtOpen['__h' + src] ? ' open' : '') + ' ontoggle="_sessExtOpen[\'__h' + safeJsArg(src) + '\']=this.open"><summary class="sess-hook-src">' +
+      '<span class="sess-hook-name">' + safe(src) + '</span><span class="sess-hook-n">' + hs.length + '</span>' +
+      (st => '<span class="sess-hook-n">' + (st.n || '-') + '</span><span class="sess-hook-n">' + (st.n ? fmtMs(st.avg) : '-') + '</span>')(hs.map(h => hookRunsOf(h, allRuns)).reduce((a, r) => ({n: a.n + r.n, t: a.t + (r.avg || 0) * r.n, get avg() { return this.n ? Math.round(this.t / this.n) : null; }}), {n: 0, t: 0})) +
+      '<span class="sess-hook-evs">' + [...new Set(hs.map(h => sessHookParts(h).event))].map(e => '<span class="sess-hook-ev">' + safe(e) + '</span>').join('') + '</span>' +
+      (bad ? '<b class="sess-warn">' + bad + ' to review</b>' : '<span class="ext-quiet">reviewed</span>') + '</summary>' + hs.map(x => sessExtRow(x, calls)).join('') + '</details>';
   }).join('');
-  el.innerHTML = '<details class="sess-ext-all"' + (_sessExtOpen.__all ? ' open' : '') + ' ontoggle="_sessExtOpen.__all=this.open"><summary class="sess-ext-head">' +
-      '<span class="sess-dot ' + (unrev || hookUnrev ? 'warn' : 'ok') + '"></span><span class="sess-ran-title">Extensions in this session</span>' +
-      '<span class="sess-sum">' + line + '</span><span class="sess-ext-toggle">details</span></summary>' +
-    '<div class="sess-sub">Skills and MCP servers the agent chose to use</div>' +
-    (used.length ? used.map(x => sessExtRow(x, calls)).join('') : '<div class="ext-quiet sess-none">None in this session.</div>') +
-    (hooks.length ? '<div class="sess-sub">Background hooks <span>run automatically on agent events (start, each tool call, stop); the agent does not choose them</span></div>' + hookGroups : '') +
+  el.innerHTML = '<details name="sesssum" class="sess-ext-all"' + (_sessExtOpen.__all ? ' open' : '') + ' ontoggle="_sessExtOpen.__all=this.open">' +
+      sessHead(toReview ? 'warn' : 'ok', 'Extensions', line) +
+    (used.length ? '<div class="sess-sub">Skills &amp; MCP servers <span>chosen by the agent</span></div>' + used.map(x => sessExtRow(x, calls)).join('') : '') +
+    (hooks.length ? '<div class="sess-sub">Hooks <span>run automatically on agent events</span></div>' +
+      '<div class="sess-hook-src sess-hook-cols"><span>Source</span><span>Hooks</span><span>Runs</span><span>Avg</span><span>Events</span><span>Status</span></div>' + hookGroups : '') +
     '</details>';
+  el.hidden = false;
+}
+
+// What the session pulled in from outside: web searches, sites read and the
+// instruction files loaded at start. Each row jumps to its call in the flow.
+function usedQuery(ev) {
+  const a = ev.artifacts || {};
+  if (a.query) return a.query;
+  // Sessions recorded before the query was stored still have it in the hook payload.
+  try { return ((JSON.parse(ev.hookInput || '{}').tool_input) || {}).query || ''; } catch (e) { return ''; }
+}
+function usedIcon(host) {
+  // ponytail: fetches favicon.ico from the host the agent already read; a letter tile when it has none.
+  return '<span class="used-icon">' + safe(host[0].toUpperCase()) + '<img src="https://' + safeAttr(host) + '/favicon.ico" alt="" width="16" height="16" referrerpolicy="no-referrer" style="position:absolute;inset:0" onerror="this.remove()"></span>';
+}
+const tildify = p => String(p).replace(/^\/(?:Users|home)\/[^/]+/, '~');
+function renderSessionUsed(trail) {
+  const el = document.getElementById('sessUsed');
+  const searches = [], sites = new Map(), memory = new Set(), reads = new Map();
+  trail.forEach((ev, i) => {
+    const a = ev.artifacts || {};
+    (a.memory_files || []).forEach(f => memory.add(f));
+    if (ev.toolTag === 'Read' && a.path && !reads.has(a.path)) reads.set(a.path, i);
+    if (ev.type !== 'network') return;
+    const q = usedQuery(ev);
+    if (q) { if (!searches.some(s => s.q === q)) searches.push({q, i}); return; }
+    let host = '';
+    try { host = new URL(a.url).hostname.replace(/^www\./, ''); } catch (e) { return; }
+    const s = sites.get(host) || {host, pages: new Set(), i};
+    s.pages.add(a.url); sites.set(host, s);
+  });
+  if (!searches.length && !sites.size && !memory.size && !reads.size) { el.hidden = true; el.innerHTML = ''; return; }
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const sum = [searches.length && searches.length + (searches.length === 1 ? ' search' : ' searches'), sites.size && plural(sites.size, 'site') + ' read',
+    reads.size && plural(reads.size, 'file') + ' read', memory.size && plural(memory.size, 'instruction file')].filter(Boolean).join(' · ');
+  const row = (icon, text, right, i) => '<button class="used-row" onclick="devLocateRow(' + i + ')" title="' + safeAttr(text) + '">' + icon +
+    '<span class="used-text">' + safe(text) + '</span><span class="ext-quiet">' + right + '</span></button>';
+  const search = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;color:var(--gray-500)"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>';
+  el.innerHTML = '<details name="sesssum" class="sess-ext-all">' + sessHead('', 'Used', sum) +
+    (searches.length ? '<div class="sess-sub">Searches</div>' + searches.map(s => row(search, s.q, '', s.i)).join('') : '') +
+    (sites.size ? '<div class="sess-sub">Sites read</div>' + [...sites.values()].sort((a, b) => b.pages.size - a.pages.size)
+      .map(s => row(usedIcon(s.host), s.host, plural(s.pages.size, 'page'), s.i)).join('') : '') +
+    (reads.size ? '<div class="sess-sub">Files read</div>' + [...reads].map(([f, i]) => row('', tildify(f), '', i)).join('') : '') +
+    (memory.size ? '<div class="sess-sub">Memory <span>instruction files in context at start</span></div>' +
+      [...memory].map(f => '<div class="used-row" style="cursor:default" title="' + safeAttr(f) + '"><span class="used-text">' + safe(tildify(f)) + '</span></div>').join('') : '') +
+    '<div style="height:8px"></div></details>';
   el.hidden = false;
 }
 
@@ -3950,13 +4057,10 @@ async function loadSessionDev(sessionId) {
   try { d = await apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/dev', {timeoutMs: 20000}); } catch (e) { return; }
   if (!_sessionViewState || _sessionViewState.sessionId !== sessionId || !d.rca) return;
   const r = d.rca, ch = d.changes, rc = devRca(r);
-  let h = '<details class="sess-ext-all"' + (r.loops.length || r.reverts.length ? ' open' : '') + '><summary class="sess-ext-head">' +
-    '<span class="sess-dot ' + rc.dot + '"></span><span class="sess-ran-title">What went wrong</span><span class="sess-sum">' + rc.line + '</span>' +
-    (rc.body ? '<span class="sess-ext-toggle">details</span>' : '') + '</summary>' + rc.body;
+  let h = '<details name="sesssum" class="sess-ext-all"' + (r.loops.length || r.reverts.length ? ' open' : '') + '>' + sessHead(rc.dot, 'Problems', rc.line) + rc.body;
   h += '</details>';
-  h += '<details class="sess-ext-all"><summary class="sess-ext-head"><span class="sess-ran-title">Changes</span><span class="ext-quiet">' +
-    ch.files.length + ' file' + (ch.files.length === 1 ? '' : 's') + ' · ' + devCounts({added: ch.files.reduce((n, f) => n + f.added, 0), removed: ch.files.reduce((n, f) => n + f.removed, 0), removedUnknown: ch.files.some(f => f.removedUnknown)}) + ' · ' + ch.commands.length + ' commands' + (ch.branch ? ' · branch ' + safe(ch.branch) : '') +
-    '</span><span class="sess-ext-toggle">details</span></summary>' +
+  h += '<details name="sesssum" class="sess-ext-all">' + sessHead('', 'Changes', '' +
+    ch.files.length + ' file' + (ch.files.length === 1 ? '' : 's') + ' · ' + devCounts({added: ch.files.reduce((n, f) => n + f.added, 0), removed: ch.files.reduce((n, f) => n + f.removed, 0), removedUnknown: ch.files.some(f => f.removedUnknown)}) + ' · ' + ch.commands.length + ' commands' + (ch.branch && ch.branch !== 'HEAD' ? ' · on ' + safe(ch.branch) : '')) +
     ch.files.map(x => '<details class="dev-file"' + (ch.files.length <= 3 ? ' open' : '') + '><summary><span class="dev-mono">' + safe(x.path) + '</span>' + devCounts(x) +
       '<span class="dev-quiet">' + x.writes + ' edit' + (x.writes === 1 ? '' : 's') + '</span></summary>' + devDiff(x.diff, x.truncated) + '</details>').join('') +
     '<div class="dev-h">Draft PR description <button class="fbtn" onclick="devCopy(this.parentNode.nextElementSibling.value,this)">Copy</button></div>' +
@@ -4104,6 +4208,7 @@ async function renderAgentExtensions(agentName) {
 function renderExtensions() {
   const d = _extCache || {rows: [], events: [], counts: {}};
   renderExtKindTabs();
+  if (_extTab === 'hook') return renderHookStats();
   if (_extTab !== 'all') return renderExtKind(_extTab);
   const sess = d.sessions || [], unrev = sess.filter(s => s.unreviewed).length;
   const review = d.rows.filter(r => r.needs_review).length, idle = d.rows.filter(r => r.never_used).length;
@@ -4268,6 +4373,56 @@ function renderExtKind(kind) {
   else document.getElementById('extEvents').innerHTML = '<div class="empty">' + (kind === 'secret'
     ? 'A secret is not an installed extension, so it has no install history. Which credential was used is never recorded here, only the service it opened.'
     : 'Packages have no install ledger here. Supply-chain verdicts appear beside each install.') + '</div>';
+}
+// Every hook run across Claude Code sessions (/api/hooks, read from the
+// transcripts): how often each ran, what it cost the agent, where it ran.
+let _hookStats = null, _hookStatsDays = 0, _hookOpen = {};
+async function renderHookStats() {
+  const ext = document.getElementById('extList');
+  document.getElementById('extViews').style.display = 'none';
+  document.getElementById('extFilters').innerHTML = extDaysSelect('_depDays=+this.value;renderExtensions()') +
+    '<input class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Filter hooks…" value="' + safeAttr(_extQuery) + '" oninput="_extQuery=this.value;renderHookList()" style="min-width:220px" />';
+  renderExtEvents({events: ((_extCache || {}).events || []).filter(e => e.kind === 'hook')});
+  if (!_hookStats || _hookStatsDays !== _depDays) {
+    ext.innerHTML = '<div class="empty">Reading hook runs from agent transcripts…</div>';
+    try { _hookStats = await apiFetch('/api/hooks?days=' + _depDays, {timeoutMs: 60000}); _hookStatsDays = _depDays; }
+    catch (e) { ext.innerHTML = '<div class="empty">Could not read hook runs: ' + safe(e.message) + '</div>'; return; }
+    if (_extTab !== 'hook') return;
+  }
+  const hs = _hookStats.hooks || [], runs = hs.reduce((n, h) => n + h.runs, 0), fails = hs.reduce((n, h) => n + h.failures, 0);
+  const slow = hs.slice().sort((a, b) => (b.avgMs || 0) - (a.avgMs || 0))[0];
+  document.getElementById('extSummary').innerHTML = [
+    [hs.length, 'Hooks ran', 'distinct hook commands in Claude Code sessions'],
+    [fmtNum(runs), 'Runs', 'one per hook per agent event'],
+    [fmtMs(hs.reduce((n, h) => n + h.totalMs, 0)), 'Total hook time', 'summed; hooks of one event run in parallel'],
+    [fails, 'Failed runs', 'a non-zero exit or a timeout', fails ? 'warn' : '']]
+    .map(([n, label, sub, cls]) => '<div class="ext-stat ' + (cls || '') + '" style="cursor:default"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
+  renderHookList();
+}
+function hookIdentity(h) {
+  const full = h.event + ': ' + h.command;
+  const row = ((_extCache || {}).rows || []).find(r => r.kind === 'hook' && full.startsWith(r.name.replace(/…$/, '')));
+  return Object.assign(sessHookParts({name: full, origin: row && row.origin, path: row && row.path}), {id: row && row.id});
+}
+function renderHookList() {
+  const q = _extQuery.toLowerCase(), hs = ((_hookStats || {}).hooks || []).filter(h => !q || (h.event + ' ' + h.command).toLowerCase().includes(q));
+  const tone = ms => ms >= 5000 ? ' style="color:#ef4444;font-weight:600"' : ms >= HOOK_SLOW_MS ? ' style="color:#d97706;font-weight:600"' : '';
+  const hdr = '<div class="hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num">Avg</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
+    const id = hookIdentity(h), k = h.event + '|' + h.command;
+    const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg</span><span class="num">Failed</span><span>Last ran</span></div>' +
+      h.sessions.map(x => '<div class="hook-sess-row" onclick="openSessionView(\'' + safeJsArg(x.sessionId) + '\')"><span class="dev-mono">' + safe(x.sessionId.slice(0, 8)) + '</span>' +
+        '<span class="ext-quiet" title="' + safeAttr(x.cwd) + '">' + safe(tildify(x.cwd || '')) + '</span><span class="num">' + x.runs + '</span>' +
+        '<span class="num"' + tone(x.totalMs / x.runs) + '>' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b style="color:#ef4444">' + x.failures + '</b>' : '-') + '</span>' +
+        '<span class="ext-quiet">' + safe(extWhen(x.last)) + '</span></div>').join('') +
+      (h.sessionCount > h.sessions.length ? '<div class="empty">Showing the latest ' + h.sessions.length + ' of ' + h.sessionCount + ' sessions.</div>' : '') +
+      '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div></div>' : '';
+    return '<div class="ext-row hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
+      '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span></span>' +
+      '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
+      '<span class="num"' + tone(h.avgMs) + '>' + fmtMs(h.avgMs) + '</span><span class="num"' + tone(h.p95Ms) + '>' + fmtMs(h.p95Ms) + '</span>' +
+      '<span class="num">' + (h.failures ? '<b style="color:#ef4444">' + h.failures + '</b>' : '-') + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
+  }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not.') + '</div>';
 }
 function renderExtKindList() {
   const kind = _extTab, q = _extQuery.toLowerCase();
@@ -5523,6 +5678,7 @@ function renderSessionView(data){
   }
 
   renderSessionFlow(trail);
+  renderSessionUsed(trail);
   const interesting = trail.map((e,i)=>({i,v:flowVerdict(e)})).filter(o=>o.v!=='allow');
   if (interesting.length) selectFlowNode(interesting[interesting.length-1].i);
   else renderNodePanelDefault(data);
@@ -6159,7 +6315,7 @@ async function loadEvents(){
   }
 }
 // Hook wall time as the harness saw it: process start to exit.
-function fmtMs(ms){ if (ms == null) return ''; return ms < 1000 ? ms+' ms' : (ms/1000).toFixed(1)+' s'; }
+function fmtMs(ms){ if (ms == null) return ''; return ms < 1000 ? ms+' ms' : ms < 60000 ? (ms/1000).toFixed(1)+' s' : ms < 3600000 ? (ms/60000).toFixed(1)+' min' : (ms/3600000).toFixed(1)+' h'; }
 // Third-party hooks per row, from the agent's own transcript. Hooks of one
 // event run in parallel, so the slowest one is the wait the agent saw.
 const HOOK_SLOW_MS = 2000;

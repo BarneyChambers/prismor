@@ -1315,7 +1315,7 @@ def event_artifacts(raw: Dict[str, Any]) -> Dict[str, Any]:
     meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
     out: Dict[str, Any] = {}
 
-    for key in ("prompt", "command", "description", "stdout", "stderr", "response", "content", "path", "url"):
+    for key in ("prompt", "command", "description", "stdout", "stderr", "response", "content", "path", "url", "query"):
         value = raw.get(key)
         if value not in (None, "", [], {}):
             out[key] = _clip(value)
@@ -4336,6 +4336,72 @@ def _transcript_hook_runs(transcript: str) -> List[Dict[str, Any]]:
     except OSError:
         return []
     return runs
+
+
+_HOOK_SCAN_CACHE: Dict[str, Tuple[float, str, List[Dict[str, Any]]]] = {}
+
+
+def get_hook_stats(hours: int = 24 * 7, root: Optional[Path] = None) -> Dict[str, Any]:
+    """Every hook that ran across recent Claude Code sessions: how often, how
+    long it made the agent wait, how often it failed, and in which sessions.
+    Read from the transcripts (the only record of third-party hooks), each one
+    cached by mtime so a refresh re-reads only what changed."""
+    import time
+    root = root or Path.home() / ".claude" / "projects"
+    cutoff = time.time() - hours * 3600
+    hooks: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for path in root.glob("*/*.jsonl"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime < cutoff:
+            continue
+        key = str(path)
+        cached = _HOOK_SCAN_CACHE.get(key)
+        if not cached or cached[0] != mtime:
+            cwd = ""
+            try:
+                with open(path, encoding="utf-8", errors="replace") as fh:
+                    for _, line in zip(range(20), fh):
+                        m = re.search(r'"cwd":\s*"([^"]*)"', line)
+                        if m:
+                            cwd = m.group(1)
+                            break
+            except OSError:
+                pass
+            cached = (mtime, cwd, _transcript_hook_runs(key))
+            _HOOK_SCAN_CACHE[key] = cached
+        _, cwd, runs = cached
+        for run in runs:
+            hook = hooks.setdefault((run["event"], run["command"]), {
+                "event": run["event"], "command": run["command"], "name": run["name"],
+                "ms": [], "failures": 0, "last": "", "sessions": {}})
+            sess = hook["sessions"].setdefault(path.stem, {
+                "sessionId": path.stem, "cwd": cwd, "runs": 0, "totalMs": 0, "failures": 0, "last": ""})
+            sess["runs"] += 1
+            if run["ms"] is not None:
+                hook["ms"].append(run["ms"])
+                sess["totalMs"] += run["ms"]
+            if not run["ok"]:
+                hook["failures"] += 1
+                sess["failures"] += 1
+            hook["last"] = max(hook["last"], run["ts"])
+            sess["last"] = max(sess["last"], run["ts"])
+
+    def pct(xs: List[int], q: float) -> Optional[int]:
+        return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else None
+
+    out = []
+    for hook in hooks.values():
+        ms = sorted(hook.pop("ms"))
+        sessions = sorted(hook.pop("sessions").values(), key=lambda x: x["last"], reverse=True)
+        runs = sum(x["runs"] for x in sessions)
+        out.append({**hook, "runs": runs, "sessionCount": len(sessions), "totalMs": sum(ms),
+                    "avgMs": round(sum(ms) / len(ms)) if ms else None, "p95Ms": pct(ms, 0.95),
+                    "maxMs": ms[-1] if ms else None, "sessions": sessions[:50]})
+    out.sort(key=lambda h: h["totalMs"], reverse=True)
+    return {"hours": hours, "hooks": out}
 
 
 _TOOL_HOOK_EVENTS = ["PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure"]
