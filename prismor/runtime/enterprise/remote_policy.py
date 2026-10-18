@@ -148,8 +148,16 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
         return False
     if _identity.revoked_backoff_active():
         return False  # key was rejected — back off instead of hammering
+    # The hot path shares the telemetry upload's "control plane unreachable"
+    # backoff: on a network that drops packets every check otherwise waits the
+    # full timeout, stalling one tool call per debounce window. An explicit
+    # interval (a user-run command) always tries.
+    from prismor.runtime.enterprise import telemetry_spool as _spool
+    now = time.time()
+    if interval is None and _spool.backoff_active(now):
+        return False
     iv = _refresh_interval() if interval is None else interval
-    if (time.time() - _last_checked()) < iv:
+    if (now - _last_checked()) < iv:
         return False
     _touch_checked()  # debounce regardless of outcome so we don't hammer on errors
 
@@ -170,6 +178,7 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
         with urllib.request.urlopen(req, timeout=8) as resp:  # fixed or operator-configured URL  # nosec B310
             body = json.loads(resp.read().decode("utf-8"))
         _identity.clear_revoked()
+        _spool.clear_backoff()
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
             _identity.mark_revoked(f"policy version check rejected ({exc.code})")
@@ -178,8 +187,13 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
                 f"({exc.code}) — org policy no longer applies and nothing is reported to the org; "
                 "the built-in and project rules still run. Re-link with: prismor enroll <token>\n"
             )
+        elif exc.code >= 500:
+            _spool.note_upload_failure(now)
         return False
-    except (urllib.error.URLError, ValueError, OSError):
+    except ValueError:
+        return False
+    except (urllib.error.URLError, OSError):
+        _spool.note_upload_failure(now)
         return False
 
     latest = body.get("version")

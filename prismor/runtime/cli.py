@@ -265,7 +265,7 @@ def _run_extensions(args) -> None:
             changed = f", changed {ref['last_changed']}" if ref.get("last_changed") else ""
             print(f"  fetched: {url}  sha256 {ref['sha256'][:12]} ({ref['bytes']} bytes{changed})")
     elif sub == "report":
-        ok = ext.send_report(workspace, timeout=15)
+        ok = ext.send_report(workspace, timeout=15, force=True)
         print("reported to the console" if ok else "not reported (device not enrolled, revoked, or console unreachable)")
         if not ok:
             raise SystemExit(1)

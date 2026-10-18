@@ -86,6 +86,10 @@ from prismor.runtime.store import (
 )
 
 _DASHBOARD_HTML = Path(__file__).with_name("dashboard.html")
+# Chart.js, marked and the logo ship with the package: a CDN copy left the
+# dashboard on its loading screen with no network (initCharts threw first).
+_STATIC_DIR = Path(__file__).with_name("static")
+_STATIC_TYPES = {".js": "text/javascript; charset=utf-8", ".png": "image/png"}
 
 
 def _mirror_server_names(workspace: Path) -> set:
@@ -601,6 +605,21 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_static(self, name: str) -> None:
+        # Bare file names only: no subdirectories, so no traversal out of static/.
+        ctype = _STATIC_TYPES.get(Path(name).suffix)
+        target = _STATIC_DIR / name
+        if "/" in name or "\\" in name or name.startswith(".") or not ctype or not target.is_file():
+            self._send_json({"error": "not found"}, status=404)
+            return
+        body = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_json_body(self) -> Any:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if not length:
@@ -631,6 +650,10 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
 
         if path in ("", "/dashboard"):
             self._send_html(_DASHBOARD_HTML)
+            return
+
+        if path.startswith("/static/"):
+            self._send_static(path[len("/static/"):])
             return
 
         if path == "/health":
