@@ -34,6 +34,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 .doc-row.sel{background:var(--gray-100);box-shadow:inset 2px 0 0 var(--accent)}
 .doc-row-title{font-size:13px;font-weight:600}
 .doc-row-name{font:12px var(--font-mono);color:var(--gray-500);margin-top:2px}
+.doc-group{font-size: 11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);margin:14px 10px 4px}
+.doc-group:first-child{margin-top:0}
+.doc-row-hit em{font-style:normal;font-weight:600;color:var(--gray-700)}
+.doc-hit{background:var(--amber);border-radius:4px}
 .doc-row-hit{font-size: 12px;color:var(--gray-500);margin-top:3px;line-height:1.55;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .doc-row-hit mark{background:rgba(242,84,45,.18);color:inherit;border-radius:3px;padding:0 1px}
@@ -749,6 +753,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 500;
   }
   .status-active   { background: #dcfce7; color: #15803d; }
+  .status-idle     { background: var(--gray-100); color: var(--gray-500); }
   .status-paused   { background: #fef9c3; color: #92400e; }
   .status-blocked  { background: #fce7f3; color: #be185d; }
   .status-scoped   { background: #eff6ff; color: #1e40af; }
@@ -1216,6 +1221,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); align-self:center; flex:none; }
   .sess-dot.ok { background:#22c55e; } .sess-dot.warn { background:#f59e0b; } .sess-dot.bad { background:#ef4444; }
   .sess-sub { font-size: 12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
+  .used-row { display:flex; align-items:center; gap:10px; width:100%; padding:6px 4px; background:none; border:0; border-radius:6px; font:inherit; color:var(--gray-800); text-align:left; cursor:pointer; }
+  .used-row:hover { background:var(--gray-100); }
+  .used-row .used-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size: 11px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
   .sess-sub span { font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400); margin-left:6px; }
   .sess-none { padding:2px 0 6px; }
   .sess-hook-ev { font-size: 11.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
@@ -1224,6 +1233,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .dev-fail-head { display:flex; gap:8px; align-items:baseline; min-width:0; }
   .dev-fail-cmd { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .dev-fail .dev-fail-err { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .dev-fail .dev-fail-err:hover { -webkit-line-clamp:unset; }
   .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size: 12px; color:var(--gray-500); }
   .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size: 12px; }
   .dev-before { margin:-2px 0 8px 12px; }
@@ -1232,6 +1243,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   @keyframes devflash { 0%,35% { box-shadow:inset 0 0 0 2px #ef4444; background:rgba(239,68,68,.12); } 100% { box-shadow:none; } }
   .dev-note { font-size:12.5px; color:var(--gray-600); background:var(--gray-50); border-radius:6px; padding:8px 10px; margin:8px 0; }
   .sess-ext-hooks summary { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
+  .sess-ext-hooks > summary.sess-hook-src { color:inherit; font-weight:inherit; padding:7px 4px; }
   .sess-ran-title { font-size: 11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
   .sess-ran-group { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; }
   .sess-ran-group em { font-style:normal; color:var(--gray-500); margin-right:2px; }
@@ -1802,9 +1814,31 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-ext-all > summary { list-style: none; cursor: pointer; padding: 9px 0; margin: 0; }
   .sess-ext-all > summary::-webkit-details-marker { display: none; }
   .sess-ext-toggle { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--gray-500); }
+  .sess-summary .sess-ext-head { display:grid; grid-template-columns:8px 92px minmax(0,1fr) auto; align-items:center; gap:12px; margin:0; }
+  .sess-summary .sess-sum { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sess-dot.none { background:transparent; }
+  .sess-warn { color:#b45309; font-weight:600; }
+  .sess-hook-src { display:grid; grid-template-columns:minmax(0,1.4fr) 48px 48px 64px minmax(0,2fr) 90px; align-items:center; gap:10px; padding:7px 4px; cursor:pointer; list-style:none; border-bottom:1px solid var(--gray-100); }
+  .sess-hook-src::-webkit-details-marker { display:none; }
+  .sess-hook-cols { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); padding-bottom:5px; }
+  .sess-hook-name { font-weight:600; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sess-hook-name::before { content:'\25B8'; display:inline-block; width:14px; color:var(--gray-400); transition:transform .15s; }
+  .sess-ext-hooks[open] .sess-hook-name::before { transform:rotate(90deg); }
+  .sess-hook-n { color:var(--gray-600); font-variant-numeric:tabular-nums; }
+  .sess-hook-evs { display:flex; flex-wrap:wrap; gap:4px; }
+  .sess-ext-hooks[open] > .ext-row { padding-left:18px; }
   .sess-ext-all[open] > summary { border-bottom: 1px solid var(--gray-100); margin-bottom: 10px; }
   .sess-ext-all[open] .sess-ext-toggle::after { content: ' \25B4'; }
   .sess-ext-all:not([open]) .sess-ext-toggle::after { content: ' \25BE'; }
+  /* The session's summary sections share one card; one opens at a time and
+     scrolls inside it, so opening one never shoves the flow off the page. */
+  .sess-summary { margin-bottom:8px; background:var(--surface); border:1px solid var(--gray-200); border-radius:10px; }
+  .sess-summary:not(:has(> :not([hidden]))) { display:none; }
+  #page-session .sess-summary > .sess-ran-under { margin:0; border:0; border-radius:0; background:none; }
+  .sess-summary > .sess-ran-under:not([hidden]) ~ .sess-ran-under:not([hidden]) { border-top:1px solid var(--gray-100); }
+  .sess-summary .sess-ext-all[open] { max-height:45vh; overflow:auto; overscroll-behavior:contain; }
+  .sess-summary .sess-ext-all[open] > summary { position:sticky; top:0; z-index:1; background:var(--surface); }
+  .sess-summary .sess-ext-all + .sess-ext-all { border-top:1px solid var(--gray-100); }
   .sess-ext-all > .ext-row:last-child, .sess-ext-all > .sess-ext-hooks:last-child { margin-bottom: 10px; }
   #page-session .flow-head { padding: 9px 14px; }
 
@@ -2110,6 +2144,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
+  .hook-item { grid-template-columns:minmax(170px,3fr) 124px 48px 60px 64px 64px 96px 112px; }
+  .hook-launch { display:block; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-item .num { white-space:nowrap; }
+  .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .hook-slow { color:#b45309; font-weight:600; } .hook-bad { color:#b91c1c; font-weight:600; }
+  .hook-sess { margin:-4px 0 8px 18px; padding:6px 10px; border-left:2px solid var(--gray-200); }
+  .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size: 12px; cursor:pointer; border-radius:4px; }
+  .hook-sess-row:hover:not(.hdr) { background:var(--gray-100); }
+  .hook-sess-row.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); }
+  .hook-sess-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-cmd { margin-top:6px; font-size:12px; color:var(--gray-500); overflow-wrap:anywhere; }
+  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
   .ext-spark { display:inline-flex; align-items:flex-end; gap:1px; height:22px; width:100%; }
   .ext-spark i { flex:1; min-height:1px; background:var(--accent); opacity:.75; border-radius:1px; }
@@ -2198,6 +2244,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   tbody tr:hover td { background: var(--gray-50); }
   .kpi-value { color: var(--ink); }
   .empty { font-size: 12px; }
+  .more-row { text-align:center; padding:8px; font-size: 12px; }
+  .sess-title { font-family:var(--font-ui); font-weight:600; max-width:620px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom; }
+  .sess-detail-acts { display:flex; gap:6px; margin-top:8px; }
+  .sess-cell-title { max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sev-critical { background: #fbeeec; color: var(--bad); border-color: #f1cfcb; }
   .sev-high { background: #fbf3e4; color: #9a6b0c; border-color: #efdcae; }
   .sev-medium { background: var(--gray-100); color: var(--ink-2); border-color: var(--hairline); }
@@ -2429,6 +2479,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
             title="Effective enforcement mode: click to manage in Policy Control">
       <span class="badge-dot"></span><span id="modeChipLabel">mode</span>
     </button>
+    <button class="upgrade-btn" onclick="openPageHelp()" title="Open the guide for this page">Help</button>
     <button id="refreshBtn" class="upgrade-btn" onclick="refreshDashboard()"><svg class="icon"><use href="#i-refresh"/></svg> Refresh</button>
     <button class="upgrade-btn" onclick="openUpgradeModal()"><svg class="icon"><use href="#i-sparkles"/></svg> Upgrade</button>
   </div>
@@ -2486,7 +2537,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="docs-search">
     <svg class="icon"><use href="#i-search"/></svg>
     <input id="docsSearch" type="search" spellcheck="false" autocomplete="off"
-           placeholder="Search the docs, e.g. mcp-gateway, cloak, egress" />
+           placeholder="Ask a question, e.g. why was my command blocked?" />
     <span id="docsCount" class="docs-count"></span>
     <button id="docsClear" class="docs-clear" title="Clear" hidden onclick="docsClearSearch()">×</button>
     <button class="btn-ghost" id="docsAskAgent" onclick="docsCopyAgentPrompt()"
@@ -2514,7 +2565,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <div class="kpi-label">Needs attention</div>
       <h1 id="attnTitle" class="attn-title">Checking…</h1>
       <ul id="attnList" class="attn-list"></ul>
-      <p class="attn-sub">Every tool call is checked against your policy before it runs.</p>
+      <p class="attn-sub" id="attnSub">Every tool call is checked against your policy before it runs.</p>
       <div class="hero-actions">
         <button class="btn-ok" onclick="document.querySelector('.tab-btn[data-tab=&quot;sessions&quot;]')?.click()"><svg class="icon"><use href="#i-play"/></svg> Open sessions</button>
         <button class="btn-line" onclick="gotoPolicy()"><svg class="icon"><use href="#i-shield"/></svg> Policy control</button>
@@ -3025,8 +3076,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="sess-ctrl-btns" id="sessFlowActions"></div>
   </div>
 
-  <div id="sessRanUnder" class="sess-ran-under" hidden></div>
-  <div id="sessDev" class="sess-ran-under" hidden></div>
+  <div class="sess-summary">
+    <div id="sessDev" class="sess-ran-under" hidden></div>
+    <div id="sessUsed" class="sess-ran-under" hidden></div>
+    <div id="sessRanUnder" class="sess-ran-under" hidden></div>
+  </div>
 
   <div class="session-layout">
     <div>
@@ -3527,6 +3581,17 @@ function toggleTheme() {
 }
 
 // ── Tab navigation ─────────────────────────────────────────────────────────
+// Each page's guide: the Help button opens the one for where you are.
+const PAGE_DOCS = {
+  overview: ['getting-started.md', 'A tour of the dashboard'], sessions: ['dashboard.md', 'Drilling in: `sessions` and `session`'],
+  files: ['dashboard.md'], agents: ['modes.md'], policy: ['policy-layers-and-exemptions.md'],
+  mcpservers: ['mcp-gateway.md'], extensions: ['extensions.md'], fleet: ['connecting-to-the-platform.md'], docs: ['getting-started.md'],
+};
+function openPageHelp() {
+  const tab = (document.querySelector('.tab-btn.active') || {}).dataset?.tab || 'overview';
+  const [doc, section] = PAGE_DOCS[tab] || PAGE_DOCS.overview;
+  openDoc(doc, section);
+}
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     _backStack = [];
@@ -3616,26 +3681,57 @@ function docHighlight(text, terms) {
   }
   return html;
 }
-function renderDocsList(items, query) {
+// The landing list, grouped so a newcomer finds the first steps before the
+// internals. Pages not named here fall into "Reference".
+const DOC_GROUPS = [
+  ['Start here', ['getting-started.md', 'faq.md', 'glossary.md', 'installation.md', 'dashboard.md', 'modes.md']],
+  ['Everyday use', ['pause-and-login.md', 'policy-layers-and-exemptions.md', 'sweep-and-cloak.md', 'scoped-agent.md',
+    'extensions.md', 'supply-chain.md', 'network-isolation.md', 'mcp-gateway.md', 'query-your-data.md', 'dev-insights.md',
+    'subagents.md', 'learning.md', 'canary.md', 'prompt-guardrails.md', 'memory-integrity.md', 'skill-scanner.md',
+    'tool-tags.md', 'data-boundary.md', 'audit-trail.md', 'semantic-guard.md', 'transcript-ingest.md']],
+  ['Agents and frameworks', [/^frameworks-/, 'hermes.md', 'openclaw.md', 'elevenlabs.md', 'n8n.md', 'cloud-agents.md',
+    'sdk-integration.md', 'llm-proxy.md', 'inference-hook.md']],
+  ['Teams and enterprise', ['connecting-to-the-platform.md', 'enterprise-tool-access.md', 'governance-surfaces.md',
+    /^telemetry-/, 'live-telemetry.md', 'observability.md', 'attestation-bundle.md', 'authzen.md', 'attribute-conditions.md',
+    'deploy-docker.md', 'docker.md', 'identity-verification.md', 'iam.md']],
+];
+function docGroupOf(name) {
+  const g = DOC_GROUPS.find(([, ms]) => ms.some(m => m instanceof RegExp ? m.test(name) : m === name));
+  return g ? g[0] : 'Reference';
+}
+function docRow(d, inner, section) {
+  return '<div class="doc-row' + (d.name === _docOpen ? ' sel' : '') + '" data-name="' + safeAttr(d.name) + '"' +
+    ' onclick="openDoc(\'' + safeJsArg(d.name) + '\'' + (section ? ', \'' + safeJsArg(section) + '\'' : '') + ')">' +
+    '<div class="doc-row-title">' + safe(d.title) + '</div>' + inner + '</div>';
+}
+function renderDocsList(items, query, matched) {
   const el = document.getElementById('docsList');
-  const terms = (query || '').toLowerCase().split(/\s+/).filter(Boolean).map(t => safeAttr(t));
+  const terms = (matched && matched.length ? matched : (query || '').toLowerCase().split(/\s+/).filter(Boolean)).map(t => safeAttr(t));
   const count = document.getElementById('docsCount');
   if (count) count.textContent = query
     ? items.length + (items.length === 1 ? ' page' : ' pages')
     : '';
   document.getElementById('docsClear').hidden = !query;
   if (!items.length) {
-    el.innerHTML = '<div class="empty">No page mentions ' + safe(query || '') + '.</div>';
+    el.innerHTML = '<div class="empty">No page answers "' + safe(query || '') + '". Try fewer or simpler words, or ' +
+      '<a class="link" onclick="openDoc(\'faq.md\')">browse the FAQ</a>.</div>';
     return;
   }
-  el.innerHTML = items.map(d =>
-    '<div class="doc-row' + (d.name === _docOpen ? ' sel' : '') + '" data-name="' + safeAttr(d.name) + '"' +
-      ' onclick="openDoc(\'' + safeJsArg(d.name) + '\')">' +
-      '<div class="doc-row-title">' + safe(d.title) + '</div>' +
-      (d.hits && d.hits.length
-        ? d.hits.map(h => '<div class="doc-row-hit">' + docHighlight(docSnippet(h.snippet), terms) + '</div>').join('')
-        : '<div class="doc-row-name">' + safe(d.name) + '</div>') +
-    '</div>').join('');
+  if (query) {
+    // Best match first; each hit names the section it is in and opens there.
+    el.innerHTML = items.map(d => docRow(d, (d.hits || []).slice(0, 2).map(h =>
+      '<div class="doc-row-hit">' + (h.section && h.section !== d.title ? '<em>' + safe(h.section) + '</em> ' : '') +
+      docHighlight(docSnippet(h.snippet), terms) + '</div>').join(''), ((d.hits || [])[0] || {}).section)).join('');
+    return;
+  }
+  const groups = {};
+  items.forEach(d => (groups[docGroupOf(d.name)] = groups[docGroupOf(d.name)] || []).push(d));
+  const order = [...DOC_GROUPS.map(g => g[0]), 'Reference'];
+  const start = DOC_GROUPS[0][1];
+  el.innerHTML = order.filter(g => groups[g]).map(g =>
+    '<div class="doc-group">' + safe(g) + '</div>' +
+    groups[g].sort((a, b) => g === 'Start here' ? start.indexOf(a.name) - start.indexOf(b.name) : a.title.localeCompare(b.title))
+      .map(d => docRow(d, '')).join('')).join('');
 }
 async function docsCopyAgentPrompt() {
   try {
@@ -3654,7 +3750,7 @@ function docsClearSearch() {
   renderDocsList(_docsCache || []);
   inp.focus();
 }
-async function openDoc(name) {
+async function openDoc(name, section) {
   const body = document.getElementById('docsBody');
   // Called from the MCP Servers page too. Make sure the reader is visible.
   document.querySelector('.tab-btn[data-tab="docs"]')?.click();
@@ -3668,6 +3764,11 @@ async function openDoc(name) {
     body.innerHTML = window.marked
       ? window.marked.parse(doc.markdown)
       : '<pre style="white-space:pre-wrap">' + safe(doc.markdown) + '</pre>';
+    // From a search hit: land on the section that matched, not the top.
+    if (section) {
+      const h = [...body.querySelectorAll('h1,h2,h3,h4')].find(x => x.textContent.trim() === section.replace(/[`*]/g, '').trim());
+      if (h) { h.scrollIntoView({block: 'start'}); h.classList.add('doc-hit'); }
+    }
   } catch (e) {
     body.innerHTML = '<div class="empty">Could not open ' + safe(name) + ': ' + safe(e.message) + '</div>';
   }
@@ -3680,7 +3781,7 @@ document.getElementById('docsSearch')?.addEventListener('input', (ev) => {
     if (!q) { renderDocsList(_docsCache || []); return; }
     try {
       const data = await apiFetch('/api/docs?q=' + encodeURIComponent(q));
-      renderDocsList(data.results || [], q);
+      renderDocsList(data.results || [], q, (data.results || [])[0] && data.results[0].terms);
     } catch (e) { /* keep the current list */ }
   }, 200);
 });
@@ -3837,11 +3938,12 @@ function sessExtRow(x, calls) {
   const kv = [['Where it came from', x.origin], ['Installed', extBy(x.installed_by)], ['File', x.path], ['Runs', hook ? x.name.slice(x.name.indexOf(': ') + 2) : x.command],
     ['Hosts it names', (x.hosts || []).join(', ')]].filter(([, v]) => v).map(([k, v]) => '<dt>' + k + '</dt><dd>' + safe(v) + '</dd>').join('');
   const docs = (x.documents || []).map(doc => '<dt>Sent the agent to</dt><dd>' + safe(doc.url) + (doc.sha256 ? ' · sha256 ' + safe(String(doc.sha256).slice(0, 12)) + ' · ' + doc.bytes + ' bytes' : '') +
-    (doc.last_changed ? ' · <b style="color:#ef4444">changed ' + safe(extWhen(doc.last_changed)) + '</b>' : '') + '</dd>').join('');
+    (doc.last_changed ? ' · <b class="hook-bad">changed ' + safe(extWhen(doc.last_changed)) + '</b>' : '') + '</dd>').join('');
   const id = safeJsArg(x.id);
   const what = hook ? '<span class="sess-hook-ev">' + safe(hook.event) + '</span><span class="ext-name">' + safe(hook.script) + '</span>'
     : '<span class="ext-kind">' + safe(x.kind === 'mcp' ? 'MCP server' : x.kind) + '</span><span class="ext-name">' + safe(x.name) + '</span>';
-  const use = hook ? '' : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b style="color:#ef4444">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
+  const hr = hook ? hookRunsOf(x) : null;
+  const use = hook ? (hr.n ? '<span class="ext-quiet">' + hr.n + ' run' + (hr.n === 1 ? '' : 's') + ' · avg ' + fmtMs(hr.avg) + (hr.fail ? ' · <b class="hook-bad">' + hr.fail + ' failed</b>' : '') + '</span>' : '<span class="ext-quiet">no runs recorded</span>') : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b class="hook-bad">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
   return '<div class="ext-row' + (x.reviewed || (hook && hook.prismor) ? '' : ' review') + (_sessExtOpen[x.id] ? ' open' : '') + '">' +
     '<div class="ext-head" onclick="_sessExtOpen[\'' + id + '\']=!_sessExtOpen[\'' + id + '\'];renderSessionExtensions()">' +
       (hook && hook.prismor ? '<span class="ext-badge approved" title="Prismor\'s own screening hook.">prismor</span>' : sessReviewBadge(x)) + what + sessCaps(x) + use +
@@ -3850,6 +3952,23 @@ function sessExtRow(x, calls) {
       (x.reviewed || (hook && hook.prismor) ? '' : '<button class="ext-approve" onclick="extApprove(\'' + id + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>') +
       ' <a class="ext-sess" style="margin-left:10px" onclick="openExtension(\'' + id + '\')">every session that used it →</a></div></div>';
 }
+// This session's runs of one installed hook, from the transcript runs on each
+// event. The ledger name is "Event: command", cut short, so match its start.
+function sessHookRuns() {
+  const evs = (_sessionViewState && _sessionViewState.data && _sessionViewState.data.recent_events) || [];
+  return [].concat(...evs.map(e => e.hookRuns || []));
+}
+function hookRunsOf(x, runs) {
+  const key = x.name.replace(/…$/, '');
+  const mine = (runs || sessHookRuns()).filter(r => (r.event + ': ' + r.command).startsWith(key));
+  const ms = mine.map(r => r.ms).filter(v => v != null);
+  return {n: mine.length, avg: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null, fail: mine.filter(hookRunFailed).length};
+}
+// One header shape for every summary row: status dot, short label, summary, chevron.
+function sessHead(dot, title, sum) {
+  return '<summary class="sess-ext-head"><span class="sess-dot ' + (dot || 'none') + '"></span><span class="sess-ran-title">' + title +
+    '</span><span class="sess-sum">' + sum + '</span><span class="sess-ext-toggle"></span></summary>';
+}
 function renderSessionExtensions() {
   const el = document.getElementById('sessRanUnder'), d = _sessExt;
   if (!el || !d || !(d.extensions || []).length) return;
@@ -3857,27 +3976,75 @@ function renderSessionExtensions() {
   const used = d.extensions.filter(x => x.role !== 'ambient'), hooks = d.extensions.filter(x => x.role === 'ambient');
   const unrev = used.filter(x => !x.reviewed).length;
   const hookUnrev = hooks.filter(h => !h.reviewed && !sessHookParts(h).prismor).length;
-  const names = used.slice(0, 4).map(x => '<b>' + safe(x.name) + '</b>').join(', ') + (used.length > 4 ? ' and ' + (used.length - 4) + ' more' : '');
-  const line = (used.length ? 'The agent used ' + names : 'The agent used no skills or MCP servers') +
-    (unrev ? ' · <b style="color:#d97706">' + unrev + ' not reviewed</b>' : '') +
-    (hooks.length ? ' · ' + hooks.length + ' background hook' + (hooks.length === 1 ? '' : 's') + ' ran' + (hookUnrev ? ' (<b style="color:#d97706">' + hookUnrev + ' not reviewed</b>)' : '') : '') +
-    ((d.fetched || []).length ? ' · read ' + d.fetched.length + ' web document' + (d.fetched.length === 1 ? '' : 's') + ' a skill pointed it to' : '');
+  const names = used.slice(0, 3).map(x => '<b>' + safe(x.name) + '</b>').join(', ') + (used.length > 3 ? ' +' + (used.length - 3) : '');
   // Group hooks by where they came from, so 22 rows read as 4 sources.
-  const bySrc = new Map();
+  const bySrc = new Map(), allRuns = sessHookRuns();
   hooks.forEach(h => { const k = sessHookParts(h).from; bySrc.set(k, (bySrc.get(k) || []).concat([h])); });
+  const toReview = unrev + hookUnrev;
+  const line = [used.length ? names : 'no skills or MCP',
+    hooks.length && hooks.length + ' hook' + (hooks.length === 1 ? '' : 's') + ' from ' + bySrc.size + ' source' + (bySrc.size === 1 ? '' : 's'),
+    (d.fetched || []).length && d.fetched.length + ' doc' + (d.fetched.length === 1 ? '' : 's') + ' fetched',
+    toReview && '<b class="sess-warn">' + toReview + ' to review</b>'].filter(Boolean).join(' · ');
   const hookGroups = [...bySrc].sort((a, b) => (a[0] === 'Prismor') - (b[0] === 'Prismor') || b[1].length - a[1].length).map(([src, hs]) => {
     const bad = hs.filter(h => !h.reviewed && src !== 'Prismor').length;
-    return '<details class="sess-ext-hooks"' + (_sessExtOpen['__h' + src] ? ' open' : '') + ' ontoggle="_sessExtOpen[\'__h' + safeJsArg(src) + '\']=this.open"><summary>From ' + safe(src) +
-      ' <span class="ext-quiet">' + hs.length + ' hook' + (hs.length === 1 ? '' : 's') + ' · ' + safe([...new Set(hs.map(h => sessHookParts(h).event))].join(', ')) + '</span>' +
-      (bad ? ' · <b style="color:#d97706">' + bad + ' not reviewed</b>' : '') + '</summary>' + hs.map(x => sessExtRow(x, calls)).join('') + '</details>';
+    return '<details class="sess-ext-hooks"' + (_sessExtOpen['__h' + src] ? ' open' : '') + ' ontoggle="_sessExtOpen[\'__h' + safeJsArg(src) + '\']=this.open"><summary class="sess-hook-src">' +
+      '<span class="sess-hook-name">' + safe(src) + '</span><span class="sess-hook-n">' + hs.length + '</span>' +
+      (st => '<span class="sess-hook-n">' + (st.n || '-') + '</span><span class="sess-hook-n">' + (st.n ? fmtMs(st.avg) : '-') + '</span>')(hs.map(h => hookRunsOf(h, allRuns)).reduce((a, r) => ({n: a.n + r.n, t: a.t + (r.avg || 0) * r.n, get avg() { return this.n ? Math.round(this.t / this.n) : null; }}), {n: 0, t: 0})) +
+      '<span class="sess-hook-evs">' + [...new Set(hs.map(h => sessHookParts(h).event))].map(e => '<span class="sess-hook-ev">' + safe(e) + '</span>').join('') + '</span>' +
+      (bad ? '<b class="sess-warn">' + bad + ' to review</b>' : '<span class="ext-quiet">reviewed</span>') + '</summary>' + hs.map(x => sessExtRow(x, calls)).join('') + '</details>';
   }).join('');
-  el.innerHTML = '<details class="sess-ext-all"' + (_sessExtOpen.__all ? ' open' : '') + ' ontoggle="_sessExtOpen.__all=this.open"><summary class="sess-ext-head">' +
-      '<span class="sess-dot ' + (unrev || hookUnrev ? 'warn' : 'ok') + '"></span><span class="sess-ran-title">Extensions in this session</span>' +
-      '<span class="sess-sum">' + line + '</span><span class="sess-ext-toggle">details</span></summary>' +
-    '<div class="sess-sub">Skills and MCP servers used</div>' +
-    (used.length ? used.map(x => sessExtRow(x, calls)).join('') : '<div class="ext-quiet sess-none">None in this session.</div>') +
-    (hooks.length ? '<div class="sess-sub">Background hooks <span>run automatically on agent events (start, each tool call, stop); the agent does not choose them</span></div>' + hookGroups : '') +
+  el.innerHTML = '<details name="sesssum" class="sess-ext-all"' + (_sessExtOpen.__all ? ' open' : '') + ' ontoggle="_sessExtOpen.__all=this.open">' +
+      sessHead(toReview ? 'warn' : 'ok', 'Extensions', line) +
+    (used.length ? '<div class="sess-sub">Skills &amp; MCP servers <span>chosen by the agent</span></div>' + used.map(x => sessExtRow(x, calls)).join('') : '') +
+    (hooks.length ? '<div class="sess-sub">Hooks <span>run automatically on agent events</span></div>' +
+      '<div class="sess-hook-src sess-hook-cols"><span>Source</span><span>Hooks</span><span>Runs</span><span>Avg</span><span>Events</span><span>Status</span></div>' + hookGroups : '') +
     '</details>';
+  el.hidden = false;
+}
+
+// What the session pulled in from outside: web searches, sites read and the
+// instruction files loaded at start. Each row jumps to its call in the flow.
+function usedQuery(ev) {
+  const a = ev.artifacts || {};
+  if (a.query) return a.query;
+  // Sessions recorded before the query was stored still have it in the hook payload.
+  try { return ((JSON.parse(ev.hookInput || '{}').tool_input) || {}).query || ''; } catch (e) { return ''; }
+}
+function usedIcon(host) {
+  // ponytail: fetches favicon.ico from the host the agent already read; a letter tile when it has none.
+  return '<span class="used-icon">' + safe(host[0].toUpperCase()) + '<img src="https://' + safeAttr(host) + '/favicon.ico" alt="" width="16" height="16" referrerpolicy="no-referrer" style="position:absolute;inset:0" onerror="this.remove()"></span>';
+}
+const tildify = p => String(p).replace(/^\/(?:Users|home)\/[^/]+/, '~');
+function renderSessionUsed(trail) {
+  const el = document.getElementById('sessUsed');
+  const searches = [], sites = new Map(), memory = new Set(), reads = new Map();
+  trail.forEach((ev, i) => {
+    const a = ev.artifacts || {};
+    (a.memory_files || []).forEach(f => memory.add(f));
+    if (ev.toolTag === 'Read' && a.path && !reads.has(a.path)) reads.set(a.path, i);
+    if (ev.type !== 'network') return;
+    const q = usedQuery(ev);
+    if (q) { if (!searches.some(s => s.q === q)) searches.push({q, i}); return; }
+    let host = '';
+    try { host = new URL(a.url).hostname.replace(/^www\./, ''); } catch (e) { return; }
+    const s = sites.get(host) || {host, pages: new Set(), i};
+    s.pages.add(a.url); sites.set(host, s);
+  });
+  if (!searches.length && !sites.size && !memory.size && !reads.size) { el.hidden = true; el.innerHTML = ''; return; }
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const sum = [searches.length && searches.length + (searches.length === 1 ? ' search' : ' searches'), sites.size && plural(sites.size, 'site') + ' read',
+    reads.size && plural(reads.size, 'file') + ' read', memory.size && plural(memory.size, 'instruction file')].filter(Boolean).join(' · ');
+  const row = (icon, text, right, i) => '<button class="used-row" onclick="devLocateRow(' + i + ')" title="' + safeAttr(text) + '">' + icon +
+    '<span class="used-text">' + safe(text) + '</span><span class="ext-quiet">' + right + '</span></button>';
+  const search = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" style="flex:none;color:var(--gray-500)"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>';
+  el.innerHTML = '<details name="sesssum" class="sess-ext-all">' + sessHead('', 'Used', sum) +
+    (searches.length ? '<div class="sess-sub">Searches</div>' + searches.map(s => row(search, s.q, '', s.i)).join('') : '') +
+    (sites.size ? '<div class="sess-sub">Sites read</div>' + [...sites.values()].sort((a, b) => b.pages.size - a.pages.size)
+      .map(s => row(usedIcon(s.host), s.host, plural(s.pages.size, 'page'), s.i)).join('') : '') +
+    (reads.size ? '<div class="sess-sub">Files read</div>' + [...reads].map(([f, i]) => row('', tildify(f), '', i)).join('') : '') +
+    (memory.size ? '<div class="sess-sub">Memory <span>instruction files in context at start</span></div>' +
+      [...memory].map(f => '<div class="used-row" style="cursor:default" title="' + safeAttr(f) + '"><span class="used-text">' + safe(tildify(f)) + '</span></div>').join('') : '') +
+    '<div style="height:8px"></div></details>';
   el.hidden = false;
 }
 
@@ -3942,7 +4109,7 @@ function devRca(r) {
   const bits = [];
   if (r.failures) bits.push('<b>' + plural(r.failures, 'call') + ' failed</b>');
   if (r.denied) bits.push('<b>' + r.denied + ' blocked</b>');
-  if (r.loops.length) bits.push('<b style="color:#ef4444">stuck retrying ' + plural(r.loops.length, 'time') + '</b>');
+  if (r.loops.length) bits.push('<b class="hook-bad">stuck retrying ' + plural(r.loops.length, 'time') + '</b>');
   if (r.reverts.length) bits.push('<b style="color:#d97706">' + plural(r.reverts.length, 'edit') + ' undone</b>');
   if (r.churn.length) bits.push(plural(r.churn.length, 'file') + ' rewritten repeatedly');
   const line = bits.length ? bits.join(' · ') + ' <span class="ext-quiet">out of ' + r.calls + ' calls</span>' : 'All ' + r.calls + ' calls succeeded';
@@ -3974,13 +4141,10 @@ async function loadSessionDev(sessionId) {
   try { d = await apiFetch('/api/sessions/' + encodeURIComponent(sessionId) + '/dev', {timeoutMs: 20000}); } catch (e) { return; }
   if (!_sessionViewState || _sessionViewState.sessionId !== sessionId || !d.rca) return;
   const r = d.rca, ch = d.changes, rc = devRca(r);
-  let h = '<details class="sess-ext-all"' + (r.loops.length || r.reverts.length ? ' open' : '') + '><summary class="sess-ext-head">' +
-    '<span class="sess-dot ' + rc.dot + '"></span><span class="sess-ran-title">What went wrong</span><span class="sess-sum">' + rc.line + '</span>' +
-    (rc.body ? '<span class="sess-ext-toggle">details</span>' : '') + '</summary>' + rc.body;
+  let h = '<details name="sesssum" class="sess-ext-all"' + (r.loops.length || r.reverts.length ? ' open' : '') + '>' + sessHead(rc.dot, 'Problems', rc.line) + rc.body;
   h += '</details>';
-  h += '<details class="sess-ext-all"><summary class="sess-ext-head"><span class="sess-ran-title">Changes</span><span class="ext-quiet">' +
-    ch.files.length + ' file' + (ch.files.length === 1 ? '' : 's') + ' · ' + devCounts({added: ch.files.reduce((n, f) => n + f.added, 0), removed: ch.files.reduce((n, f) => n + f.removed, 0), removedUnknown: ch.files.some(f => f.removedUnknown)}) + ' · ' + ch.commands.length + ' commands' + (ch.branch ? ' · branch ' + safe(ch.branch) : '') +
-    '</span><span class="sess-ext-toggle">details</span></summary>' +
+  h += '<details name="sesssum" class="sess-ext-all">' + sessHead('', 'Changes', '' +
+    ch.files.length + ' file' + (ch.files.length === 1 ? '' : 's') + ' · ' + devCounts({added: ch.files.reduce((n, f) => n + f.added, 0), removed: ch.files.reduce((n, f) => n + f.removed, 0), removedUnknown: ch.files.some(f => f.removedUnknown)}) + ' · ' + ch.commands.length + ' commands' + (ch.branch && ch.branch !== 'HEAD' ? ' · on ' + safe(ch.branch) : '')) +
     ch.files.map(x => '<details class="dev-file"' + (ch.files.length <= 3 ? ' open' : '') + '><summary><span class="dev-mono">' + safe(x.path) + '</span>' + devCounts(x) +
       '<span class="dev-quiet">' + x.writes + ' edit' + (x.writes === 1 ? '' : 's') + '</span></summary>' + devDiff(x.diff, x.truncated) + '</details>').join('') +
     '<div class="dev-h">Draft PR description <button class="fbtn" onclick="devCopy(this.parentNode.nextElementSibling.value,this)">Copy</button></div>' +
@@ -4128,6 +4292,7 @@ async function renderAgentExtensions(agentName) {
 function renderExtensions() {
   const d = _extCache || {rows: [], events: [], counts: {}};
   renderExtKindTabs();
+  if (_extTab === 'hook') return renderHookStats();
   if (_extTab !== 'all') return renderExtKind(_extTab);
   const sess = d.sessions || [], unrev = sess.filter(s => s.unreviewed).length;
   const review = d.rows.filter(r => r.needs_review).length, idle = d.rows.filter(r => r.never_used).length;
@@ -4291,6 +4456,62 @@ function renderExtKind(kind) {
   else document.getElementById('extEvents').innerHTML = '<div class="empty">' + (kind === 'secret'
     ? 'A secret is not an installed extension, so it has no install history. Which credential was used is never recorded here, only the service it opened.'
     : 'Packages have no install ledger here. Supply-chain verdicts appear beside each install.') + '</div>';
+}
+// Every hook run across Claude Code sessions (/api/hooks, read from the
+// transcripts): how often each ran, what it cost the agent, where it ran.
+let _hookStats = null, _hookStatsDays = 0, _hookOpen = {};
+async function renderHookStats() {
+  const ext = document.getElementById('extList');
+  document.getElementById('extViews').style.display = 'none';
+  document.getElementById('extFilters').innerHTML =
+    '<input class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Filter hooks…" value="' + safeAttr(_extQuery) + '" oninput="_extQuery=this.value;renderHookList()" style="min-width:220px" />';
+  renderExtEvents({events: ((_extCache || {}).events || []).filter(e => e.kind === 'hook')});
+  if (!_hookStats || _hookStatsDays !== _depDays) {
+    ext.innerHTML = '<div class="empty">Reading hook runs from agent transcripts…</div>';
+    try { _hookStats = await apiFetch('/api/hooks?days=' + _depDays, {timeoutMs: 60000}); _hookStatsDays = _depDays; }
+    catch (e) { ext.innerHTML = '<div class="empty">Could not read hook runs: ' + safe(e.message) + '</div>'; return; }
+    if (_extTab !== 'hook') return;
+  }
+  const hs = _hookStats.hooks || [], sum = k => hs.reduce((n, h) => n + (h[k] || 0), 0);
+  const runs = sum('runs'), fails = sum('failures'), timeouts = sum('timeouts');
+  // The hook an agent waits on longest, typically: the one worth fixing first.
+  const slow = hs.filter(h => h.runs >= 3).sort((a, b) => (b.p50Ms || 0) - (a.p50Ms || 0))[0];
+  document.getElementById('extSummary').innerHTML = [
+    [hs.length, 'Hooks ran', 'in Claude Code sessions'],
+    [fmtNum(runs), 'Runs', 'one per hook per agent event'],
+    [slow ? fmtMs(slow.p50Ms) : '-', 'Slowest median wait', slow ? hookIdentity(slow).script + ' on ' + slow.event : 'no hook ran 3+ times'],
+    [fails, 'Failed runs', timeouts ? timeouts + ' timed out, ' + (fails - timeouts) + ' exited with an error' : 'a non-zero exit or a timeout', fails ? 'warn' : '']]
+    .map(([n, label, sub, cls]) => '<div class="ext-stat ' + (cls || '') + '" style="cursor:default"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
+  renderHookList();
+}
+function hookIdentity(h) {
+  const full = h.event + ': ' + h.command;
+  const row = ((_extCache || {}).rows || []).find(r => r.kind === 'hook' && full.startsWith(r.name.replace(/…$/, '')));
+  return Object.assign(sessHookParts({name: full, origin: row && row.origin, path: row && row.path}), {id: row && row.id});
+}
+function renderHookList() {
+  const q = _extQuery.toLowerCase(), hs = ((_hookStats || {}).hooks || []).filter(h => !q || (h.event + ' ' + h.command).toLowerCase().includes(q));
+  const tone = ms => ms >= 5000 ? ' hook-bad' : ms >= HOOK_SLOW_MS ? ' hook-slow' : '';
+  const hdr = '<div class="ext-item hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  const failed = h => h.failures ? '<b class="hook-bad" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + '</b>' + (h.timeouts ? ' <small class="ext-quiet">' + h.timeouts + ' t/o</small>' : '') : '-';
+  document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
+    const id = hookIdentity(h), k = h.event + '|' + h.command;
+    const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg wait</span><span class="num">Failed</span><span>Last ran</span></div>' +
+      h.sessions.map(x => '<div class="hook-sess-row" onclick="openSessionView(\'' + safeJsArg(x.sessionId) + '\')"><span class="dev-mono">' + safe(x.sessionId.slice(0, 8)) + '</span>' +
+        '<span class="ext-quiet" title="' + safeAttr(x.cwd) + '">' + safe(tildify(x.cwd || '')) + '</span><span class="num">' + x.runs + '</span>' +
+        '<span class="num' + tone(x.totalMs / x.runs) + '">' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b class="hook-bad">' + x.failures + '</b>' : '-') + '</span>' +
+        '<span class="ext-quiet">' + safe(extWhen(x.last)) + '</span></div>').join('') +
+      (h.sessionCount > h.sessions.length ? '<div class="empty">Showing the latest ' + h.sessions.length + ' of ' + h.sessionCount + ' sessions.</div>' : '') +
+      '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div>' +
+      ((h.variants || []).length ? '<div class="empty">Also launched as:</div>' + h.variants.map(v => '<div class="hook-cmd dev-mono">' + safe(v) + '</div>').join('') : '') +
+      (h.failures || h.blocked || h.cancelled ? '<div class="empty">' + [h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error', h.blocked && h.blocked + ' blocked the call (exit 2)', h.cancelled && h.cancelled + ' cancelled when the turn stopped'].filter(Boolean).join(' · ') + '</div>' : '') + '</div>' : '';
+    return '<div class="ext-row ext-item hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
+      '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span>' +
+        '<small class="hook-launch ext-quiet dev-mono">' + safe((h.identity || '').replace(/^(?:python|node|bash|sh)\s+(?:-m\s+)?/, '')) + '</small></span>' +
+      '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
+      '<span class="num' + tone(h.p50Ms) + '" title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num ext-quiet">' + fmtMs(h.p95Ms) + '</span>' +
+      '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
+  }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not. Widen the time window at the top to look further back.') + '</div>';
 }
 function renderExtKindList() {
   const kind = _extTab, q = _extQuery.toLowerCase();
@@ -5468,7 +5689,7 @@ function renderAgentSessions(agentName){
   tbody.innerHTML = rows.map(s=>{
     const rc=riskClass(s.riskScore);
     return '<tr class="clickable-row" onclick="openSessionView(\''+safeAttr(s.sessionId)+'\',\''+safeAttr(s.workspace)+'\')">'+
-      '<td class="mono" title="'+safeAttr(s.sessionId)+'">'+safe(shortId(s.sessionId,24))+'</td>'+
+      '<td'+(s.title?' class="sess-cell-title"':' class="mono"')+' title="'+safeAttr(s.sessionId)+'">'+safe(s.title||shortId(s.sessionId,24))+'</td>'+
       '<td style="color:var(--gray-500)" title="'+safeAttr(s.workspace||'')+'">'+safe(s.workspaceName||workspaceName(s.workspace))+'</td>'+
       '<td><div class="risk-wrap"><div class="risk-bar"><div class="risk-fill '+rc+'" style="width:'+s.riskScore+'%"></div></div><span class="risk-num">'+s.riskScore+'</span></div></td>'+
       '<td class="right"'+(s.findingsCount>0?' style="color:var(--pink-600);font-weight:600"':'')+'>'+s.findingsCount+'</td>'+
@@ -5546,6 +5767,7 @@ function renderSessionView(data){
   }
 
   renderSessionFlow(trail);
+  renderSessionUsed(trail);
   const interesting = trail.map((e,i)=>({i,v:flowVerdict(e)})).filter(o=>o.v!=='allow');
   if (interesting.length) selectFlowNode(interesting[interesting.length-1].i);
   else renderNodePanelDefault(data);
@@ -5882,6 +6104,8 @@ function renderNodePanel(ev){
           (policy.pattern?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Pattern</span><div><details><summary>Show the regex ('+String(policy.pattern).length+' chars)</summary><div class="match-pattern">'+safe(policy.pattern)+'</div></details></div></div>':'')+
           (policy.evidence?'<div class="drawer-rule-row stack"><span class="drawer-rule-label">Why it matched</span>'+reasonHtml(policy)+'</div>':'')+
           '<div class="drawer-rule-row stack" style="margin-bottom:0"><span class="drawer-rule-label">What happened</span>'+modeHtml(policy, v)+'</div>'+
+          (v!=='allow'?'<div class="drawer-rule-row" style="margin:8px 0 0"><a class="link" onclick="openDoc(\'faq.md\',\'How do I allow something that was blocked?\')">How do I allow this?</a>'+
+            '<a class="link" style="margin-left:14px" onclick="openDoc(\'faq.md\',\'Why was my command blocked?\')">Why was this flagged?</a></div>':'')+
         '</div>':'')+
     '</div>';
   panel.insertAdjacentHTML('beforeend', artifactsHtml(ev));
@@ -6146,7 +6370,7 @@ function renderSessions(rows) {
     const srcLabel=s.source==='supply_chain'?'supply-chain':'agent';
     return '<tr class="clickable-row" onclick="navigateToSession(\''+safeAttr(s.sessionId)+'\', \''+safeAttr(s.workspace)+'\')">'+
       '<td style="padding-right:8px"><input type="checkbox" class="sess-checkbox" onclick="event.stopPropagation()" /></td>'+
-      '<td class="mono" title="'+safeAttr(s.sessionId)+'">'+safe(shortId(s.sessionId,24))+'</td>'+
+      '<td'+(s.title?' class="sess-cell-title"':' class="mono"')+' title="'+safeAttr(s.sessionId)+'">'+safe(s.title||shortId(s.sessionId,24))+'</td>'+
       '<td><span class="agent-pill link" onclick="event.stopPropagation();openAgentView(\''+safeAttr(s.agent)+'\')">'+safe(s.agent)+'</span><span class="src-pill '+srcCls+'">'+safe(srcLabel)+'</span></td>'+
       '<td style="color:var(--gray-500)" title="'+safeAttr(s.workspace || '')+'">'+safe(s.workspaceName || workspaceName(s.workspace))+'</td>'+
       '<td><div class="risk-wrap"><div class="risk-bar"><div class="risk-fill '+rc+'" style="width:'+s.riskScore+'%"></div></div><span class="risk-num">'+s.riskScore+'</span></div></td>'+
@@ -6170,7 +6394,7 @@ function renderOverviewSessions(rows) {
   }
   tbody.innerHTML = rows.map(s => (
     '<tr class="clickable-row" onclick="navigateToSession(\'' + safeAttr(s.sessionId) + '\', \'' + safeAttr(s.workspace) + '\')">' +
-      '<td class="mono" title="' + safeAttr(s.sessionId) + '">' + safe(shortId(s.sessionId, 24)) + '</td>' +
+      '<td' + (s.title ? ' class="sess-cell-title"' : ' class="mono"') + ' title="' + safeAttr(s.sessionId) + '">' + safe(s.title || shortId(s.sessionId, 24)) + '</td>' +
       '<td><span class="agent-pill link" onclick="event.stopPropagation();openAgentView(\'' + safeAttr(s.agent) + '\')">' + safe(s.agent) + '</span></td>' +
       '<td>' + sessionStatusMarkup(s) + '</td>' +
       '<td>' + tsCell(s.updatedAt, s.updatedAtAbs) + '</td>' +
@@ -6200,7 +6424,7 @@ async function loadFindings(){
   const {page,limit,agent,severity,category,q}=findState;
   const params=new URLSearchParams({page,limit,agent,severity,category,q});
   try{
-    const data=await apiFetch('/api/findings?'+params);
+    const data=await apiFetch('/api/findings?'+params,{timeoutMs:30000});
     findState.page=data.page; findState.pages=data.pages; findState.total=data.total;
     if(data.agents){
       const sel=document.getElementById('fAgent'); const cur=sel.value;
@@ -6213,7 +6437,10 @@ async function loadFindings(){
     renderFindings(data.items);
     buildPager('findPager',findState,loadFindings);
     document.getElementById('findCount').textContent=fmtNum(data.total)+' findings';
-  }catch(e){console.error('[prismor] findings:',e);}
+  }catch(e){
+    console.error('[prismor] findings:',e);
+    document.getElementById('findBody').innerHTML='<tr><td colspan="6" class="empty">Could not load findings: '+safe(e.name==='AbortError'?'the server took too long to answer.':e.message)+' <a class="link" onclick="loadFindings()">Try again</a></td></tr>';
+  }
 }
 function renderFindings(rows){
   const tbody=document.getElementById('findBody');
@@ -6293,7 +6520,7 @@ async function loadEvents(){
   }
 }
 // Hook wall time as the harness saw it: process start to exit.
-function fmtMs(ms){ if (ms == null) return ''; return ms < 1000 ? ms+' ms' : (ms/1000).toFixed(1)+' s'; }
+function fmtMs(ms){ if (ms == null) return ''; return ms < 1000 ? ms+' ms' : ms < 60000 ? (ms/1000).toFixed(1)+' s' : ms < 3600000 ? (ms/60000).toFixed(1)+' min' : (ms/3600000).toFixed(1)+' h'; }
 // Third-party hooks per row, from the agent's own transcript. Hooks of one
 // event run in parallel, so the slowest one is the wait the agent saw.
 const HOOK_SLOW_MS = 2000;
@@ -6309,9 +6536,12 @@ function hookLabel(cmd){
   const script = c.match(/[^\s"'=]+\.(?:sh|py|js|mjs|ts|rb)\b/);
   return script ? script[0].split('/').slice(-2).join('/') : c.slice(0, 60);
 }
+// Older stored runs have no outcome; fall back to what the agent logged.
+function hookRunFailed(r){ return r.outcome ? r.outcome === 'error' || r.outcome === 'timeout' : !r.ok || (r.exit && r.exit !== '0'); }
+const HOOK_OUTCOME_TEXT = {timeout: 'timed out: the agent killed it', error: 'the agent logged it as an error', blocked: 'blocked the call (exit 2)', cancelled: 'cancelled when the turn stopped'};
 function hookPhaseStats(runs){
   const slowest = Math.max(0, ...runs.map(r => r.ms || 0));
-  return {slowest, fail: runs.some(r => !r.ok || (r.exit && r.exit !== '0'))};
+  return {slowest, fail: runs.some(hookRunFailed)};
 }
 function hookChip(ev){
   const runs = ev.hookRuns || [];
@@ -6319,7 +6549,7 @@ function hookChip(ev){
   const phases = {};
   runs.forEach(r => (phases[r.event] = phases[r.event] || []).push(r));
   const wait = Object.values(phases).reduce((n, p) => n + hookPhaseStats(p).slowest, 0);
-  const fail = runs.some(r => !r.ok || (r.exit && r.exit !== '0'));
+  const fail = runs.some(hookRunFailed);
   return '<span class="hook-chip' + (fail ? ' fail' : wait >= HOOK_SLOW_MS ? ' slow' : '') + '" title="' +
     safeAttr(runs.map(r => r.event + ' ' + hookLabel(r.command) + ' ' + fmtDur(r.ms)).join('\n')) + '">' +
     runs.length + ' hook' + (runs.length === 1 ? '' : 's') + ' · ' + fmtDur(wait) + '</span>';
@@ -6336,13 +6566,13 @@ function hookRunsHtml(ev){
       const input = p.event === 'PostToolUse' ? ev.postHookInput : p.event === 'PreToolUse' || p.event === ev.agentEvent ? ev.hookInput : '';
       return '<div class="hook-phase">' + safe(p.event) + ' · ' + p.runs.length + ' ran at once · agent waited ' + fmtDur(st.slowest) + '</div>' +
         (input ? '<details class="hook-sent"><summary>What every ' + safe(p.event) + ' hook received</summary>' + block('stdin', input) + '</details>' : '') +
-        p.runs.map(r => { const bad = !r.ok || (r.exit && r.exit !== '0'), slow = (r.ms || 0) >= HOOK_SLOW_MS;
+        p.runs.map(r => { const bad = hookRunFailed(r), slow = (r.ms || 0) >= HOOK_SLOW_MS;
           const out = block('Sent back (stdout)', r.stdout) + block('Errors (stderr)', r.stderr) + block('Added to the model\'s context', r.content);
           return '<details class="hook-run' + (bad ? ' fail' : slow ? ' slow' : '') + '"><summary><code>' + safe(hookLabel(r.command)) + '</code>' +
-            '<span class="ms">' + fmtDur(r.ms) + (bad ? ' · exit ' + safe(r.exit || '?') : '') + '</span>' +
+            '<span class="ms">' + fmtDur(r.ms) + (r.outcome === 'timeout' ? ' · timed out' : bad ? ' · exit ' + safe(r.exit || '?') : '') + '</span>' +
             '<span class="bar"><i style="width:' + Math.max(2, Math.round(100 * (r.ms || 0) / max)) + '%"></i></span></summary>' +
             '<div class="hook-io"><em>Command</em><pre>' + safe(r.command) + '</pre></div>' +
-            '<div class="hook-io"><em>Took</em> ' + fmtDur(r.ms) + ' · exit ' + safe(r.exit || '0') + (r.ok ? '' : ' · the agent logged it as an error') + '</div>' +
+            '<div class="hook-io"><em>Took</em> ' + fmtDur(r.ms) + (r.exit ? ' · exit ' + safe(r.exit) : '') + (HOOK_OUTCOME_TEXT[r.outcome] ? ' · ' + HOOK_OUTCOME_TEXT[r.outcome] : r.ok ? '' : ' · the agent logged it as an error') + '</div>' +
             (out || '<div class="hook-io"><em>Sent back nothing</em></div>') + '</details>'; }).join(''); }).join('') +
     '</div></div>';
 }
@@ -6432,7 +6662,7 @@ function renderAttention(k){
 async function loadStats(){
   try{
     const days=document.getElementById('globalDays').value;
-    const data=await apiFetch('/api/stats?days='+days);
+    const data=await apiFetch('/api/stats?days='+days,{timeoutMs:30000});
     const badge=document.getElementById('statusBadge');
     const hasData=data.kpis&&data.kpis.toolCallsInspected24h>0;
     badge.className='badge '+(hasData?'badge-live':'badge-demo');
@@ -6465,6 +6695,12 @@ async function loadStats(){
     document.getElementById('ringFindings').textContent=fmtNum(findings);
     document.getElementById('kpiFindings').textContent=fmtNum(findings);
     renderAttention({blocked, total, findings, days});
+    // The whole window in one sentence a newcomer can read without the charts.
+    const sess=k.activeSessions||0, winTxt=String(days)==='1'?'the last 24 hours':'the last '+days+' days';
+    document.getElementById('attnSub').textContent = total
+      ? 'In '+winTxt+' Prismor checked '+fmtNum(total)+' agent action'+(total===1?'':'s')+' across '+fmtNum(sess)+' session'+(sess===1?'':'s')+'. '+
+        (blocked ? fmtNum(blocked)+' '+(blocked===1?'was':'were')+' stopped before running; the rest were allowed.' : 'Nothing needed stopping.')
+      : 'Prismor checks every action an agent takes (commands, file edits, web requests) before it runs.';
     ringChart.data.datasets[0].data=total?[passed,blocked]:[1,0];
     ringChart.update();
     document.getElementById('stepReq').textContent=fmtNum(total)+' inspected';
@@ -6516,7 +6752,16 @@ async function loadStats(){
         '<td><span class="sev-badge '+sevClass(p.severity)+'">'+safe(p.severity||'low')+'</span></td>'+
       '</tr>'
     ).join('');
-  }catch(e){console.error('[prismor] stats:',e);}
+  }catch(e){
+    console.error('[prismor] stats:',e);
+    // Say it failed and offer a retry, rather than leaving dashes that read as zero.
+    const badge=document.getElementById('statusBadge');
+    badge.className='badge badge-demo'; badge.innerHTML='<span class="badge-dot"></span> not loaded';
+    document.getElementById('attnTitle').textContent='Could not load activity';
+    document.getElementById('attnList').innerHTML='';
+    document.getElementById('attnSub').innerHTML=safe(e.name==='AbortError'?'The dashboard server took too long to answer.':e.message)+
+      ' <button class="btn-line" onclick="loadStats()">Try again</button>';
+  }
 }
 
 // ── Top network calls ─────────────────────────────────────────────────────
@@ -6532,9 +6777,17 @@ async function loadNetworkCalls(){
     document.getElementById('netBody').innerHTML='<tr><td colspan="7" class="empty">Failed to load: '+safe(e.message)+'</td></tr>';
   }
 }
+// Overview tables open short so the page reads top to bottom; the rest is a click away.
+const OVERVIEW_ROWS=8;
+function moreRow(shown, total, cols, toggle, open){
+  return total>shown||open ? '<tr><td colspan="'+cols+'" class="more-row"><a class="link" onclick="'+toggle+'">'+
+    (open?'Show fewer':'Show all '+fmtNum(total))+'</a></td></tr>' : '';
+}
+let _netAll=false, _scAll=false;
 function renderNetworkCalls(){
   const d=_netCache||{hosts:[]}, all=d.hosts||[];
-  const rows=_netLocal?all:all.filter(h=>!h.private);
+  const listed=_netLocal?all:all.filter(h=>!h.private);
+  const rows=_netAll?listed:listed.slice(0,OVERVIEW_ROWS);
   const local=all.length-all.filter(h=>!h.private).length;
   document.getElementById('netToggle').textContent=_netLocal?'Hide local':'Show local too';
   document.getElementById('netToggle').hidden=!local;
@@ -6548,28 +6801,15 @@ function renderNetworkCalls(){
       '<td class="right">'+(h.warned?'<b style="color:#b45309">'+fmtNum(h.warned)+'</b>':'–')+'</td>'+
       '<td class="right">'+fmtNum(h.sessions)+'</td>'+
       '<td>'+(h.agents||[]).map(a=>'<span class="ext-agent">'+agentIcon(a)+safe(a)+'</span>').join(' ')+'</td>'+
-      '<td>'+safe(h.last||'')+'</td></tr>').join('')
+      '<td>'+safe(h.last||'')+'</td></tr>').join('')+moreRow(rows.length,listed.length,7,'_netAll=!_netAll;renderNetworkCalls()',_netAll)
     : '<tr><td colspan="7" class="empty">No network calls recorded in this window.</td></tr>';
 }
 
 // ── Supply chain ──────────────────────────────────────────────────────────
-async function loadSupplyChain(){
-  try{
-    const days=document.getElementById('globalDays').value;
-    const data=await apiFetch('/api/supply-chain?days='+days);
-    const k=data.kpis||{};
-    document.getElementById('scAllowed').textContent=fmtNum(k.allowedPackages24h||0);
-    document.getElementById('scWarned').textContent=fmtNum(k.warnedPackages24h||0);
-    document.getElementById('scBlocked').textContent=fmtNum(k.blockedPackages24h||0);
-    document.getElementById('scChecked').textContent=fmtNum(k.checkedPackages24h||0);
-    const eco=data.ecosystemBreakdown||[];
-    scEcoBarChart.data.labels=eco.map(e=>e.ecosystem);
-    scEcoBarChart.data.datasets[0].data=eco.map(e=>e.total);
-    scEcoBarChart.data.datasets[1].data=eco.map(e=>e.blocked);
-    scEcoBarChart.update();
-    const blocks=data.recentBlocks||[];
-    const tbody=document.getElementById('scBlocksBody');
-    if(!blocks.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No blocks yet</td></tr>';}
+function renderScBlocks(){
+  const all=(window._scData||{}).recentBlocks||[], blocks=_scAll?all:all.slice(0,OVERVIEW_ROWS);
+  const tbody=document.getElementById('scBlocksBody');
+    if(!blocks.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No package was blocked or warned about in this window.</td></tr>';}
     else{tbody.innerHTML=blocks.map(b=>{
       const badge=b.verdict==='block'?'<span class="sev-badge sev-critical">block</span>':'<span class="sev-badge sev-medium">warn</span>';
       const ver=b.version?'<span class="pkg-ver">@'+safe(b.version)+'</span>':'';
@@ -6584,10 +6824,27 @@ async function loadSupplyChain(){
         '<td>'+sugg+'</td>'+
         '<td>'+tsCell(b.ts,b.tsAbs)+'</td>'+
       '</tr>';
-    }).join('');}
+    }).join('')+moreRow(blocks.length,all.length,6,'_scAll=!_scAll;renderScBlocks()',_scAll);}
+}
+async function loadSupplyChain(){
+  try{
+    const days=document.getElementById('globalDays').value;
+    const data=await apiFetch('/api/supply-chain?days='+days);
+    const k=data.kpis||{};
+    document.getElementById('scAllowed').textContent=fmtNum(k.allowedPackages24h||0);
+    document.getElementById('scWarned').textContent=fmtNum(k.warnedPackages24h||0);
+    document.getElementById('scBlocked').textContent=fmtNum(k.blockedPackages24h||0);
+    document.getElementById('scChecked').textContent=fmtNum(k.checkedPackages24h||0);
+    const eco=data.ecosystemBreakdown||[];
+    scEcoBarChart.data.labels=eco.map(e=>e.ecosystem);
+    scEcoBarChart.data.datasets[0].data=eco.map(e=>e.total);
+    scEcoBarChart.data.datasets[1].data=eco.map(e=>e.blocked);
+    scEcoBarChart.update();
+    window._scData=data;
+    renderScBlocks();
     const sessions=data.installsBySession||[];
     const sbody=document.getElementById('scSessionsBody');
-    if(!sessions.length){sbody.innerHTML='<tr><td colspan="7" class="empty">No install activity in the last 24 hours</td></tr>';}
+    if(!sessions.length){sbody.innerHTML='<tr><td colspan="7" class="empty">No installs in this window. Widen the time window at the top to look further back.</td></tr>';}
     else{sbody.innerHTML=sessions.map(s=>
       '<tr>'+
         '<td class="mono" title="'+safeAttr(s.sessionId)+'">'+safe(shortId(s.sessionId,20))+'</td>'+
@@ -6676,9 +6933,13 @@ function renderAgents(data) {
     return;
   }
   tbody.innerHTML = agents.map(a => {
-    const status = a.enabled
-      ? '<span class="status-pill status-active"><span class="status-dot"></span>Active</span>'
-      : '<span class="status-pill status-blocked"><span class="status-dot"></span>Blocked</span>';
+    // "Active" only when the agent actually ran lately; enabled-but-quiet is "Idle".
+    const quietDays = a.last_seen ? (Date.now() - Date.parse(a.last_seen)) / 864e5 : Infinity;
+    const status = !a.enabled
+      ? '<span class="status-pill status-blocked"><span class="status-dot"></span>Blocked</span>'
+      : quietDays <= 30
+        ? '<span class="status-pill status-active" title="Seen in the last 30 days"><span class="status-dot"></span>Active</span>'
+        : '<span class="status-pill status-idle" title="Allowed to run, but not seen in over 30 days"><span class="status-dot"></span>Idle</span>';
     const modeOpts = [['', 'inherit (global)'], ['observe', 'observe'], ['enforce', 'enforce']]
       .map(([v, l]) => '<option value="' + v + '"' + ((a.mode || '') === v ? ' selected' : '') + '>' + l + '</option>')
       .join('');
@@ -6832,21 +7093,20 @@ function renderSessionControl(items, workspace) {
     return '<div class="sess-ctrl-row">' +
       '<div>' +
         '<div class="sess-id-wrap">' +
-          '<span class="sess-id link" title="Open session ' + safeAttr(sessId) + '" ' +
+          // Named by what it was asked to do; the id stays for reference.
+          '<span class="sess-id link' + (s.title ? ' sess-title' : '') + '" title="Open session ' + safeAttr(sessId) + '" ' +
             'onclick="navigateToSession(\'' + safeAttr(sessId) + '\',\'' + safeAttr(ws) + '\')">' +
-            safe(shortId(sessId, 32)) + '</span>' +
+            safe(s.title || shortId(sessId, 32)) + '</span>' +
           '<span id="pill-' + i + '">' + statusPill(s, null) + '</span>' +
           '<span class="agent-pill link" onclick="openAgentView(\'' + safeAttr(s.agent||'') + '\')">' + safe(s.agent||'?') + '</span>' +
         '</div>' +
-        '<div class="sess-ws" title="' + safeAttr(ws) + '">' + safe(wsLabel || ws) + ' · last active ' + (s.updatedAt||'-') + '</div>' +
+        '<div class="sess-ws" title="' + safeAttr(ws) + '">' + safe(wsLabel || ws) + ' · last active ' + (s.updatedAt||'-') +
+          (s.title ? ' · <span class="dev-mono">' + safe(shortId(sessId, 13)) + '</span>' : '') + '</div>' +
         '<div id="' + detailId + '" class="sess-detail"></div>' +
       '</div>' +
       '<div class="sess-ctrl-btns">' +
         '<button class="sess-act-btn open" onclick="navigateToSession(\'' + safeAttr(sessId) + '\',\'' + safeAttr(ws) + '\')">Open</button>' +
-        '<button class="sess-act-btn expand" onclick="toggleSessDetail(\'' + detailId + '\',\'' + safeAttr(sessId) + '\',\'' + safeAttr(ws) + '\',' + i + ')">Details ▸</button>' +
-        '<button class="sess-act-btn pause" onclick="sessAction(\'' + safeAttr(sessId) + '\',\'pause\',\'' + safeAttr(ws) + '\',' + i + ')">Pause</button>' +
-        '<button class="sess-act-btn resume" onclick="sessAction(\'' + safeAttr(sessId) + '\',\'resume\',\'' + safeAttr(ws) + '\',' + i + ')">Resume</button>' +
-        '<button class="sess-act-btn clear" onclick="sessAction(\'' + safeAttr(sessId) + '\',\'clear\',\'' + safeAttr(ws) + '\',' + i + ')">Clear scope</button>' +
+        '<button class="sess-act-btn expand" title="Scope, recent blocks, and pause or resume protection" onclick="toggleSessDetail(\'' + detailId + '\',\'' + safeAttr(sessId) + '\',\'' + safeAttr(ws) + '\',' + i + ')">Controls ▸</button>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -6859,6 +7119,7 @@ async function toggleSessDetail(detailId, sessId, ws, idx) {
   if (isOpen) { detail.classList.remove('open'); detail.innerHTML = ''; return; }
   detail.innerHTML = '<div style="font-size: 12px;color:var(--gray-400)">Loading…</div>';
   detail.classList.add('open');
+  Object.assign(detail.dataset, {sid: sessId, ws: ws || ''});
   try {
     const params = ws ? `?workspace=${encodeURIComponent(ws)}` : '';
     const data = await apiFetch(`/api/sessions/${encodeURIComponent(sessId)}/control${params}`);
@@ -6906,7 +7167,15 @@ function renderSessDetail(el, data, idx) {
     '</div>';
   }
 
-  el.innerHTML = scopedHtml + blocksHtml;
+  // Only the actions that apply now: Resume when paused, otherwise Pause;
+  // Clear scope only when there is a scope to clear.
+  const a = (act, cls, label, tip) => '<button class="sess-act-btn ' + cls + '" title="' + safeAttr(tip) + '" onclick="sessAction(\'' +
+    safeJsArg(el.dataset.sid || '') + '\',\'' + act + '\',\'' + safeJsArg(el.dataset.ws || '') + '\',' + idx + ')">' + label + '</button>';
+  const acts = (scoped && scoped.paused
+      ? a('resume', 'resume', 'Resume protection', 'Prismor checks this session\'s actions again.')
+      : a('pause', 'pause', 'Pause protection', 'Stop checking this session until you resume. Nothing is blocked meanwhile.')) +
+    (scoped ? a('clear', 'clear', 'Clear scope', 'Drop the per-session limits Prismor derived from the prompt. Your normal policy still applies.') : '');
+  el.innerHTML = scopedHtml + blocksHtml + '<div class="sess-detail-acts">' + acts + '</div>';
 }
 
 async function sessAction(sessId, action, workspace, idx) {
@@ -7141,9 +7410,14 @@ function applyPolicyEditable(data) {
   } catch (e) { /* rules list not initialised yet */ }
   const wsBanner = document.getElementById('workspaceBanner');
   if (wsBanner && locked) {
+    // One message, not two that disagree: the enrolment note says local
+    // policy is editable, which is not true once the org pins it.
+    const enroll = document.getElementById('enrollBanner');
+    if (enroll) enroll.innerHTML = '';
     wsBanner.innerHTML = '<div class="banner banner-warn"><span>' +
       '<strong>Policy managed by your organization</strong>' +
-      'Local edits to this workspace would be overwritten by the next signed policy pull. ' +
+      'This device is enrolled in your organization, which sets this workspace\'s policy. ' +
+      'Local edits would be overwritten by the next signed policy pull. ' +
       'Change it in the Prismor console, or request an exemption: ' +
       '<code>prismor exempt request --reason "&lt;why&gt;"</code>' +
       '</span></div>';
@@ -7497,14 +7771,19 @@ function _dismissLoader() {
 
 // Pre-fetch everything in parallel, but never let one slow endpoint pin the
 // splash screen. Demo reliability matters more than waiting for every widget.
+// The server answers one heavy query at a time in practice (one Python
+// process), so the headline goes first and the tables below it follow: on a
+// large store asking for everything at once made the headline wait ~15 s.
+const _statsFirst = loadStats().then(() => _loadTick('Stats loaded'));
+const _afterStats = f => _statsFirst.then(f, f);
 const _bootTasks = [
-  loadStats().then(()         => _loadTick('Stats loaded')),
+  _statsFirst,
   loadSessions().then(()      => _loadTick('Sessions loaded')),
-  loadFindings().then(()      => _loadTick('Findings loaded')),
-  loadEvents().then(()        => _loadTick('Events loaded')),
+  _afterStats(() => loadFindings()).then(() => _loadTick('Findings loaded')),
+  _afterStats(() => loadEvents()).then(() => _loadTick('Events loaded')),
   loadSupplyChain().then(()   => _loadTick('Supply chain loaded')),
-  loadFriction(),
-  loadNetworkCalls().then(()  => _loadTick('Network calls loaded')),
+  _afterStats(() => loadFriction()),
+  _afterStats(() => loadNetworkCalls()).then(() => _loadTick('Network calls loaded')),
   loadAgents().then(()        => _loadTick('Agents loaded')),
   loadWorkspaces()
     .then(() => Promise.allSettled([loadSessionControl(), loadPolicy()]))
