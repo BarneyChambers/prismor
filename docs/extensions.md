@@ -51,6 +51,27 @@ Each kind is switched off where it can really be switched off:
 | MCP server | Prismor blocks the agent's calls to any of the server's tools. Servers in Codex's `config.toml` (`[mcp_servers.<name>]`) are listed alongside the JSON configs. | Next call |
 | Hook | The one hook is routed through `prismor exec-hook`, which skips it (exit 0, no output). Turning it back on restores the original entry byte for byte, so the hash Codex trusted it by matches again. Hooks are read from Claude's settings and from Codex's `hooks.json`. | Next run |
 
+### Per agent
+
+Verified end to end with each agent's own CLI (October 2026, model
+`gpt-5.6-luna`), switching each extension off and on through the dashboard's
+call and checking the agent's behaviour:
+
+| Agent | Plugins | Skills | MCP servers | Hooks |
+|---|---|---|---|---|
+| Claude Code | `enabledPlugins` | `Skill` call, folder reads | `mcp__server__tool` | settings.json |
+| Codex | `[plugins."<id>"] enabled` in config.toml | folder reads (`cat`) | config.toml `[mcp_servers]` | hooks.json |
+| goose | (its plugin hooks are listed one by one) | `load_skill`, folder reads | config.yaml `extensions`; `<ext>__<tool>` calls, Code Mode (`execute_typescript`) and the model's own `manage_extensions enable` are blocked | `~/.agents/plugins/*/hooks/hooks.json` |
+| OpenHands | n/a | `invoke_skill`, folder reads (relative paths too) | `~/.openhands/mcp.json`; off sets the server's own `"enabled": false` | `.openhands/hooks.json` |
+| Hermes | `plugins.enabled` / `plugins.disabled` via `hermes plugins` | `skill_view`, `read_file`, folder reads | config.yaml `mcp_servers` | n/a |
+| OpenClaw | `plugins.entries.<id>.enabled` via `openclaw plugins` | `read`, `exec`, folder reads | no MCP client in 2026.3 | n/a |
+
+Known limits: OpenHands sends MCP calls by bare tool name, so a session that
+was already running when its server was turned off can still call it until it
+restarts (new sessions never load the server). goose's own `enabled: false` on
+an extension is not used, because the model can switch it back on itself;
+Prismor blocks the calls instead.
+
 The list of what is off is kept in the ledger (`~/.prismor/extensions.json`),
 so it applies on the whole machine. Each switch is written to the signed audit
 trail as `extension_disabled` / `extension_enabled`, and every skipped hook run

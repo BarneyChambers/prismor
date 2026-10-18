@@ -190,6 +190,11 @@ def _registry_files(workspace: Path) -> List[Path]:
            workspace / ".mcp.json",
            home / ".codex" / "config.toml", home / ".gemini" / "settings.json"]
     out += _claude_settings_files(workspace)
+    # goose, OpenHands, Hermes, OpenClaw: their configs, plugin and skill folders.
+    out += [_goose_config_path(), _openhands_mcp_path(), workspace / ".openhands" / "hooks.json",
+            home / ".openhands" / "hooks.json", _hermes_home() / "config.yaml", _hermes_home() / "plugins",
+            _hermes_home() / "skills", _openclaw_home() / "openclaw.json", _openclaw_home() / "extensions",
+            _openclaw_home() / "skills", home / ".agents" / "plugins", workspace / ".openhands" / "skills"]
     for root in (home / ".claude" / "skills", workspace / ".claude" / "skills",
                  home / ".codex" / "skills", home / ".agents" / "skills", workspace / ".agents" / "skills"):
         out.append(root)
@@ -242,6 +247,142 @@ def _plugins() -> List[Dict[str, Any]]:
 
 def _codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def _yaml(path: Path) -> Dict[str, Any]:
+    try:
+        import yaml
+        data = yaml.safe_load(_read_text(path)) if path.is_file() else {}
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _hermes_home() -> Path:
+    from prismor.runtime.skills_audit import _hermes_home as h
+    return h()
+
+
+def _openclaw_home() -> Path:
+    from prismor.runtime.skills_audit import _openclaw_home as h
+    return h()
+
+
+def _openclaw_config() -> Dict[str, Any]:
+    from prismor.runtime.skills_audit import read_json5
+    return read_json5(Path(os.environ.get("OPENCLAW_CONFIG_PATH") or _openclaw_home() / "openclaw.json"))
+
+
+def _goose_config_path() -> Path:
+    return Path(os.environ.get("GOOSE_CONFIG_DIR") or Path.home() / ".config" / "goose") / "config.yaml"
+
+
+def _openhands_mcp_path() -> Path:
+    return Path(os.environ.get("OPENHANDS_PERSISTENCE_DIR") or Path.home() / ".openhands") / "mcp.json"
+
+
+# Prismor's own plugins in each agent: inventoried elsewhere, never switchable here.
+_OWN_PLUGINS = {"prismor", "prismor-cloak"}
+
+
+def _hermes_plugins() -> List[Dict[str, Any]]:
+    rows = []
+    for d in sorted((_hermes_home() / "plugins").glob("*/")):
+        manifest = _yaml(d / "plugin.yaml")
+        name = str(manifest.get("name") or d.name)
+        if d.name in _OWN_PLUGINS or name in _OWN_PLUGINS or not (d / "plugin.yaml").exists():
+            continue
+        rows.append({"id": f"plugin:hermes:{name}", "kind": "plugin", "name": name, "path": str(d),
+                     "sha256": _sha(_read_text(d / "plugin.yaml").encode() + _read_text(d / "__init__.py").encode()),
+                     "version": manifest.get("version"), "origin": None, "capabilities": ["runs_code"],
+                     "hosts": [], "agent": "hermes"})
+    return rows
+
+
+def _openclaw_plugins() -> List[Dict[str, Any]]:
+    rows = []
+    for d in sorted((_openclaw_home() / "extensions").glob("*/")):
+        manifest = _read_json(d / "openclaw.plugin.json") or {}
+        pid = str(manifest.get("id") or d.name)
+        if pid in _OWN_PLUGINS or d.name in _OWN_PLUGINS or not (d / "openclaw.plugin.json").exists():
+            continue
+        code = "".join(_read_text(f) for f in sorted(d.glob("*.[jt]s")))
+        rows.append({"id": f"plugin:openclaw:{pid}", "kind": "plugin", "name": pid, "path": str(d),
+                     "sha256": _sha((json.dumps(manifest, sort_keys=True) + code).encode()),
+                     "version": manifest.get("version"), "origin": None, "capabilities": ["runs_code"],
+                     "hosts": _hosts(code), "agent": "openclaw"})
+    return rows
+
+
+def _agent_cli(argv: List[str]) -> None:
+    """Run an agent's own plugin command (its config format is its business).
+
+    OpenClaw expands every ``${VAR}`` in its config before any command, so a
+    dashboard without the agent's API key in its environment cannot run it.
+    The command writes the reference back unexpanded, so retry with a
+    placeholder for a missing variable. OpenClaw also caches the resolved
+    provider settings (the key included) in agents/*/agent/models.json, so
+    those files are put back exactly as they were afterwards: the placeholder
+    must never land in the agent's state."""
+    env = dict(os.environ)
+    state = _openclaw_home() / "agents"
+    before = {p: p.read_bytes() for p in state.glob("*/agent/models.json")} if argv[0].endswith("openclaw") else None
+    try:
+        _run_agent_cli(argv, env)
+    finally:
+        if before is not None and any(k not in os.environ for k in env if env[k] == "prismor-placeholder"):
+            for p in state.glob("*/agent/models.json"):
+                if p in before:
+                    p.write_bytes(before[p])
+                else:
+                    p.unlink()
+
+
+def _run_agent_cli(argv: List[str], env: Dict[str, str]) -> None:
+    for _ in range(8):
+        try:
+            proc = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                  timeout=60, env=env)  # nosec B603
+        except FileNotFoundError:
+            raise ValueError(f"`{argv[0]}` is not on PATH, so its plugin cannot be switched from here")
+        except subprocess.TimeoutExpired:
+            raise ValueError(f"`{' '.join(argv)}` did not finish")
+        missing = re.search(r'Missing env var "([A-Za-z_][A-Za-z0-9_]*)"', proc.stderr + proc.stdout)
+        if proc.returncode == 0 or not missing or missing.group(1) in env:
+            break
+        env[missing.group(1)] = "prismor-placeholder"
+    if proc.returncode != 0:
+        raise ValueError(f"`{' '.join(argv)}` failed: {(proc.stderr or proc.stdout).strip()[:200]}")
+
+
+def _set_openhands_mcp(name: str, enabled: bool) -> None:
+    """OpenHands skips a server whose mcp.json entry has "enabled": false
+    (what `openhands mcp disable` writes)."""
+    path = _openhands_mcp_path()
+    cfg = _read_json(path)
+    servers = cfg.get("mcpServers") if isinstance(cfg, dict) else None
+    if not isinstance(servers, dict) or not isinstance(servers.get(name), dict):
+        return
+    servers[name]["enabled"] = enabled
+    tmp = path.with_suffix(".json.prismor.tmp")
+    tmp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _native_off() -> Set[str]:
+    """Extensions the agents themselves have switched off, however that happened."""
+    off: Set[str] = set()
+    plugins = _yaml(_hermes_home() / "config.yaml").get("plugins") or {}
+    if isinstance(plugins, dict):
+        enabled = set(plugins.get("enabled") or [])
+        for row in _hermes_plugins():
+            if row["name"] in (plugins.get("disabled") or []) or row["name"] not in enabled:
+                off.add(row["id"])
+    entries = ((_openclaw_config().get("plugins") or {}).get("entries") or {})
+    off |= {f"plugin:openclaw:{pid}" for pid, e in entries.items() if isinstance(e, dict) and e.get("enabled") is False}
+    servers = (_read_json(_openhands_mcp_path()) or {}).get("mcpServers") or {}
+    off |= {f"mcp:{_openhands_mcp_path()}#{n}" for n, spec in servers.items() if isinstance(spec, dict) and spec.get("enabled") is False}
+    return off
 
 
 def _codex_plugin_table() -> Dict[str, Any]:
@@ -300,8 +441,12 @@ def _set_codex_plugin(plugin_id: str, enabled: bool) -> None:
 
 def _hook_sources(workspace: Path, plugins: List[Dict[str, Any]]) -> List[Tuple[Path, Optional[Dict[str, Any]]]]:
     out: List[Tuple[Path, Optional[Dict[str, Any]]]] = [(p, None) for p in _claude_settings_files(workspace)]
-    # Codex keeps hooks in its own hooks.json, in the same shape as Claude's.
-    out += [(_codex_home() / "hooks.json", None), (workspace / ".codex" / "hooks.json", None)]
+    # Codex keeps hooks in its own hooks.json, in the same shape as Claude's,
+    # and so do OpenHands and goose's Open Plugins (one hooks.json per plugin).
+    out += [(_codex_home() / "hooks.json", None), (workspace / ".codex" / "hooks.json", None),
+            (workspace / ".openhands" / "hooks.json", None), (Path.home() / ".openhands" / "hooks.json", None)]
+    for root in (Path.home() / ".agents" / "plugins", workspace / ".agents" / "plugins"):
+        out += [(p, None) for p in sorted(root.glob("*/hooks/hooks.json"))]
     out += [(Path(pl["path"]) / "hooks" / "hooks.json", pl) for pl in plugins]
     return out
 
@@ -440,6 +585,19 @@ def _mcp_rows(workspace: Path) -> List[Dict[str, Any]]:
         if p and p not in seen and p.endswith(".json"):
             seen.add(p)
             _walk(_read_json(Path(p)), p)
+    # OpenHands keeps user servers in mcp.json ({"mcpServers": ...}).
+    oh = _openhands_mcp_path()
+    if oh.is_file():
+        _walk(_read_json(oh), str(oh))
+    # goose calls MCP servers "extensions" in its YAML config.
+    for name, spec in (_yaml(_goose_config_path()).get("extensions") or {}).items():
+        if isinstance(spec, dict) and spec.get("type") in ("stdio", "sse", "streamable_http"):
+            conv = {"command": spec.get("cmd"), "args": spec.get("args") or []} if spec.get("cmd") else {"url": spec.get("uri")}
+            _walk({"mcpServers": {name: conv}}, str(_goose_config_path()))
+    # Hermes: mcp_servers in its config.yaml.
+    servers = _yaml(_hermes_home() / "config.yaml").get("mcp_servers")
+    if isinstance(servers, dict) and servers:
+        _walk({"mcpServers": servers}, str(_hermes_home() / "config.yaml"))
     # Codex declares servers in TOML: [mcp_servers.<name>] command/args or url.
     for toml_path in (_codex_home() / "config.toml", workspace / ".codex" / "config.toml"):
         try:
@@ -458,7 +616,8 @@ def _mcp_rows(workspace: Path) -> List[Dict[str, Any]]:
 # Where an extension lives says which agent loads it. `.agents/` is the shared
 # convention several agents read, so it counts for all of them ("any").
 _AGENT_DIRS = ((".claude", "claude"), (".codex", "codex"), (".gemini", "gemini"), (".cursor", "cursor"),
-               (".codeium", "windsurf"), (".agents", "any"))
+               (".codeium", "windsurf"), (".openhands", "openhands"), (".hermes", "hermes"),
+               (".openclaw", "openclaw"), ("goose", "goose"), (".agents", "any"))
 
 
 def _agents_for(path: str) -> List[str]:
@@ -474,7 +633,7 @@ def discover_extensions(workspace: Path) -> List[Dict[str, Any]]:
     """Every skill, plugin, third-party hook and MCP server this workspace's agents load."""
     plugins = _plugins()
     codex_plugins = _codex_plugins()
-    rows = list(plugins) + codex_plugins + _skill_rows(workspace, plugins + codex_plugins)
+    rows = list(plugins) + codex_plugins + _hermes_plugins() + _openclaw_plugins() + _skill_rows(workspace, plugins + codex_plugins)
     for source, plugin in _hook_sources(workspace, plugins):
         for event, h in _iter_hook_entries(_read_json(source)):
             # Judge the command a wrapper runs, not the wrapper: the wrapper is
@@ -721,7 +880,11 @@ def _tag(ext_id: str, entry: Dict[str, Any], via: str) -> Dict[str, Any]:
 
 
 def _serves(row_name: str, server: str) -> bool:
-    return bool(row_name) and (row_name == server or server.endswith("_" + row_name))
+    if not row_name or not server:
+        return False
+    # Hermes turns anything outside [A-Za-z0-9_] into "_" (`my-crm` -> `my_crm`).
+    names = {row_name, re.sub(r"[^A-Za-z0-9_]", "_", row_name)}
+    return any(server == n or server.endswith("_" + n) for n in names)
 
 
 # An MCP server does not have to be in a config file to be in the session: the
@@ -999,6 +1162,11 @@ def unwrap_hooks(workspace: Path) -> List[str]:
     return _rewrite_hooks(workspace, _unwrap)
 
 
+def _hook_event_of(payload: Dict[str, Any]) -> Any:
+    # Claude/Codex: hook_event_name; OpenHands: event_type; goose: event.
+    return payload.get("hook_event_name") or payload.get("event_type") or payload.get("event")
+
+
 def run_wrapped_hook(ext_id: str, command: str) -> int:
     """Run one third-party hook, transparent to the agent, and record that it ran.
     A hook turned off from the dashboard is skipped: it exits 0 with no output,
@@ -1011,7 +1179,7 @@ def run_wrapped_hook(ext_id: str, command: str) -> int:
     if _hook_disabled(ext_id):
         _audit("hook_skipped", {"id": f"hook:{ext_id}", "kind": "hook", "name": command[:120],
                                 "sha256": _sha(command.encode())},
-               str(payload.get("session_id") or ""), hook_event=payload.get("hook_event_name"))
+               str(payload.get("session_id") or ""), hook_event=_hook_event_of(payload))
         return 0
     started = time.time()
     proc = subprocess.run(command, shell=True, input=stdin, capture_output=True)  # noqa: S602 - the agent would run this exact string  # nosec B602
@@ -1020,7 +1188,7 @@ def run_wrapped_hook(ext_id: str, command: str) -> int:
     _audit("hook_executed", {"id": f"hook:{ext_id}", "kind": "hook", "name": command[:120],
                              "sha256": _sha(command.encode())},
            str(payload.get("session_id") or ""), exit_code=proc.returncode,
-           ms=int((time.time() - started) * 1000), hook_event=payload.get("hook_event_name"))
+           ms=int((time.time() - started) * 1000), hook_event=_hook_event_of(payload))
     return proc.returncode
 
 
@@ -1088,6 +1256,12 @@ def set_enabled(workspace: Path, ref: str, enabled: bool) -> Dict[str, Any]:
     kind = row["kind"]
     if kind == "plugin" and row.get("agent") == "codex":
         _set_codex_plugin(str(row["name"]), enabled)
+    elif kind == "plugin" and row.get("agent") == "hermes":
+        _agent_cli(["hermes", "plugins", "enable" if enabled else "disable", str(row["name"])])
+    elif kind == "plugin" and row.get("agent") == "openclaw":
+        _agent_cli(["openclaw", "plugins", "enable" if enabled else "disable", str(row["name"])])
+    elif kind == "mcp" and str(row.get("path") or "") == str(_openhands_mcp_path()):
+        _set_openhands_mcp(str(row["name"]), enabled)
     elif kind == "plugin":
         _set_claude_plugin(str(row["name"]), enabled)
     elif kind == "hook" and not enabled and not row.get("wrapped"):
@@ -1108,8 +1282,9 @@ def set_enabled(workspace: Path, ref: str, enabled: bool) -> Dict[str, Any]:
     _save(workspace, data)
     _audit("extension_enabled" if enabled else "extension_disabled", row)
     effect = _OFF_EFFECT.get(kind, "")
-    if kind == "plugin" and row.get("agent") == "codex":
-        effect = "Turned off in Codex. New sessions start without it."
+    agent_name = {"codex": "Codex", "hermes": "Hermes", "openclaw": "OpenClaw"}.get(str(row.get("agent") or ""))
+    if kind == "plugin" and agent_name:
+        effect = f"Turned off in {agent_name}. New sessions start without it."
     return {"id": ref, "kind": kind, "enabled": enabled, "effect": "Back on." if enabled else effect}
 
 
@@ -1124,6 +1299,31 @@ def _unwrap_one(workspace: Path, hook_sha: str) -> List[str]:
     return _rewrite_hooks(workspace, _fn)
 
 
+# The tool each agent loads a skill with, and where the skill's name is.
+_SKILL_TOOLS = {"Skill": "skill", "load_skill": "name", "invoke_skill": "name", "skill_view": "name"}
+
+
+def _tool_input(event: Dict[str, Any]) -> Dict[str, Any]:
+    meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    raw = meta.get("raw") if isinstance(meta.get("raw"), dict) else {}
+    args = raw.get("tool_input") or raw.get("toolInput") or {}
+    return args if isinstance(args, dict) else {}
+
+
+def _pascal(name: str) -> str:
+    """goose Code Mode's namespace for an extension: `my-crm` -> `MyCrm`."""
+    return "".join(p[:1].upper() + p[1:] for p in re.split(r"[^A-Za-z0-9]+", name) if p)
+
+
+def _skill_called(tool: str, event: Dict[str, Any], args: Dict[str, Any]) -> str:
+    """``vendor:pdf-tools`` -> pdf-tools; goose's ``pdf-tools/template.md`` -> pdf-tools."""
+    name = str(args.get(_SKILL_TOOLS[tool]) or args.get("skill") or args.get("name") or "")
+    if not name and tool == "Skill":
+        from prismor.runtime.scoped_agent import resolve_skill_name
+        name = resolve_skill_name(event) or ""
+    return name.split("/", 1)[0].rpartition(":")[2]
+
+
 def _touches(event: Dict[str, Any], folder: str) -> bool:
     """Does this call read or run anything inside ``folder``?"""
     if not folder:
@@ -1133,9 +1333,18 @@ def _touches(event: Dict[str, Any], folder: str) -> bool:
     meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
     raw = meta.get("raw") if isinstance(meta.get("raw"), dict) else {}
     text = " ".join(str(x or "") for x in (event.get("command"), event.get("path"),
-                                            json.dumps(raw.get("tool_input") or "")))
+                                            json.dumps(_tool_input(event) or "")))
     if any(f in text for f in forms):
         return True
+    # A relative path (`cat .agents/skills/pdf-tools/SKILL.md`) is relative to
+    # where the agent is working.
+    cwd = str(meta.get("cwd") or raw.get("cwd") or raw.get("working_dir") or "")
+    if cwd:
+        for tok in re.findall(r"[^\s'\"`;|&<>()=]+/[^\s'\"`;|&<>()]*", text):
+            if not tok.startswith(("/", "~", "$")):
+                full = os.path.normpath(os.path.join(cwd, tok))
+                if full == folder or full.startswith(folder + os.sep):
+                    return True
     # A wildcard path (`cat ~/.codex/skills/pdf*/SKILL.md`) names the folder
     # without spelling it: expand it the way the shell would and look.
     import glob
@@ -1165,16 +1374,34 @@ def disabled_finding(workspace: Path, event: Dict[str, Any], session_id: str = "
         return None
     meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
     tool = str(meta.get("tool_name") or "")
+    args = _tool_input(event)
     hit = None
-    if tool == "Skill":
-        from prismor.runtime.scoped_agent import resolve_skill_name
-        name = (resolve_skill_name(event) or "").rpartition(":")[2]
+    if tool in _SKILL_TOOLS:
+        name = _skill_called(tool, event, args)
         hit = next((o for o in off.values() if o.get("kind") == "skill" and name and o.get("name") == name), None)
-    elif not tool.startswith("mcp__"):
-        hit = next((o for o in off.values() if o.get("kind") == "skill" and _touches(event, str(o.get("dir") or ""))), None)
-    if hit is None and tool.startswith("mcp__"):
-        server = _mcp_server(tool)
-        hit = next((o for o in off.values() if o.get("kind") == "mcp" and _serves(str(o.get("name") or ""), server)), None)
+    elif tool in ("execute_typescript", "get_function_details"):
+        # goose Code Mode: MCP tools are called from TypeScript as
+        # `<PascalCaseServer>.<tool>(...)`, never as their own tool call.
+        text = json.dumps(args)
+        hit = next((o for o in off.values() if o.get("kind") == "mcp" and o.get("name")
+                    and re.search(r"\b" + re.escape(_pascal(str(o["name"]))) + r"\s*\.", text)), None)
+        if hit is None and re.search(r"manageExtensions\s*\(", text) and '"enable' in text.replace("\\", ""):
+            # ...and switching the server back on from inside the script.
+            hit = next((o for o in off.values() if o.get("kind") == "mcp" and o.get("name")
+                        and re.search(r"[\"'\\]" + re.escape(str(o["name"])) + r"[\"'\\]", text)), None)
+        if hit is None:
+            # A shell command run from the script (`Developer.shell(...)`).
+            hit = next((o for o in off.values() if o.get("kind") == "skill" and _touches(event, str(o.get("dir") or ""))), None)
+    elif tool == "extensionmanager__manage_extensions" and str(args.get("action") or "") == "enable":
+        # goose lets the model switch an extension back on: not one that is off.
+        want = str(args.get("extension_name") or "")
+        hit = next((o for o in off.values() if o.get("kind") == "mcp" and want and _serves(str(o.get("name") or ""), want)), None)
+    else:
+        server = _mcp_server(tool) or (tool.split("__", 1)[0] if "__" in tool else "")
+        if server:
+            hit = next((o for o in off.values() if o.get("kind") == "mcp" and _serves(str(o.get("name") or ""), server)), None)
+        if hit is None and not tool.startswith("mcp__"):
+            hit = next((o for o in off.values() if o.get("kind") == "skill" and _touches(event, str(o.get("dir") or ""))), None)
     if hit is None:
         return None
     what = "skill" if hit["kind"] == "skill" else "MCP server"
@@ -1183,7 +1410,8 @@ def disabled_finding(workspace: Path, event: Dict[str, Any], session_id: str = "
     else:
         evidence = f"{tool} belongs to the {what} '{hit.get('name')}', turned off in the Prismor dashboard"
     return {
-        "id": f"{session_id}:extension-disabled:{hit.get('name')}",
+        # One finding per blocked call, not one per session.
+        "id": f"{session_id}:extension-disabled:{hit.get('name')}:{_sha(json.dumps([tool, args], sort_keys=True, default=str).encode())[:10]}",
         "ruleId": "extension-disabled",
         "severity": "medium",
         "category": "agent-control",  # an operator's switch: blocks in observe mode too
@@ -1260,6 +1488,7 @@ def overview(workspace: Path, events: int = 40) -> Dict[str, Any]:
     plugin_off = {f"plugin:{pid}" for pid, on in claude_plugins.items() if on is False}
     plugin_off |= {f"plugin:{pid}" for pid, conf in _codex_plugin_table().items()
                    if isinstance(conf, dict) and conf.get("enabled") is False}
+    plugin_off |= _native_off()
     for r in rows:
         # Off here, or off because the plugin it ships in is off (however
         # that happened: this page, `claude plugin disable`, /plugin).

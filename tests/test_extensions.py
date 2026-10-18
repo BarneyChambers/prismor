@@ -490,3 +490,136 @@ def test_turning_a_codex_hook_back_on_restores_its_exact_entry(ws, codex, monkey
     ext.set_enabled(ws, hook["id"], True)
     # Codex trusts a hook by the hash of its entry: the entry must come back unchanged.
     assert json.loads((codex / "hooks.json").read_text()) == before
+
+
+@pytest.mark.parametrize("tool,args", [
+    ("load_skill", {"name": "pdf-tools/template.md"}),     # goose
+    ("invoke_skill", {"name": "pdf-tools", "kind": "InvokeSkillAction"}),  # OpenHands
+    ("skill_view", {"name": "pdf-tools"}),                  # Hermes
+    ("Skill", {"skill": "vendor:pdf-tools"}),               # Claude
+])
+def test_every_agents_skill_tool_is_blocked_when_the_skill_is_off(ws, codex, tool, args):
+    skill = next(r for r in ext.sync(ws) if r["kind"] == "skill" and r["name"] == "pdf-tools")
+    ext.set_enabled(ws, skill["id"], False)
+    event = {"type": "tool_result", "metadata": {"tool_name": tool, "raw": {"toolInput": args}}}
+    assert ext.disabled_finding(ws, event)
+    other = {"type": "tool_result", "metadata": {"tool_name": tool, "raw": {"toolInput": {"name": "other", "skill": "other"}}}}
+    assert ext.disabled_finding(ws, other) is None
+
+
+def test_mcp_names_from_goose_and_hermes_and_goose_reenable_are_matched(ws, codex):
+    mcp = next(r for r in ext.sync(ws) if r["kind"] == "mcp")
+    ext.set_enabled(ws, mcp["id"], False)
+    call = lambda tool, args=None: {"metadata": {"tool_name": tool, "raw": {"tool_input": args or {}}}}
+    assert ext.disabled_finding(ws, call("crm__lookup_customer"))            # goose <ext>__<tool>
+    assert ext.disabled_finding(ws, call("todo__todo_write")) is None        # a goose built-in
+    assert ext.disabled_finding(ws, call("extensionmanager__manage_extensions",
+                                         {"action": "enable", "extension_name": "crm"}))
+    assert ext.disabled_finding(ws, call("extensionmanager__manage_extensions",
+                                         {"action": "enable", "extension_name": "other"})) is None
+    assert ext._serves("my-crm", "my_crm")                                    # Hermes sanitising
+
+
+def test_a_relative_path_to_an_off_skill_is_resolved_against_the_agents_cwd(ws, codex):
+    skill = next(r for r in ext.sync(ws) if r["kind"] == "skill" and r["name"] == "pdf-tools")
+    ext.set_enabled(ws, skill["id"], False)
+    cwd = str(codex)  # ~/.codex
+    ev = {"type": "shell", "command": "cat skills/pdf-tools/SKILL.md", "metadata": {"tool_name": "terminal", "cwd": cwd}}
+    assert ext.disabled_finding(ws, ev)
+    ev["metadata"]["cwd"] = "/somewhere/else"
+    assert ext.disabled_finding(ws, ev) is None
+
+
+def test_a_read_tool_is_blocked_for_an_off_skill_not_only_reported():
+    from prismor.runtime.hooks import should_block
+    finding = {"ruleId": "extension-disabled", "category": "agent-control", "mode": "enforce", "severity": "medium"}
+    assert should_block([finding], {"type": "file_read", "agent_event": "PreToolUse"}) is not None
+    other = dict(finding, category="data_exfiltration")
+    assert should_block([other], {"type": "file_read", "agent_event": "PreToolUse"}) is None
+
+
+def test_hermes_openclaw_plugins_and_openhands_goose_servers_are_listed(ws, monkeypatch):
+    home = Path.home()
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    (home / ".hermes" / "plugins" / "calllog").mkdir(parents=True)
+    (home / ".hermes" / "plugins" / "calllog" / "plugin.yaml").write_text("name: calllog\nversion: 1.0\n")
+    (home / ".hermes" / "plugins" / "prismor").mkdir()
+    (home / ".hermes" / "plugins" / "prismor" / "plugin.yaml").write_text("name: prismor\n")
+    (home / ".hermes" / "config.yaml").write_text("plugins:\n  enabled: [prismor]\nmcp_servers:\n  docs: {command: docs-mcp}\n")
+    (home / ".openclaw" / "extensions" / "toollog").mkdir(parents=True)
+    (home / ".openclaw" / "extensions" / "toollog" / "openclaw.plugin.json").write_text('{"id": "toollog"}')
+    (home / ".openclaw" / "openclaw.json").write_text('{ // json5\n "plugins": {"entries": {"toollog": {"enabled": false,},},},}')
+    (home / ".openhands").mkdir()
+    (home / ".openhands" / "mcp.json").write_text(json.dumps({"mcpServers": {"tickets": {"command": "t-mcp"}}}))
+    (home / ".config" / "goose").mkdir(parents=True)
+    (home / ".config" / "goose" / "config.yaml").write_text(
+        "extensions:\n  crm: {type: stdio, cmd: python3, args: [crm.py], enabled: true}\n  developer: {type: builtin}\n")
+    rows = {(r["kind"], r["name"]): r for r in ext.overview(ws)["rows"]}
+    assert ("plugin", "prismor") not in rows
+    assert rows[("plugin", "calllog")]["enabled"] is False          # not in plugins.enabled
+    assert rows[("plugin", "toollog")]["enabled"] is False          # entries.toollog.enabled = false
+    assert rows[("mcp", "docs")]["agents"] == ["hermes"] and rows[("mcp", "tickets")]["agents"] == ["openhands"]
+    assert rows[("mcp", "crm")]["agents"] == ["goose"] and ("mcp", "developer") not in rows
+
+    ext.set_enabled(ws, rows[("mcp", "tickets")]["id"], False)     # OpenHands' own switch
+    assert json.loads((home / ".openhands" / "mcp.json").read_text())["mcpServers"]["tickets"]["enabled"] is False
+
+
+def test_goose_code_mode_calls_to_an_off_server_are_blocked(ws, codex):
+    mcp = next(r for r in ext.sync(ws) if r["kind"] == "mcp")
+    ext.set_enabled(ws, mcp["id"], False)
+    run = {"metadata": {"tool_name": "execute_typescript",
+                        "raw": {"tool_input": {"code": 'const r = await Crm.lookupCustomer({id: "9"});'}}}}
+    assert ext.disabled_finding(ws, run)
+    detail = {"metadata": {"tool_name": "get_function_details", "raw": {"tool_input": {"functions": ["Crm.lookupCustomer"]}}}}
+    assert ext.disabled_finding(ws, detail)
+    other = {"metadata": {"tool_name": "execute_typescript", "raw": {"tool_input": {"code": "await Github.listIssues()"}}}}
+    assert ext.disabled_finding(ws, other) is None
+    assert ext._pascal("my-crm") == "MyCrm"
+
+
+def test_agent_cli_retries_with_a_placeholder_for_a_missing_config_variable(tmp_path, monkeypatch):
+    log = tmp_path / "env.log"
+    fake = tmp_path / "openclaw"
+    fake.write_text(f"""#!/bin/sh
+echo "$OPENAI_API_KEY" >> {log}
+[ -z "$OPENAI_API_KEY" ] && {{ echo 'MissingEnvVarError: Missing env var "OPENAI_API_KEY" referenced at config path' >&2; exit 1; }}
+exit 0
+""")
+    fake.chmod(0o755)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    ext._agent_cli([str(fake), "plugins", "disable", "toollog"])
+    assert log.read_text().splitlines() == ["", "prismor-placeholder"]
+
+
+def test_openclaw_state_never_keeps_the_placeholder(tmp_path, monkeypatch):
+    # OpenClaw caches resolved provider settings, key included, per agent.
+    state = tmp_path / "oc"
+    monkeypatch.setenv("OPENCLAW_STATE_DIR", str(state))
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    kept = state / "agents" / "main" / "agent" / "models.json"
+    kept.parent.mkdir(parents=True)
+    kept.write_text('{"apiKey": "real-from-a-run"}')
+    fake = tmp_path / "openclaw"
+    fake.write_text(f"""#!/bin/sh
+[ -z "$OPENAI_API_KEY" ] && {{ echo 'Missing env var "OPENAI_API_KEY"' >&2; exit 1; }}
+for d in main other; do mkdir -p {state}/agents/$d/agent; echo "{{\\"apiKey\\": \\"$OPENAI_API_KEY\\"}}" > {state}/agents/$d/agent/models.json; done
+""")
+    fake.chmod(0o755)
+    ext._agent_cli([str(fake), "plugins", "disable", "toollog"])
+    assert kept.read_text() == '{"apiKey": "real-from-a-run"}'          # put back as it was
+    assert not (state / "agents" / "other" / "agent" / "models.json").exists()  # created by the retry: removed
+
+
+def test_goose_code_mode_cannot_reenable_an_off_server_or_read_an_off_skill(ws, codex):
+    rows = {r["kind"] + ":" + r["name"]: r for r in ext.sync(ws)}
+    ext.set_enabled(ws, rows["mcp:crm"]["id"], False)
+    ext.set_enabled(ws, rows["skill:pdf-tools"]["id"], False)
+    ts = lambda code: {"metadata": {"tool_name": "execute_typescript", "cwd": str(codex),
+                                    "raw": {"tool_input": {"code": code}}}}
+    assert ext.disabled_finding(ws, ts('await Extensionmanager.manageExtensions({action: "enable", extension_name: "crm"})'))
+    assert ext.disabled_finding(ws, ts('await Extensionmanager.manageExtensions({action: "disable", extension_name: "crm"})')) is None
+    assert ext.disabled_finding(ws, ts('await Developer.shell({command: "cat skills/pdf-tools/SKILL.md"})'))
+    a = ext.disabled_finding(ws, ts("await Crm.lookupCustomer({id: '1'})"), "s1")
+    b = ext.disabled_finding(ws, ts("await Crm.lookupCustomer({id: '2'})"), "s1")
+    assert a["id"] != b["id"]  # each blocked call is its own finding
