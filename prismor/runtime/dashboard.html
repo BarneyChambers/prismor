@@ -1773,6 +1773,26 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   }
   html[data-theme="dark"] .pg-num.cur { background: var(--md-primary); border-color: var(--md-primary); color: #fff; }
 
+  /* Policy precedence: one row per layer, highest first */
+  .prec-table { border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .prec-line { display: grid; grid-template-columns: 28px minmax(0,1fr) 96px 70px 76px; gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--hairline); font-size: 13px; }
+  .prec-line:first-child { border-top: none; }
+  .prec-n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .prec-name { font-weight: 500; color: var(--ink); display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+  .prec-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prec-note { font-size: 12px; color: var(--gray-500); margin-top: 2px; line-height: 1.45; }
+  .prec-status { font-size: 12px; color: var(--muted); }
+  .prec-mode { font-size: 12px; color: var(--muted); }
+  .prec-mode.enf { color: #b91c1c; font-weight: 600; }
+  .prec-open { padding: 4px 10px; font-size: 12px; justify-self: end; }
+  .prec-line > span:last-child { justify-self: end; }
+  .prec-line.governs { background: var(--gray-100); box-shadow: inset 3px 0 0 var(--ink); }
+  .prec-line.governs .prec-status { color: var(--ink); font-weight: 600; }
+  .prec-line.unset .prec-name, .prec-line.unset .prec-note { color: var(--muted); }
+  @media (max-width: 720px) {
+    .prec-line { grid-template-columns: 22px minmax(0,1fr) auto; }
+    .prec-line .prec-status, .prec-line .prec-mode { display: none; }
+  }
   /* Policy precedence ranking: number badge + connecting arrow between layers */
   .prec-row { display: flex; align-items: stretch; gap: 10px; }
   .prec-row .drawer-policy-card { flex: 1; min-width: 0; margin-bottom: 0; }
@@ -2278,6 +2298,20 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .prec-details > summary::-webkit-details-marker { display: none; }
   .prec-summary { font-size: 14px; font-weight: 500; color: var(--ink); flex: 1; }
   .prec-toggle { font-size: 12.5px; color: var(--muted); }
+  .rt-bar { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 12px 18px; margin-bottom: 14px; font-size: 13.5px; color: var(--ink); }
+  .rt-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .rt-grow { flex: 1; }
+  .rt-bar .btn-ghost { padding: 4px 10px; font-size: 12.5px; }
+  .rt-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #16a34a; }
+  .rt-dot.off { background: #d97706; }
+  .upgrade-btn.rt-paused { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
+  html[data-theme="dark"] .upgrade-btn.rt-paused { color: #fbbf24; border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.08); }
+  .cl-body { padding: 8px 28px 22px; font-size: 12.5px; line-height: 1.55; color: var(--gray-700); max-height: 55vh; overflow-y: auto; }
+  .cl-body h2 { font-size: 14px; margin: 18px 0 6px; color: var(--ink); }
+  .cl-body h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 12px 0 4px; }
+  .cl-body ul { padding-left: 18px; }
+  .cl-body li { margin: 4px 0; }
+  .cl-out { white-space: pre-wrap; font-size: 11.5px; background: var(--gray-100); border-radius: 6px; padding: 10px; margin: 0 28px 16px; max-height: 160px; overflow: auto; }
   .prec-details[open] > summary { border-bottom: 1px solid var(--hairline); }
   .prec-details[open] .prec-toggle::after { content: ' · hide'; }
   .prec-details .drawer-event-card { border: none; background: var(--surface); border-radius: 0 0 8px 8px; padding: 16px 18px; margin: 0; }
@@ -2483,6 +2517,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
             title="Effective enforcement mode: click to manage in Policy Control">
       <span class="badge-dot"></span><span id="modeChipLabel">mode</span>
     </button>
+    <span id="rtPause"></span>
     <button class="upgrade-btn" onclick="openPageHelp()" title="Open the guide for this page">Help</button>
     <button id="refreshBtn" class="upgrade-btn" onclick="refreshDashboard()"><svg class="icon"><use href="#i-refresh"/></svg> Refresh</button>
     <button class="upgrade-btn" onclick="openUpgradeModal()"><svg class="icon"><use href="#i-sparkles"/></svg> Upgrade</button>
@@ -3117,6 +3152,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span class="hint">human-only · live within 30 s</span>
   </div>
 
+  <div class="rt-bar">
+    <div class="rt-cell"><span class="kpi-label">Version</span><span id="rtVersion">…</span></div>
+    <div class="rt-cell rt-grow"><span class="kpi-label">Applied policy</span><span id="rtPolicy">…</span></div>
+  </div>
+
   <div id="enrollBanner"></div>
   <div id="workspaceBanner"></div>
   <details class="prec-details" id="precDetails">
@@ -3385,6 +3425,23 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span>Free and open source. Enterprise adds fleet visibility, remote policy and audit history.</span>
   </div>
   <a class="prismor-cta-btn" href="#" onclick="openUpgradeModal();return false">Talk to us</a>
+</div>
+
+<!-- ═══ CHANGELOG / UPDATE MODAL ════════════════════════════════════════ -->
+<div class="up-modal-overlay" id="clModalOverlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="up-modal" role="dialog" aria-modal="true" aria-label="Update Prismor">
+    <div class="up-modal-hero">
+      <button class="up-modal-close" onclick="document.getElementById('clModalOverlay').classList.remove('open')" aria-label="Close">✕</button>
+      <h3 id="clTitle">Update Prismor</h3>
+      <p>What changed since your installed version. Updating runs <code>prismor update</code>; restart the dashboard and your agents afterwards.</p>
+    </div>
+    <div id="clBody" class="cl-body"></div>
+    <pre id="clOut" class="cl-out" style="display:none"></pre>
+    <div class="up-modal-actions">
+      <button id="clUpdateBtn" class="up-cta-primary" style="border:none;cursor:pointer;font-family:inherit" onclick="runUpdate()">Update now</button>
+      <a class="up-cta-secondary" href="https://github.com/PrismorSec/prismor/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Full changelog</a>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ UPGRADE MODAL ═══════════════════════════════════════════════════ -->
@@ -5374,7 +5431,8 @@ function policyScopeTarget(scope) {
 function openPolicyScope(scope) {
   document.querySelector('.tab-btn[data-tab="policy"]')?.click();
   setPolicyScopeTab(policyScopeTarget(scope));
-  document.getElementById('policyPrecedenceCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // The layer's YAML opens in the tabs below the precedence card, so land there.
+  document.querySelector('.policy-scope-nav')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function safe(s) {
   const el = document.createElement('span');
@@ -5396,27 +5454,31 @@ function renderPolicyPrecedenceHtml(precedence, opts = {}) {
       '<div style="font-size: 12px;color:var(--gray-500);margin-top:4px">' + safe(intro) + '</div>' +
       '<div style="font-size: 12px;color:var(--gray-400);margin-top:8px">No policy layers loaded yet.</div>';
   }
+  const seenWinner = chain.findIndex(e => e.winning);
   return '<div class="drawer-section-title">' + safe(title) + '</div>' +
     '<div style="font-size: 12px;color:var(--gray-500);margin-top:4px;margin-bottom:10px">' + safe(intro) + '</div>' +
+    '<div class="prec-table">' +
     chain.map((entry, idx) => {
-      const badges = [
-        entry.winning ? '<span class="scoped-tag tag-allow">takes precedence</span>' : '',
-        entry.exists ? '<span class="scoped-tag tag-net">active</span>' : '<span class="scoped-tag">not set</span>',
-        entry.mode ? '<span class="scoped-tag ' + (entry.mode === 'enforce' ? 'tag-deny' : 'tag-allow') + '">' + safe(entry.mode) + '</span>' : '',
-      ].filter(Boolean).join('');
-      const openBtn = entry.scope === 'session'
-        ? (entry.exists ? '<button class="btn-ghost" style="padding:5px 8px" onclick="document.getElementById(\'scopeEditSection\')?.scrollIntoView({behavior:\'smooth\',block:\'start\'})">View scope</button>' : '')
-        : '<button class="btn-ghost" style="padding:5px 8px" onclick="openPolicyScope(' + safeJsArg(policyScopeTarget(entry.scope)) + ')">Open</button>';
-      const card = '<div class="drawer-policy-card ' + (entry.winning ? '' : ' allowed') + '">' +
-        '<div class="drawer-rule-row"><span class="drawer-rule-label">' + safe(entry.label || entry.scope) + '</span>' +
-          '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + badges + openBtn + '</div></div>' +
-        '<div style="font-size: 12px;color:var(--gray-600);line-height:1.5">' + safe(entry.summary || '') + '</div>' +
-        (entry.path ? '<div style="font-size: 11px;color:var(--gray-400);margin-top:4px;word-break:break-all">' + safe(entry.path) + '</div>' : '') +
+      // One status per layer instead of a row of badges that contradict each other.
+      const status = entry.winning ? ['governs', 'Governs']
+        : !entry.exists ? ['unset', 'Not set']
+        : entry.scope === 'default' ? ['fallback', 'Fallback']
+        // The engine never reads the global file (see _policy_layer_summary).
+        : entry.scope === 'global' ? ['unset', 'Not merged']
+        : idx > seenWinner && seenWinner >= 0 ? ['over', 'Overridden'] : ['over', 'Present'];
+      const mode = entry.exists && entry.mode
+        ? '<span class="prec-mode ' + (entry.mode === 'enforce' ? 'enf' : '') + '">' + safe(entry.mode) + '</span>' : '<span class="prec-mode">-</span>';
+      const action = entry.scope === 'session'
+        ? (entry.exists ? '<button class="btn-ghost prec-open" onclick="document.getElementById(\'scopeEditSection\')?.scrollIntoView({behavior:\'smooth\',block:\'start\'})">View scope</button>' : '')
+        : '<button class="btn-ghost prec-open" onclick="openPolicyScope(\'' + safeJsArg(policyScopeTarget(entry.scope)) + '\')">Open</button>';
+      const path = entry.path ? '<span class="prec-path" title="' + safeAttr(entry.path) + '">' + safe(entry.path.replace(/^\/(Users|home)\/[^/]+/, '~')) + '</span>' : '';
+      return '<div class="prec-line ' + status[0] + '">' +
+        '<span class="prec-n">' + (idx + 1) + '</span>' +
+        '<div class="prec-main"><div class="prec-name">' + safe(entry.label || entry.scope) + path + '</div>' +
+          '<div class="prec-note">' + safe(entry.summary || '') + '</div></div>' +
+        '<span class="prec-status">' + status[1] + '</span>' + mode + '<span>' + action + '</span>' +
       '</div>';
-      const row = '<div class="prec-row"><div class="prec-rank">' + (idx + 1) + '</div>' + card + '</div>';
-      const arrow = idx < chain.length - 1 ? '<div class="prec-arrow">&#8595;</div>' : '';
-      return row + arrow;
-    }).join('');
+    }).join('') + '</div>';
 }
 function tsCell(rel, abs, color) {
   const c = color || 'var(--gray-400)';
@@ -7278,6 +7340,66 @@ async function loadPolicy() {
   } catch(e) { console.error('[prismor] policy:', e); }
 }
 
+// ── Version + pause bar on the policy page ─────────────────────────────────
+function renderRuntime(r) {
+  const v = document.getElementById('rtVersion');
+  if (v) v.innerHTML = safe(r.version) + (r.update_available
+    ? ' <button class="btn-ghost" onclick="openChangelog()">Update to ' + safe(r.latest) + '</button>'
+    : (r.latest ? ' <span style="color:var(--muted)">latest</span>' : ''));
+  const p = document.getElementById('rtPause');
+  if (!p) return;
+  const until = r.paused_until ? 'Paused until ' + new Date(r.paused_until * 1000).toLocaleString() : 'Paused';
+  p.innerHTML = !r.paused
+    ? '<button class="upgrade-btn" title="Stop blocking for 24 h; screening and telemetry keep running" onclick="togglePause(true)"><svg class="icon"><use href="#i-pause"/></svg> Pause</button>'
+    : r.paused_by_org
+      ? '<span class="upgrade-btn rt-paused" title="' + safeAttr(until) + '. Only an org admin can resume it.">Paused by org</span>'
+      : '<button class="upgrade-btn rt-paused" title="' + safeAttr(until) + '. Click to resume." onclick="togglePause(false)"><span class="rt-dot off"></span>Paused · Resume</button>';
+}
+async function loadRuntime() {
+  try { renderRuntime(await apiFetch('/api/runtime')); } catch(e) { console.error('[prismor] runtime:', e); }
+}
+async function togglePause(paused) {
+  if (paused && !confirm('Pause Prismor on this machine?\n\nNothing is blocked for 24 hours (or until you resume). Screening and telemetry keep running.')) return;
+  try {
+    renderRuntime(await apiFetch('/api/pause', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({paused})}));
+    toast(paused ? 'Prismor paused for 24 h' : 'Prismor resumed');
+  } catch(e) { toast('Could not change pause: ' + e.message, true); }
+}
+async function openChangelog() {
+  const body = document.getElementById('clBody');
+  document.getElementById('clOut').style.display = 'none';
+  document.getElementById('clUpdateBtn').disabled = false;
+  document.getElementById('clModalOverlay').classList.add('open');
+  body.innerHTML = '<div class="empty">Loading changelog…</div>';
+  try {
+    const d = await apiFetch('/api/changelog', {timeoutMs: 15000});
+    document.getElementById('clTitle').textContent = 'Update Prismor from ' + d.version;
+    // Remote text: escape raw HTML and drop non-http links before rendering.
+    const md = d.releases.map(r => '## ' + r.heading + '\n\n' + r.body).join('\n\n').replace(/</g, '&lt;');
+    body.innerHTML = d.releases.length
+      ? (window.marked ? window.marked.parse(md) : '<pre style="white-space:pre-wrap">' + safe(md) + '</pre>')
+      : '<div class="empty">No release notes published yet for the newer version.</div>';
+    body.querySelectorAll('a').forEach(a => {
+      if (!/^https?:/i.test(a.getAttribute('href') || '')) a.removeAttribute('href');
+      else { a.target = '_blank'; a.rel = 'noopener'; }
+    });
+  } catch(e) { body.innerHTML = '<div class="empty">' + safe(e.message) + '</div>'; }
+}
+async function runUpdate() {
+  const btn = document.getElementById('clUpdateBtn');
+  const out = document.getElementById('clOut');
+  btn.disabled = true; btn.textContent = 'Updating…';
+  try {
+    const res = await fetch('/api/update', {method: 'POST'});
+    const d = await res.json().catch(() => ({output: 'HTTP ' + res.status}));
+    out.textContent = d.output || '';
+    out.style.display = 'block';
+    toast(d.ok ? 'Updated. Restart the dashboard and your agents.' : 'Update failed: see output', !d.ok);
+  } catch(e) { toast('Update failed: ' + e.message, true); }
+  btn.textContent = 'Update now';
+  loadRuntime();
+}
+
 function _detectMode(yaml) {
   const m = (yaml || '').match(/default_mode\s*:\s*(\w+)/);
   return m ? m[1] : 'observe';
@@ -7337,11 +7459,15 @@ function renderPolicyTab(data) {
     const chain = (data.precedence || {}).chain || [];
     const win = chain.find(e => e.winning) || chain.find(e => e.exists);
     const eff = data.effective || {};
-    const sum = document.getElementById('precSummary');
-    if (sum) sum.textContent = !win ? 'No policy layers loaded yet.'
+    const text = !win ? 'No policy layers loaded yet.'
       : (win.label || win.scope) + ' governs · ' + (win.mode || eff.mode || 'observe')
         + (eff.total ? ' · ' + (eff.blocking || 0) + ' of ' + eff.total + ' rules block' : '');
+    const sum = document.getElementById('precSummary');
+    if (sum) sum.textContent = text;
+    const rt = document.getElementById('rtPolicy');
+    if (rt) rt.innerHTML = safe(text) + (win ? ' <button class="btn-ghost" onclick="openPolicyScope(\'' + safeJsArg(policyScopeTarget(win.scope)) + '\')">Open</button>' : '');
   }
+  loadRuntime();
 
   // Global
   const g = data.global || {};

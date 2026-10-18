@@ -34,6 +34,9 @@ Write endpoints (human-only — localhost):
     PUT /api/policy/project        → body: {yaml, workspace} — write project policy
     POST /api/agents/:name         → body: {enabled?, mode?, iam_profile?}
     PATCH /api/sessions/:id/control → body: {action, workspace, …data}
+    POST /api/pause                → body: {paused} — `prismor pause` / `prismor resume`
+    POST /api/update               → `prismor update`
+    (GET /api/runtime: versions + pause state; GET /api/changelog: notes since the installed version)
 
 Every request passes ``_request_allowed``: no CORS, a loopback-only Host header
 (DNS rebinding), same-origin only (CSRF), and a token when bound off loopback.
@@ -523,6 +526,43 @@ def _policy_write_status(result: dict) -> int:
     return 403 if result.get("reason") == "org_managed" else 400
 
 
+_CHANGELOG_URL = "https://raw.githubusercontent.com/PrismorSec/prismor/main/CHANGELOG.md"
+
+
+def _version_key(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v or "")[:3])
+
+
+def _runtime_state() -> Dict[str, Any]:
+    from prismor.runtime import __version__
+    from prismor.runtime import pause as _pause
+    from prismor.runtime.version_check import latest_known_version
+    latest = latest_known_version()
+    state = _pause.active_state() or {}
+    return {
+        "version": __version__,
+        "latest": latest,
+        "update_available": bool(latest) and _version_key(latest) > _version_key(__version__),
+        "paused": bool(state),
+        # An org pause can't be lifted from here, same as `prismor resume`.
+        "paused_by_org": bool(state) and (_pause.org_state() or {}).get("paused") is True,
+        "paused_until": state.get("until"),
+    }
+
+
+def _changelog_since(current: str) -> List[Dict[str, str]]:
+    """Released sections of the upstream CHANGELOG newer than ``current``."""
+    import urllib.request
+    with urllib.request.urlopen(_CHANGELOG_URL, timeout=6) as resp:  # fixed URL  # nosec B310
+        text = resp.read().decode("utf-8", "replace")
+    out = []
+    for block in re.split(r"(?m)^(?=## \[)", text):
+        m = re.match(r"## \[(\d+\.\d+\.\d+)\][^\n]*", block)
+        if m and _version_key(m.group(1)) > _version_key(current):
+            out.append({"version": m.group(1), "heading": m.group(0)[3:], "body": block[m.end():].strip()})
+    return out
+
+
 class PrismorRequestHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler for the prismor dashboard API."""
 
@@ -724,6 +764,18 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 "home": str(prismor_home()),
                 "enrollment": enrollment,
             })
+            return
+
+        if path == "/api/runtime":
+            self._send_json(_runtime_state())
+            return
+
+        if path == "/api/changelog":
+            from prismor.runtime import __version__
+            try:
+                self._send_json({"version": __version__, "releases": _changelog_since(__version__)})
+            except Exception as exc:
+                self._send_json({"error": f"could not fetch the changelog: {exc}"}, status=502)
             return
 
         if path == "/api/policy":
@@ -1026,6 +1078,36 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 })
             except Exception as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=500)
+            return
+
+        if path == "/api/pause":
+            from prismor.runtime import pause as _pause
+            try:
+                body = self._read_json_body()
+            except ValueError:
+                self._send_json({"error": "invalid JSON"}, status=400)
+                return
+            if body.get("paused"):
+                _pause.beat(agent="claude", state=_pause.set_paused(reason="paused from the dashboard"))
+            elif _pause.clear_paused():
+                _pause.beat_resumed(agent="claude")
+            self._send_json(_runtime_state())
+            return
+
+        if path == "/api/update":
+            import subprocess
+            # Same path as `prismor update`, in a fresh interpreter so its
+            # guidance refresh runs the new code.
+            try:
+                r = subprocess.run(
+                    [sys.executable, "-c", "from prismor.runtime.immunity_cli import main; main()", "update"],
+                    capture_output=True, text=True, timeout=600, check=False,
+                )
+            except subprocess.TimeoutExpired:
+                self._send_json({"ok": False, "output": "update timed out after 10 minutes"}, status=504)
+                return
+            self._send_json({"ok": r.returncode == 0, "output": (r.stdout + r.stderr)[-4000:]},
+                            status=200 if r.returncode == 0 else 500)
             return
 
         # POST /api/extensions/approve — a human accepts an extension after review
