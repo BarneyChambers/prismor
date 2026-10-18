@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Prismor Dashboard</title>
 <link rel="icon" type="image/png" href="/static/prismor-logo.png" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/marked.min.js"></script>
 <style>
@@ -56,7 +53,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 .doc-body h1{font-size:20px;margin:0 0 12px}
 .doc-body h2{font-size:16px;margin:22px 0 8px}
 .doc-body h3{font-size:14px;margin:18px 0 6px}
-.doc-body pre,.doc-cmd{background:var(--gray-100);padding:10px 12px;border-radius:8px;overflow:auto;font:12px var(--font-mono);white-space:pre}
+.doc-body pre,.doc-cmd{background:var(--gray-100);padding:10px 12px;border-radius:8px;overflow:auto;font:12px var(--font-code);white-space:pre}
 .doc-body code{font:12px var(--font-mono)}
 .doc-body table{border-collapse:collapse;font-size:12px}
 .doc-body td,.doc-body th{border:1px solid var(--gray-200);padding:5px 8px;text-align:left}
@@ -102,11 +99,12 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     --chart-palette-4: #A8D5F7;
     --chart-palette-5: #A7F3D0;
     --chart-palette-6: #FCA5A5;
-    /* Inter for UI. Code keeps a monospace stack, but the platform's own --
-       a downloaded display face for command text was a strong opinion the app
-       did not need, and one fewer webfont is one fewer render-blocking load. */
+    /* Verdana everywhere: labels, ids, paths, editors and code. No webfonts,
+       so the page also renders the same offline. */
     --font-ui: Verdana, Geneva, "DejaVu Sans", sans-serif;
-    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    --font-code: var(--font-ui);
+    --font-mono: var(--font-ui);  /* ids, paths, tool names read in the UI face */
+    --mono: var(--font-ui);
   }
   html[data-theme="dark"] {
     --gray-50: #1a1a1d; --gray-100: #202024; --gray-200: #2c2c33;
@@ -135,7 +133,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   :root { --danger-ink: #b91c1c; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Form controls default to the system font; make them follow the UI font.
-     Code surfaces (.yaml-editor, code, pre) re-assert --font-mono later. */
+     Code surfaces (.yaml-editor, pre, diffs) re-assert --font-code later. */
   button, input, select, textarea { font-family: inherit; }
   body {
     font-family: var(--font-ui);
@@ -1027,9 +1025,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .scoped-tag .icon { width: 11px; height: 11px; vertical-align: -1.5px; }
 
   /* ── Monospace surfaces (code, ids, editors): the platform's own face ── */
-  code, .yaml-editor, .sess-id, .sess-drawer-sessid, .event-sess-id,
+  code, .sess-id, .sess-drawer-sessid, .event-sess-id,
   td.mono, .finding-cmd, .trigger-detail, .rule-id, .user-id, .adv-pill,
   .policy-meta .path { font-family: var(--font-mono); }
+  pre, .yaml-editor, .dev-diff, .doc-body pre code { font-family: var(--font-code); }
 
   /* ── Toast ── */
   #prismorToast {
@@ -1205,7 +1204,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .dev-add { color:#16a34a; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; }
   .dev-del { color:#dc2626; font-weight:600; font-family:var(--mono,ui-monospace,monospace); font-size: 12px; }
   .dev-diff { margin:6px 0 4px; border:1px solid var(--gray-200); border-radius:6px; overflow:auto; max-height:420px;
-    font-family:var(--mono,ui-monospace,monospace); font-size: 12px; line-height:1.55; }
+    font-family:var(--font-code); font-size: 12px; line-height:1.55; }
   .dev-diff div { padding:0 10px; white-space:pre; min-width:max-content; }
   .dev-diff .a { background:rgba(34,197,94,.14); color:#15803d; }
   .dev-diff .d { background:rgba(239,68,68,.13); color:#b91c1c; }
@@ -1275,7 +1274,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .drawer-rule-row.stack { flex-direction:column; gap:4px; }
   .drawer-rule-row.stack > .drawer-rule-label { min-width:0; font-size: 11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
   .drawer-rule-row.stack > div { width:100%; }
-  .drawer-code { font-family:var(--font-mono); font-size: 12px; line-height:1.5; color:var(--gray-800); background:var(--surface);
+  .drawer-code { font-family:var(--font-code); font-size: 12px; line-height:1.5; color:var(--gray-800); background:var(--surface);
     border:1px solid var(--gray-200); border-radius:6px; padding:6px 8px; max-height:180px; overflow:auto;
     white-space:pre-wrap; overflow-wrap:anywhere; }
   .drawer-rule-row details > summary { cursor:pointer; color:#3b82f6; font-size: 12px; margin-bottom:4px; }
@@ -1301,7 +1300,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .art-val { font-size: 12px; color:var(--gray-700); word-break:break-word; }
   /* 12 lines exactly: a max-height that is not a multiple of line-height slices
      the last row in half, which reads as a broken box rather than a scroll. */
-  .art-pre { font-family:var(--font-mono); font-size: 11.5px; line-height:1.5; color:var(--gray-700);
+  .art-pre { font-family:var(--font-code); font-size: 11.5px; line-height:1.5; color:var(--gray-700);
     background:var(--gray-50); border:1px solid var(--gray-200); border-radius:7px;
     padding:8px 10px; margin:0; max-height:calc(12 * 1.5 * 10.5px + 16px); overflow:auto;
     white-space:pre-wrap; overflow-wrap:anywhere; tab-size:2; }
@@ -1779,7 +1778,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .prec-line:first-child { border-top: none; }
   .prec-n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
   .prec-name { font-weight: 500; color: var(--ink); display: flex; gap: 10px; align-items: baseline; min-width: 0; }
-  .prec-path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prec-path { font-size: 11.5px; font-weight: 400; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .prec-note { font-size: 12px; color: var(--gray-500); margin-top: 2px; line-height: 1.45; }
   .prec-status { font-size: 12px; color: var(--muted); }
   .prec-mode { font-size: 12px; color: var(--muted); }
@@ -2056,7 +2055,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     --md-e1: none; --md-e2: none; --md-e3: 0 16px 48px rgba(31,42,60,.14);
     --md-radius: 8px; --md-radius-sm: 6px;
     --sidebar-w: 236px; --topbar-h: 56px; --stripe-h: 0px;
-    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
     --chart-text: var(--muted); --chart-grid: #eef1f4;
     --chart-passed: #9aa7b8; --chart-intercepted: var(--bad);
@@ -2343,7 +2341,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     border-top: 1px solid var(--hairline);
   }
   .rules-actions:not(.dirty) .btn-primary, .rules-actions:not(.dirty) #rulesDiscard { opacity: .45; }
-  .yaml-editor { font-family: var(--font-mono); font-size: 12px; border-radius: 8px; }
+  .yaml-editor { font-family: var(--font-code); font-size: 12px; border-radius: 8px; }
 
   /* sessions: filter bar */
   .sess-filters { margin: 0 0 16px; gap: 8px; }
