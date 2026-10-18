@@ -2522,6 +2522,12 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-stat b { font-size: 24px; font-weight: 500; }
   .ext-stat.warn b { color: var(--tone-warn-fg); }
   .rule-row.locked, html[data-theme="dark"] .rule-row.locked { background: var(--surface-muted); }
+  .ov-more { margin-top: 28px; }
+  .ov-more > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: 12px; padding: 14px 18px; border: 1px solid var(--hairline); border-radius: var(--r-card); background: var(--surface); }
+  .ov-more > summary::-webkit-details-marker { display: none; }
+  .ov-more > summary::after { content: 'Show'; margin-left: auto; font-size: 12px; color: var(--muted); }
+  .ov-more[open] > summary::after { content: 'Hide'; }
+  .ov-more-hint { font-size: 13px; color: var(--muted); }
   .rule-floor-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px 14px 102px; background: var(--tone-warn-bg); border-bottom: 1px solid var(--hairline); font-size: 12px; color: var(--ink-2); }
   .rule-floor-form > span:first-child { flex-basis: 100%; }
   .rule-floor-form .finput { width: 220px; }
@@ -2912,9 +2918,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     </div>
   </div>
 
-  <div class="section">
-    <h2>Findings &amp; Events</h2><div class="rule"></div>
-  </div>
+  <!-- The detailed tables repeat what Sessions shows; keep the page a summary. -->
+  <details class="ov-more" id="ovMore">
+    <summary><span class="kpi-label">Findings &amp; events</span><span class="ov-more-hint">top sessions, every finding, the live event feed</span></summary>
 
   <div class="grid grid-1-2">
     <div class="card">
@@ -2998,6 +3004,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <div id="evtPager" class="pager"></div>
     </div>
   </div>
+  </details>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -3051,7 +3058,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div id="enrollBannerSess"></div>
 
   <div class="bar sess-filters" id="sessFilters">
-    <input id="sfSearch" class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Session id contains…" />
+    <input id="sfSearch" class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Search prompt or session id…" />
     <select id="sfAgent" class="fsel"><option value="">All agents</option></select>
     <select id="sfWorkspace" class="fsel"><option value="">All workspaces</option></select>
     <select id="sfFindings" class="fsel">
@@ -3177,7 +3184,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="view-topbar">
     <button class="view-back" onclick="goBack()">Back</button>
     <div class="crumbs">
-      <a onclick="backToSessions()">Sessions</a><span class="sep">/</span>
+      <a onclick="document.querySelector('.tab-btn[data-tab=&quot;agents&quot;]').click()">Agents</a><span class="sep">/</span>
       <span id="agentCrumb">Agent</span>
     </div>
   </div>
@@ -3335,7 +3342,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
       <span><span class="rule-verdict blocks">blocks</span> stops the call</span>
       <span><span class="rule-verdict reports">reports</span> call proceeds</span>
       <span><span class="rule-lock"><svg class="icon"><use href="#i-lock"/></svg> Pinned</span> safety floor, off only with your unlock password</span>
-      <span class="rules-legend-note">Toggle = rule on or off. Block vs report comes from the policy mode.</span>
+      <span class="rules-legend-note">Toggle = rule on or off, saved when you press Save rules. Block vs report comes from the policy mode.</span>
     </div>
     <div class="rules-toolbar">
       <input id="rulesSearch" class="rules-search" type="text" spellcheck="false"
@@ -3674,9 +3681,16 @@ let COLORS = [];
 const CAT_LABELS = {
   prompt_injection: 'Prompt Injection', jailbreak_attempt: 'Jailbreak',
   tool_call_abuse: 'Tool Call Abuse', secret_exfil: 'Secret Exfil',
-  malicious_mcp: 'Malicious MCP', dangerous_command: 'Dangerous Cmd',
-  scoped_agent: 'Scoped Agent',
+  malicious_mcp: 'Malicious MCP', dangerous_command: 'Dangerous command',
+  scoped_agent: 'Scoped agent', lethal_trifecta: 'Lethal trifecta', pii_exposure: 'PII exposure',
+  iam: 'IAM', db_access: 'Database access', supply_chain_block: 'Supply chain',
+  prompt_injection_semantic: 'Prompt injection (judge)', agent_control: 'Agent control', other: 'Other',
 };
+// Any category without a hand-written label still reads as words, not a key.
+function catLabel(k) {
+  return CAT_LABELS[k] || String(k || '').replace(/[-_]+/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+let _donutKeys = [];
 const DEFAULT_GLOBAL_YAML = `# Global policy: applies to every project on this machine.
 # Only set what you want to differ from built-in defaults.
 version: "1.0"
@@ -3727,9 +3741,8 @@ function chartTheme() {
 function renderDonutLegend() {
   const legend = document.getElementById('donutLegend');
   if (!legend) return;
-  const catKeys = Object.keys(CAT_LABELS);
-  legend.innerHTML = catKeys.map((k, i) =>
-    '<div class="legend-item"><span class="legend-dot" style="background:' + COLORS[i] + '"></span>' + CAT_LABELS[k] + '</div>'
+  legend.innerHTML = _donutKeys.map((k, i) =>
+    '<div class="legend-item"><span class="legend-dot" style="background:' + COLORS[i % COLORS.length] + '"></span>' + safe(catLabel(k)) + '</div>'
   ).join('');
 }
 
@@ -5238,7 +5251,7 @@ function renderDrawerContent(sessId, ws, data) {
     const ev = _drawerSelectedEvent;
     const policy = ev.policy || {};
     const blocked = ev.verdict === 'blocked';
-    const categoryLabel = CAT_LABELS[policy.category] || policy.category || '';
+    const categoryLabel = catLabel(policy.category) || '';
     const evSec = document.createElement('div');
     evSec.className = 'drawer-section';
     evSec.innerHTML =
@@ -5349,7 +5362,7 @@ function renderDrawerContent(sessId, ws, data) {
         '<span class="blocked-sev"><span class="sev-badge ' + sevClass(b.severity) + '">' + safe(b.severity) + '</span></span>' +
         '<div class="drawer-block-body">' +
           '<div class="drawer-block-title">' + safe(b.title) + '</div>' +
-          '<div class="drawer-block-meta">' + safe(CAT_LABELS[b.category] || b.category) + ' · ' + safe(b.ts || '') + '</div>' +
+          '<div class="drawer-block-meta">' + safe(catLabel(b.category)) + ' · ' + safe(b.ts || '') + '</div>' +
           (b.evidence ? '<div style="margin-top:4px;font-size: 11px;color:var(--gray-500)">' + safe(b.evidence) + '</div>' : '') +
         '</div>' +
       '</div>'
@@ -5366,7 +5379,7 @@ function renderDrawerContent(sessId, ws, data) {
       '<div class="drawer-status" id="drawerActionStatus"></div>';
   } else {
     footerEl.innerHTML =
-      '<button class="drawer-toggle pause" title="Stop screening this session: nothing is blocked or flagged until you resume." onclick="drawerAction(\'pause\')"><svg class="icon"><use href="#i-pause"/></svg> Pause Prismor</button>' +
+      '<button class="drawer-toggle pause" title="Stop screening this session: nothing is blocked or flagged until you resume." onclick="drawerAction(\'pause\')"><svg class="icon"><use href="#i-pause"/></svg> Pause this session</button>' +
       '<button class="drawer-toggle clear" title="Drop the per-session tool scope Prismor derived from the prompt. Global and project policy still apply." onclick="drawerAction(\'clear\')">Clear scope</button>' +
       '<div class="drawer-status" id="drawerActionStatus"></div>';
   }
@@ -5635,6 +5648,7 @@ function setPolicyAgent(name) {
     'this agent\'s mode decides whether they block or only report. ' +
     '<a href="#" onclick="setPolicyAgent(\'\');return false">Edit the shared rules</a>';
   renderAgentControls(_pcAgent);
+  loadAgentTools(_pcAgent);
 }
 function renderGlobalTools() {
   const el = document.getElementById('globalToolGrid');
@@ -5884,6 +5898,7 @@ async function openAgentView(agentName, isBack){
   renderAgentSwitch(agentName);
   renderAgentHero(agentName);
   renderAgentControls(agentName);
+  loadAgentTools(agentName);
   renderAgentSessions(agentName);
   renderAgentExtensions(agentName);
 }
@@ -5960,6 +5975,16 @@ function _renderAgentControlsInto(el, agentName){
       '<button class="en-toggle '+(a.enabled?'on':'off')+'" onclick="agentToggleBtn(\''+safeAttr(a.name)+'\','+(a.enabled?'true':'false')+')">'+(a.enabled?'Enabled':'Disabled')+'</button>'+
       '<span class="agent-ctrl-hint">off = kill switch: every tool call from this agent is denied until re-enabled</span></div>'+
     renderToolPolicyGrid(a);
+}
+
+// The tools this agent actually called in the window, so its permissions grid
+// lists them and not only the mirror built-ins.
+async function loadAgentTools(name) {
+  try {
+    const d = await apiFetch('/api/agent-tools?name=' + encodeURIComponent(name) + '&days=' + windowDays());
+    const a = (_agentsCache?.agents || []).find(x => x.name === name);
+    if (a) { a.capabilities = (d.tools || []).map(t => t.tool); renderAgentControls(name); }
+  } catch (e) { /* the built-ins still show */ }
 }
 
 // Built-ins Prismor mirrors over MCP (prismor mcp-gateway --mirror). Shown for
@@ -6102,7 +6127,7 @@ function renderSessionView(data){
     act.innerHTML = '<button class="sess-act-btn resume" onclick="sessViewAction(\'resume\')">Resume Prismor</button>'+
       '<button class="sess-act-btn clear" onclick="sessViewAction(\'clear\')">Clear scope</button>';
   } else {
-    act.innerHTML = '<button class="sess-act-btn pause" onclick="sessViewAction(\'pause\')">Pause Prismor</button>'+
+    act.innerHTML = '<button class="sess-act-btn pause" onclick="sessViewAction(\'pause\')">Pause this session</button>'+
       '<button class="sess-act-btn clear" onclick="sessViewAction(\'clear\')">Clear scope</button>';
   }
 
@@ -6225,7 +6250,12 @@ function groupTrail(trail){
     const repeat = !!(cur && text && (cur.promptText === text ||
       (cur.promptText.length > 40 && text.startsWith(cur.promptText))));
     if (!cur || (isTurnStart && !repeat)){
-      cur = { label:'Turn '+(turns.length+1), sub:'', promptText:text, lanes:new Map(), count:0 };
+      // Events before the first prompt (context and memory files loading) are
+      // the session starting, not something the person asked.
+      const n = turns.filter(t => !t.preamble).length + 1;
+      cur = isTurnStart
+        ? { label:'Turn '+n, sub:'', promptText:text, lanes:new Map(), count:0 }
+        : { label:'Session start', sub:'context loaded before the first prompt', preamble:true, promptText:'', lanes:new Map(), count:0 };
       turns.push(cur);
     }
     if (repeat){
@@ -6395,7 +6425,7 @@ function renderNodePanelDefault(data){
     html+=blocks.slice(0,4).map(b=>'<div class="drawer-block-item">'+
       '<span class="blocked-sev"><span class="sev-badge '+sevClass(b.severity)+'">'+safe(b.severity)+'</span></span>'+
       '<div class="drawer-block-body"><div class="drawer-block-title">'+safe(b.title)+'</div>'+
-      '<div class="drawer-block-meta">'+safe(CAT_LABELS[b.category]||b.category)+' · '+safe(b.ts||'')+'</div></div></div>').join('');
+      '<div class="drawer-block-meta">'+safe(catLabel(b.category))+' · '+safe(b.ts||'')+'</div></div></div>').join('');
   } else {
     html+='<div class="node-panel-empty">Clean run: no blocks. Click a node to inspect a tool call.</div>';
   }
@@ -6413,7 +6443,7 @@ function renderNodePanel(ev){
   const v=flowVerdict(ev);
   const decLabel={allow:'Allowed',warn:'Warned (observe)',block:'Blocked'}[v];
   const decCls={allow:'tag-allow',warn:'tag-net',block:'tag-deny'}[v];
-  const categoryLabel=CAT_LABELS[policy.category]||policy.category||'';
+  const categoryLabel=catLabel(policy.category)||'';
   panel.innerHTML='<h4>Tool call</h4>'+
     '<div class="drawer-event-card">'+
       '<div class="drawer-rule-row"><span class="drawer-rule-label">Decision</span>'+
@@ -6779,7 +6809,7 @@ async function loadFindings(){
     }
     if(data.categories){
       const sel=document.getElementById('fCat'); const cur=sel.value;
-      sel.innerHTML='<option value="">All</option>'+data.categories.map(c=>'<option value="'+c+'"'+(c===cur?' selected':'')+'>'+( CAT_LABELS[c]||c)+'</option>').join('');
+      sel.innerHTML='<option value="">All</option>'+data.categories.map(c=>'<option value="'+c+'"'+(c===cur?' selected':'')+'>'+( catLabel(c))+'</option>').join('');
     }
     renderFindings(data.items);
     buildPager('findPager',findState,loadFindings);
@@ -6801,7 +6831,7 @@ function renderFindings(rows){
     return '<tr class="finding-row" onclick="toggleEvidence(\''+eid+'\')">'+
       '<td>'+safe(f.title)+'</td>'+
       '<td><span class="agent-pill">'+safe(f.agent)+'</span></td>'+
-      '<td style="color:var(--gray-500)">'+safe(CAT_LABELS[f.category]||f.category)+'</td>'+
+      '<td style="color:var(--gray-500)">'+safe(catLabel(f.category))+'</td>'+
       '<td><span class="sev-badge '+sevClass(f.severity)+'">'+safe(f.severity)+'</span></td>'+
       '<td>'+tsCell(f.ts,f.tsAbs)+'</td>'+
       '<td class="expand-arrow">▸</td>'+
@@ -7056,9 +7086,13 @@ async function loadStats(){
     _navSessions=k.activeSessions||0;
     syncNavCounts();
     const threats=data.threatsByCategory||{};
-    const catKeys=Object.keys(CAT_LABELS);
-    donutChart.data.labels=catKeys.map(k=>CAT_LABELS[k]);
-    donutChart.data.datasets[0].data=catKeys.map(k=>threats[k]||0);
+    // Biggest six categories, the rest as Other, so no category silently drops out.
+    const ranked=Object.entries(threats).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+    const top=ranked.slice(0,6), rest=ranked.slice(6).reduce((n,[,v])=>n+v,0);
+    if(rest) top.push(['other',rest]);
+    _donutKeys=top.map(([k])=>k);
+    donutChart.data.labels=_donutKeys.map(catLabel);
+    donutChart.data.datasets[0].data=top.map(([,v])=>v);
     donutChart.update();
     renderDonutLegend();
     const ts=data.blockRateTimeseries||[];
@@ -7093,7 +7127,7 @@ async function loadStats(){
     document.getElementById('patternsBody').innerHTML=patterns.map(p=>
       '<tr>'+
         '<td>'+safe(p.pattern||'')+'</td>'+
-        '<td style="color:#9ca3af">'+safe(CAT_LABELS[p.category]||p.category)+'</td>'+
+        '<td style="color:#9ca3af">'+safe(catLabel(p.category))+'</td>'+
         '<td class="right" style="font-weight:500">'+(p.count||0)+'</td>'+
         '<td>'+tsCell(p.lastSeen,p.lastSeenAbs,'#9ca3af')+'</td>'+
         '<td><span class="sev-badge '+sevClass(p.severity)+'">'+safe(p.severity||'low')+'</span></td>'+
@@ -7275,15 +7309,28 @@ function agentsByLastSeen(agents){
   };
   return agents.slice().sort((a, b) => seen(b) - seen(a) || String(a.name||'').localeCompare(String(b.name||'')));
 }
+let _showIdleAgents = false;
+// Idle = enabled, no override, not seen in the window. Hidden by default so the
+// list shows what is running; anything blocked or overridden always stays.
+function agentIsIdle(a) {
+  const quiet = a.last_seen ? (Date.now() - Date.parse(a.last_seen)) / 864e5 : Infinity;
+  return a.enabled && !a.mode && !a.iam_profile && quiet > windowDays();
+}
 function renderAgents(data) {
-  const agents = agentsByLastSeen(data.agents || []);
+  const all = agentsByLastSeen(data.agents || []);
+  const idle = all.filter(agentIsIdle).length;
+  const agents = _showIdleAgents ? all : all.filter(a => !agentIsIdle(a));
   const profiles = data.iam_profiles || [];
-  document.getElementById('agentsCount').textContent =
-    agents.length + ' agent' + (agents.length === 1 ? '' : 's') + ' registered';
+  document.getElementById('agentsCount').innerHTML =
+    safe(agents.length + ' agent' + (agents.length === 1 ? '' : 's') + (_showIdleAgents ? ' registered' : ' active in this window'))
+    + (idle ? ' · <a href="#" onclick="_showIdleAgents=!_showIdleAgents;renderAgents(_agentsCache);return false">'
+      + (_showIdleAgents ? 'hide' : 'show') + ' ' + idle + ' idle</a>' : '');
   const tbody = document.getElementById('agentsBody');
   if (!agents.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">No agents yet. Run <code>prismor install</code>, '  +
-      'then start Claude Code, Codex, or Cursor.</td></tr>';
+    tbody.innerHTML = idle
+      ? '<tr><td colspan="7" class="empty">No agent ran in this window. Widen it in the top bar, or show the ' + idle + ' idle agents.</td></tr>'
+      : '<tr><td colspan="7" class="empty">No agents yet. Run <code>prismor install</code>, '  +
+        'then start Claude Code, Codex, or Cursor.</td></tr>';
     return;
   }
   tbody.innerHTML = agents.map(a => {
@@ -7631,6 +7678,17 @@ async function decideApproval(id, approve) {
 }
 loadApprovals();
 setInterval(() => { if (!document.hidden) loadApprovals(); }, 5000);
+// Closing or reloading with unsaved rule toggles or policy YAML loses them: ask first.
+window.addEventListener('beforeunload', e => {
+  const dirty = (typeof _rulesDirty === 'function' && _rulesCatalog.length && _rulesDirty())
+    || _policyEditorDirty('project') || _policyEditorDirty('global');
+  if (dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+// Remember whether the Overview detail tables were left open (per browser).
+(() => { const d = document.getElementById('ovMore'); if (!d) return;
+  try { d.open = localStorage.getItem('prismor.ovMore') === '1'; } catch (e) {}
+  d.addEventListener('toggle', () => { try { localStorage.setItem('prismor.ovMore', d.open ? '1' : '0'); } catch (e) {} });
+})();
 
 // ── Version + pause bar on the policy page ─────────────────────────────────
 function renderRuntime(r) {
@@ -7642,10 +7700,10 @@ function renderRuntime(r) {
   if (!p) return;
   const until = r.paused_until ? 'Paused until ' + new Date(r.paused_until * 1000).toLocaleString() : 'Paused';
   p.innerHTML = !r.paused
-    ? '<button class="upgrade-btn" title="Stop blocking for 24 h; screening and telemetry keep running" onclick="togglePause(true)"><svg class="icon"><use href="#i-pause"/></svg> Pause</button>'
+    ? '<button class="upgrade-btn" title="Pause Prismor on this machine, for every agent and session: nothing is blocked for 24 h; screening and telemetry keep running" onclick="togglePause(true)"><svg class="icon"><use href="#i-pause"/></svg> Pause all</button>'
     : r.paused_by_org
       ? '<span class="upgrade-btn rt-paused" title="' + safeAttr(until) + '. Only an org admin can resume it.">Paused by org</span>'
-      : '<button class="upgrade-btn rt-paused" title="' + safeAttr(until) + '. Click to resume." onclick="togglePause(false)"><span class="rt-dot off"></span>Paused · Resume</button>';
+      : '<button class="upgrade-btn rt-paused" title="' + safeAttr(until) + '. Click to resume." onclick="togglePause(false)"><span class="rt-dot off"></span>All paused · Resume</button>';
 }
 async function loadRuntime() {
   try { renderRuntime(await apiFetch('/api/runtime')); } catch(e) { console.error('[prismor] runtime:', e); }

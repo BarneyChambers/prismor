@@ -357,6 +357,11 @@ _DOC_SYNONYMS = {
     "leave": ("egress", "send", "upload"), "send": ("egress", "upload", "telemetry"),
     "privacy": ("telemetry", "data", "redact"), "start": ("install", "setup", "getting"),
     "begin": ("getting", "start"), "setup": ("install",), "install": ("setup",),
+    # Getting past a block: the docs say allow, approve, exempt, unlock or pause.
+    "unblock": ("allow", "approve", "exempt", "unlock", "pause"),
+    "bypass": ("allow", "exempt", "unlock", "pause"), "override": ("allow", "exempt", "unlock"),
+    "approve": ("approval", "allow"), "whitelist": ("allow", "allowlist"), "allowlist": ("allow",),
+    "false": ("allow", "exempt"), "positive": ("allow", "exempt"),
 }
 
 
@@ -768,6 +773,11 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/runtime":
             self._send_json(_runtime_state())
+            return
+
+        if path == "/api/agent-tools":
+            from prismor.runtime.store import get_agent_tools
+            self._send_json({"tools": get_agent_tools(qstr("name"), qint("days", 7))})
             return
 
         if path == "/api/approvals":

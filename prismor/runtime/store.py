@@ -1638,7 +1638,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 """,
                 (f"-{hours} hours",),
             ):
-                dash_cat = _CATEGORY_MAP.get(row["category"] or "", "dangerous_command")
+                dash_cat = _dash_category(row["category"])
                 threats_by_category[dash_cat] += row["cnt"]
 
             # Prior 24h window — for delta calculation.
@@ -1725,7 +1725,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
                 if title not in patterns_acc:
                     patterns_acc[title] = {
                         "pattern": title,
-                        "category": _CATEGORY_MAP.get(row["category"] or "", "dangerous_command"),
+                        "category": _dash_category(row["category"]),
                         "severity": (row["severity"] or "low").lower(),
                         "count": 0,
                         "lastSeen": "",
@@ -1952,6 +1952,13 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
 
 
 # ── Reverse category map (dashboard cat → list of raw DB cats) ────────────────
+def _dash_category(raw: Optional[str]) -> str:
+    """Dashboard category for a rule's raw category. One not in the map passes
+    through unchanged: folding the rest into "dangerous_command" labelled
+    lethal-trifecta, PII and memory-poisoning findings "Dangerous Cmd"."""
+    return _CATEGORY_MAP.get(raw or "", raw or "dangerous_command")
+
+
 _REVERSE_CATEGORY_MAP: Dict[str, List[str]] = {}
 for _raw_cat, _dash_cat in _CATEGORY_MAP.items():
     _REVERSE_CATEGORY_MAP.setdefault(_dash_cat, []).append(_raw_cat)
@@ -2059,12 +2066,19 @@ def get_sessions_page(
         r for r in rows
         if (not agent or r["agent"] == agent)
         and (not workspace or r["workspace"] == workspace)
-        and (not needle or needle in r["sessionId"].lower())
         and (findings != "with" or r["findingsCount"] > 0)
         and (findings != "clean" or r["findingsCount"] == 0)
         and (not min_risk or r["riskScore"] >= min_risk)
         and _active_since(r["_updatedRaw"])
     ]
+
+    titles: Dict[str, str] = {}
+    if needle:
+        # Search the id or what the session was started to do (its first prompt);
+        # people remember "fix the login bug", not a uuid.
+        titles = _first_prompts([r["sessionId"] for r in rows], workspaces)
+        rows = [r for r in rows if needle in r["sessionId"].lower()
+                or needle in titles.get(r["sessionId"], "").lower()]
 
     rows.sort(key=lambda x: x["_sortRaw"] or "", reverse=reverse)
     total = len(rows)
@@ -2076,7 +2090,8 @@ def get_sessions_page(
     for r in items:
         r.pop("_sortRaw", None)
         r.pop("_updatedRaw", None)
-    titles = _first_prompts([r["sessionId"] for r in items], workspaces)
+    if not needle:
+        titles = _first_prompts([r["sessionId"] for r in items], workspaces)
     for r in items:
         r["title"] = titles.get(r["sessionId"], "")
 
@@ -2479,7 +2494,7 @@ def get_findings_page(
     """Return a paginated, filtered list of findings across all registered workspaces,
     limited to the last ``since_hours`` when set (the dashboard's time window)."""
     severity_filter = severity.lower() if severity else ""
-    raw_cats = _REVERSE_CATEGORY_MAP.get(category, []) if category else []
+    raw_cats = _REVERSE_CATEGORY_MAP.get(category, [category]) if category else []
     workspaces = _state_query_workspaces()
     rows: List[Dict[str, Any]] = []
 
@@ -2550,7 +2565,7 @@ def get_findings_page(
                     "id": (row["finding_id"] or "")[:20],
                     "sessionId": row["session_id"] or "",
                     "title": row["title"] or "Unknown",
-                    "category": _CATEGORY_MAP.get(row["category"] or "", "dangerous_command"),
+                    "category": _dash_category(row["category"]),
                     "severity": (row["severity"] or "low").lower(),
                     "evidence": row["evidence"] or "",
                     "agent": row["agent"] or "unknown",
@@ -3503,6 +3518,37 @@ def get_token_stats(workspace: Optional[Path] = None, hours: int = 24, limit: in
         "totalTokens": inp + out + cread + ccreate,
         "byTool": by_tool, "topOffenders": top_offenders,
     }
+
+
+def get_agent_tools(name: str, days: int = 7, limit: int = 40) -> List[Dict[str, Any]]:
+    """Tools an agent (instance label or framework id) called in the last
+    ``days``, busiest first, so its permissions grid lists what it really uses."""
+    from collections import Counter
+    counts: Counter = Counter()
+    for ws in _state_query_workspaces():
+        conn = _connect_ro(get_db_path(ws))
+        if conn is None:
+            continue
+        try:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
+            name_expr = "COALESCE(NULLIF(s.agent_name, ''), s.agent)" if "agent_name" in cols else "s.agent"
+            for row in conn.execute(
+                f"""
+                SELECT json_extract(e.raw_json, '$.metadata.tool_name') AS tool, COUNT(*) AS n
+                FROM events e JOIN sessions s ON s.session_id = e.session_id
+                WHERE {name_expr} = ? AND e.agent_event = 'PreToolUse'
+                  AND e.ts >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
+                GROUP BY tool
+                """,  # name_expr is one of two literals  # nosec B608
+                (name, f"-{max(1, int(days))} days"),
+            ):
+                if row["tool"]:
+                    counts[row["tool"]] += row["n"]
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    return [{"tool": t, "calls": n} for t, n in counts.most_common(limit)]
 
 
 def get_agents_overview(days: int = 0) -> List[Dict[str, Any]]:
