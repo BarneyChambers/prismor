@@ -4351,10 +4351,19 @@ def _format_duration(seconds: float) -> str:
     return f"{minutes // 60}h {minutes % 60}m"
 
 
+# How Claude Code logs one hook command's run. Context and system-message
+# attachments are not runs: they carry what an earlier run of the same event
+# printed, so they are folded into that run.
+_HOOK_RUN_OUTCOMES = {"hook_success": "ok", "hook_non_blocking_error": "error",
+                      "hook_blocking_error": "blocked", "hook_cancelled": "cancelled"}
+
+
 def _transcript_hook_runs(transcript: str) -> List[Dict[str, Any]]:
     """Every hook the agent ran, as Claude Code logs it in the transcript: one
     attachment per hook command, with its duration and exit code. Prismor only
-    sees its own hook, so this is the one place the third-party ones show up."""
+    sees its own hook, so this is the one place the third-party ones show up.
+    A run's outcome is ok, error, blocked (exit 2: the hook said no), timeout
+    (the agent killed it) or cancelled (the turn stopped first)."""
     runs: List[Dict[str, Any]] = []
     try:
         with open(transcript, encoding="utf-8", errors="replace") as fh:
@@ -4366,22 +4375,41 @@ def _transcript_hook_runs(transcript: str) -> List[Dict[str, Any]]:
                 except ValueError:
                     continue
                 att = rec.get("attachment") if isinstance(rec, dict) else None
-                if not isinstance(att, dict) or not str(att.get("type") or "").startswith("hook_"):
+                kind = str(att.get("type") or "") if isinstance(att, dict) else ""
+                if not kind.startswith("hook_"):
                     continue
+                if kind not in _HOOK_RUN_OUTCOMES:
+                    text = att.get("content")
+                    text = "\n".join(map(str, text)) if isinstance(text, list) else str(text or "")
+                    owner = next((r for r in reversed(runs) if r["event"] == att.get("hookEvent")), None)
+                    if owner is not None and text:
+                        owner["content"] = (owner["content"] + "\n" + text if owner["content"] else text)[:4000]
+                    continue
+                if not att.get("command"):
+                    continue  # cancelled before it started: nothing to attribute
                 try:
                     ms = int(att.get("durationMs"))
                 except (TypeError, ValueError):
                     ms = None
+                outcome = "timeout" if att.get("timedOut") else _HOOK_RUN_OUTCOMES[kind]
                 runs.append({"toolUseId": att.get("toolUseID") or "", "event": att.get("hookEvent") or "",
                              "name": att.get("hookName") or "", "command": str(att.get("command") or "")[:400],
                              "ms": ms, "exit": str(att.get("exitCode") if att.get("exitCode") is not None else ""),
-                             "ok": att.get("type") == "hook_success", "ts": rec.get("timestamp") or "",
+                             "ok": outcome in ("ok", "blocked"), "outcome": outcome, "ts": rec.get("timestamp") or "",
                              # What the hook sent back: stdout/stderr as printed,
                              # content as the agent put it in the model's context.
                              **{k: str(att.get(k) or "")[:4000] for k in ("stdout", "stderr", "content")}})
     except OSError:
         return []
     return runs
+
+
+def _hook_identity(command: str) -> str:
+    """One hook however it was launched: the same command run from another
+    venv or home folder, or with a PYTHONPATH prefix, is the same hook."""
+    c = re.sub(r'^(?:[A-Za-z_]\w*=(?:"[^"]*"|\'[^\']*\'|\S+)\s+)+', "", command.strip())
+    c = re.sub(r'(["\']?)(?:/|~/|\$\{?\w+\}?/)[^"\'\s]*/([^"\'/\s]+)\1', r"\2", c)
+    return re.sub(r"\bpython3?(?:\.\d+)?\b", "python", c)
 
 
 _HOOK_SCAN_CACHE: Dict[str, Tuple[float, str, List[Dict[str, Any]]]] = {}
@@ -4420,17 +4448,18 @@ def get_hook_stats(hours: int = 24 * 7, root: Optional[Path] = None) -> Dict[str
             _HOOK_SCAN_CACHE[key] = cached
         _, cwd, runs = cached
         for run in runs:
-            hook = hooks.setdefault((run["event"], run["command"]), {
-                "event": run["event"], "command": run["command"], "name": run["name"],
-                "ms": [], "failures": 0, "last": "", "sessions": {}})
+            hook = hooks.setdefault((run["event"], _hook_identity(run["command"])), {
+                "event": run["event"], "name": run["name"], "commands": {},
+                "ms": [], "outcomes": {}, "last": "", "sessions": {}})
+            hook["commands"][run["command"]] = hook["commands"].get(run["command"], 0) + 1
             sess = hook["sessions"].setdefault(path.stem, {
                 "sessionId": path.stem, "cwd": cwd, "runs": 0, "totalMs": 0, "failures": 0, "last": ""})
             sess["runs"] += 1
             if run["ms"] is not None:
                 hook["ms"].append(run["ms"])
                 sess["totalMs"] += run["ms"]
-            if not run["ok"]:
-                hook["failures"] += 1
+            hook["outcomes"][run["outcome"]] = hook["outcomes"].get(run["outcome"], 0) + 1
+            if run["outcome"] in ("error", "timeout"):
                 sess["failures"] += 1
             hook["last"] = max(hook["last"], run["ts"])
             sess["last"] = max(sess["last"], run["ts"])
@@ -4443,9 +4472,17 @@ def get_hook_stats(hours: int = 24 * 7, root: Optional[Path] = None) -> Dict[str
         ms = sorted(hook.pop("ms"))
         sessions = sorted(hook.pop("sessions").values(), key=lambda x: x["last"], reverse=True)
         runs = sum(x["runs"] for x in sessions)
-        out.append({**hook, "runs": runs, "sessionCount": len(sessions), "totalMs": sum(ms),
-                    "avgMs": round(sum(ms) / len(ms)) if ms else None, "p95Ms": pct(ms, 0.95),
-                    "maxMs": ms[-1] if ms else None, "sessions": sessions[:50]})
+        # The variant run most often names the hook; the rest are other
+        # launches of it (another machine's venv, an env prefix).
+        commands = sorted(hook.pop("commands").items(), key=lambda kv: -kv[1])
+        outcomes = hook["outcomes"]
+        out.append({**hook, "command": commands[0][0], "variants": [c for c, _ in commands[1:6]],
+                    "runs": runs, "sessionCount": len(sessions), "totalMs": sum(ms),
+                    "failures": outcomes.get("error", 0) + outcomes.get("timeout", 0),
+                    "timeouts": outcomes.get("timeout", 0), "blocked": outcomes.get("blocked", 0),
+                    "cancelled": outcomes.get("cancelled", 0),
+                    "avgMs": round(sum(ms) / len(ms)) if ms else None, "p50Ms": pct(ms, 0.5),
+                    "p95Ms": pct(ms, 0.95), "maxMs": ms[-1] if ms else None, "sessions": sessions[:50]})
     out.sort(key=lambda h: h["totalMs"], reverse=True)
     return {"hours": hours, "hooks": out}
 

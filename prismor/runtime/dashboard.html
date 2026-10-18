@@ -2137,10 +2137,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
-  .hook-item { display:grid; grid-template-columns:minmax(0,2.2fr) 130px 64px 70px 70px 70px 56px 110px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
+  .hook-item { display:grid; grid-template-columns:minmax(0,2.2fr) 130px 64px 70px 70px 70px 96px 110px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
   .hook-item.hdr { cursor:default; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .hook-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hook-item .num, .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; }
+  .hook-item .num, .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
   .hook-sess { margin:-4px 0 8px 18px; padding:6px 10px; border-left:2px solid var(--gray-200); }
   .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size:12px; cursor:pointer; border-radius:4px; }
   .hook-sess-row:hover:not(.hdr) { background:var(--gray-100); }
@@ -3902,7 +3902,7 @@ function hookRunsOf(x, runs) {
   const key = x.name.replace(/…$/, '');
   const mine = (runs || sessHookRuns()).filter(r => (r.event + ': ' + r.command).startsWith(key));
   const ms = mine.map(r => r.ms).filter(v => v != null);
-  return {n: mine.length, avg: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null, fail: mine.filter(r => !r.ok).length};
+  return {n: mine.length, avg: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null, fail: mine.filter(hookRunFailed).length};
 }
 // One header shape for every summary row: status dot, short label, summary, chevron.
 function sessHead(dot, title, sum) {
@@ -4412,13 +4412,13 @@ async function renderHookStats() {
     catch (e) { ext.innerHTML = '<div class="empty">Could not read hook runs: ' + safe(e.message) + '</div>'; return; }
     if (_extTab !== 'hook') return;
   }
-  const hs = _hookStats.hooks || [], runs = hs.reduce((n, h) => n + h.runs, 0), fails = hs.reduce((n, h) => n + h.failures, 0);
-  const slow = hs.slice().sort((a, b) => (b.avgMs || 0) - (a.avgMs || 0))[0];
+  const hs = _hookStats.hooks || [], sum = k => hs.reduce((n, h) => n + (h[k] || 0), 0);
+  const runs = sum('runs'), fails = sum('failures'), timeouts = sum('timeouts');
   document.getElementById('extSummary').innerHTML = [
-    [hs.length, 'Hooks ran', 'distinct hook commands in Claude Code sessions'],
+    [hs.length, 'Hooks ran', 'distinct hooks in Claude Code sessions, however each was launched'],
     [fmtNum(runs), 'Runs', 'one per hook per agent event'],
     [fmtMs(hs.reduce((n, h) => n + h.totalMs, 0)), 'Total hook time', 'summed; hooks of one event run in parallel'],
-    [fails, 'Failed runs', 'a non-zero exit or a timeout', fails ? 'warn' : '']]
+    [fails, 'Failed runs', timeouts ? timeouts + ' timed out, ' + (fails - timeouts) + ' exited with an error' : 'a non-zero exit or a timeout', fails ? 'warn' : '']]
     .map(([n, label, sub, cls]) => '<div class="ext-stat ' + (cls || '') + '" style="cursor:default"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
   renderHookList();
 }
@@ -4430,7 +4430,8 @@ function hookIdentity(h) {
 function renderHookList() {
   const q = _extQuery.toLowerCase(), hs = ((_hookStats || {}).hooks || []).filter(h => !q || (h.event + ' ' + h.command).toLowerCase().includes(q));
   const tone = ms => ms >= 5000 ? ' style="color:#ef4444;font-weight:600"' : ms >= HOOK_SLOW_MS ? ' style="color:#d97706;font-weight:600"' : '';
-  const hdr = '<div class="hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num">Avg</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  const hdr = '<div class="hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  const failed = h => h.failures ? '<b style="color:#ef4444" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + (h.timeouts ? '<small style="font-weight:500"> · ' + h.timeouts + ' t/o</small>' : '') + '</b>' : '-';
   document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
     const id = hookIdentity(h), k = h.event + '|' + h.command;
     const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg</span><span class="num">Failed</span><span>Last ran</span></div>' +
@@ -4439,12 +4440,14 @@ function renderHookList() {
         '<span class="num"' + tone(x.totalMs / x.runs) + '>' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b style="color:#ef4444">' + x.failures + '</b>' : '-') + '</span>' +
         '<span class="ext-quiet">' + safe(extWhen(x.last)) + '</span></div>').join('') +
       (h.sessionCount > h.sessions.length ? '<div class="empty">Showing the latest ' + h.sessions.length + ' of ' + h.sessionCount + ' sessions.</div>' : '') +
-      '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div></div>' : '';
+      '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div>' +
+      ((h.variants || []).length ? '<div class="empty">Also launched as:</div>' + h.variants.map(v => '<div class="hook-cmd dev-mono">' + safe(v) + '</div>').join('') : '') +
+      (h.failures || h.blocked || h.cancelled ? '<div class="empty">' + [h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error', h.blocked && h.blocked + ' blocked the call (exit 2)', h.cancelled && h.cancelled + ' cancelled when the turn stopped'].filter(Boolean).join(' · ') + '</div>' : '') + '</div>' : '';
     return '<div class="ext-row hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
       '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span></span>' +
       '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
-      '<span class="num"' + tone(h.avgMs) + '>' + fmtMs(h.avgMs) + '</span><span class="num"' + tone(h.p95Ms) + '>' + fmtMs(h.p95Ms) + '</span>' +
-      '<span class="num">' + (h.failures ? '<b style="color:#ef4444">' + h.failures + '</b>' : '-') + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
+      '<span class="num"' + tone(h.p50Ms) + ' title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num"' + tone(h.p95Ms) + '>' + fmtMs(h.p95Ms) + '</span>' +
+      '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
   }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not.') + '</div>';
 }
 function renderExtKindList() {
@@ -6465,9 +6468,12 @@ function hookLabel(cmd){
   const script = c.match(/[^\s"'=]+\.(?:sh|py|js|mjs|ts|rb)\b/);
   return script ? script[0].split('/').slice(-2).join('/') : c.slice(0, 60);
 }
+// Older stored runs have no outcome; fall back to what the agent logged.
+function hookRunFailed(r){ return r.outcome ? r.outcome === 'error' || r.outcome === 'timeout' : !r.ok || (r.exit && r.exit !== '0'); }
+const HOOK_OUTCOME_TEXT = {timeout: 'timed out: the agent killed it', error: 'the agent logged it as an error', blocked: 'blocked the call (exit 2)', cancelled: 'cancelled when the turn stopped'};
 function hookPhaseStats(runs){
   const slowest = Math.max(0, ...runs.map(r => r.ms || 0));
-  return {slowest, fail: runs.some(r => !r.ok || (r.exit && r.exit !== '0'))};
+  return {slowest, fail: runs.some(hookRunFailed)};
 }
 function hookChip(ev){
   const runs = ev.hookRuns || [];
@@ -6475,7 +6481,7 @@ function hookChip(ev){
   const phases = {};
   runs.forEach(r => (phases[r.event] = phases[r.event] || []).push(r));
   const wait = Object.values(phases).reduce((n, p) => n + hookPhaseStats(p).slowest, 0);
-  const fail = runs.some(r => !r.ok || (r.exit && r.exit !== '0'));
+  const fail = runs.some(hookRunFailed);
   return '<span class="hook-chip' + (fail ? ' fail' : wait >= HOOK_SLOW_MS ? ' slow' : '') + '" title="' +
     safeAttr(runs.map(r => r.event + ' ' + hookLabel(r.command) + ' ' + fmtDur(r.ms)).join('\n')) + '">' +
     runs.length + ' hook' + (runs.length === 1 ? '' : 's') + ' · ' + fmtDur(wait) + '</span>';
@@ -6492,13 +6498,13 @@ function hookRunsHtml(ev){
       const input = p.event === 'PostToolUse' ? ev.postHookInput : p.event === 'PreToolUse' || p.event === ev.agentEvent ? ev.hookInput : '';
       return '<div class="hook-phase">' + safe(p.event) + ' · ' + p.runs.length + ' ran at once · agent waited ' + fmtDur(st.slowest) + '</div>' +
         (input ? '<details class="hook-sent"><summary>What every ' + safe(p.event) + ' hook received</summary>' + block('stdin', input) + '</details>' : '') +
-        p.runs.map(r => { const bad = !r.ok || (r.exit && r.exit !== '0'), slow = (r.ms || 0) >= HOOK_SLOW_MS;
+        p.runs.map(r => { const bad = hookRunFailed(r), slow = (r.ms || 0) >= HOOK_SLOW_MS;
           const out = block('Sent back (stdout)', r.stdout) + block('Errors (stderr)', r.stderr) + block('Added to the model\'s context', r.content);
           return '<details class="hook-run' + (bad ? ' fail' : slow ? ' slow' : '') + '"><summary><code>' + safe(hookLabel(r.command)) + '</code>' +
-            '<span class="ms">' + fmtDur(r.ms) + (bad ? ' · exit ' + safe(r.exit || '?') : '') + '</span>' +
+            '<span class="ms">' + fmtDur(r.ms) + (r.outcome === 'timeout' ? ' · timed out' : bad ? ' · exit ' + safe(r.exit || '?') : '') + '</span>' +
             '<span class="bar"><i style="width:' + Math.max(2, Math.round(100 * (r.ms || 0) / max)) + '%"></i></span></summary>' +
             '<div class="hook-io"><em>Command</em><pre>' + safe(r.command) + '</pre></div>' +
-            '<div class="hook-io"><em>Took</em> ' + fmtDur(r.ms) + ' · exit ' + safe(r.exit || '0') + (r.ok ? '' : ' · the agent logged it as an error') + '</div>' +
+            '<div class="hook-io"><em>Took</em> ' + fmtDur(r.ms) + (r.exit ? ' · exit ' + safe(r.exit) : '') + (HOOK_OUTCOME_TEXT[r.outcome] ? ' · ' + HOOK_OUTCOME_TEXT[r.outcome] : r.ok ? '' : ' · the agent logged it as an error') + '</div>' +
             (out || '<div class="hook-io"><em>Sent back nothing</em></div>') + '</details>'; }).join(''); }).join('') +
     '</div></div>';
 }
