@@ -58,10 +58,6 @@ _NON_OVERRIDABLE_RULE_IDS = frozenset({
     # poisoned .prismor/policy.yaml also disable detection of itself.
     # See FIX_PLAN.md §3.5.
     "memory-integrity-mismatch",
-    # Cloud instance metadata hands out the machine credentials in one request;
-    # as a non-core category (reconnaissance) it only warned under --recommended.
-    "cloud-metadata-ssrf",
-    "mcp-arg-metadata-endpoint",
     # Self-protection rules; see _SELF_PROTECTION_RULE_IDS below. Listed here so
     # no overlay can disable or weaken them, and listed there so the opt-in
     # floor of an explicit-selection policy cannot leave them observing.
@@ -108,10 +104,15 @@ _SELF_PROTECTION_RULE_IDS = frozenset({
 
 # Recommended (`setup --recommended`) on top of the floor, but still overridable:
 # a repo that legitimately prints a credential file or registers an autostart
-# entry can relax these with `prismor allow`, unlike floor rules.
+# entry can relax these with `prismor allow`, unlike floor rules. The metadata
+# rules hand out machine credentials in one request, yet their category
+# (reconnaissance) is not core, so without this they only warned; they stay
+# retunable from the console (observe, off, drop one host).
 _RECOMMENDED_RULE_IDS = frozenset({
     "secret-file-shell-read",
     "persistence-windows-autorun",
+    "cloud-metadata-ssrf",
+    "mcp-arg-metadata-endpoint",
 })
 
 # Self-protection rules whose jurisdiction is strictly THIS machine: they guard

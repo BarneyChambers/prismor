@@ -1,9 +1,8 @@
 """Coverage gaps found running agents on Windows against PR #652.
 
 - git-remote-hijack: lease / -f / +refspec pushes to a protected branch.
-- cloud-metadata rules are floor (non-overridable), so --recommended blocks IMDS.
-- secret-file-shell-read and persistence-windows-autorun are recommended but
-  stay overridable.
+- cloud-metadata, secret-file-shell-read and persistence-windows-autorun are
+  recommended (so --recommended blocks them) but stay overridable.
 """
 import re
 
@@ -56,9 +55,12 @@ def test_ordinary_pushes_do_not_match(cmd):
     assert not _hits("git-remote-hijack", cmd)
 
 
-def test_metadata_rules_are_floor():
+def test_metadata_rules_are_recommended_and_stay_retunable():
+    # Recommended so --recommended blocks IMDS, but not floor: the console must
+    # still be able to observe, disable or narrow them (test_mcp_guardrails).
     for rid in ("cloud-metadata-ssrf", "mcp-arg-metadata-endpoint"):
-        assert policy_engine.is_floor_protected_rule(rid, _RULES[rid])
+        assert rid in policy_engine._RECOMMENDED_RULE_IDS
+        assert not policy_engine.is_floor_protected_rule(rid, _RULES[rid])
 
 
 def test_recommended_extras_are_recommended_but_not_floor():
@@ -68,7 +70,6 @@ def test_recommended_extras_are_recommended_but_not_floor():
         assert rid in _RULES, rid
         assert by_id[rid]["recommended"] and not by_id[rid]["floor"]
         assert not policy_engine.is_floor_protected_rule(rid, _RULES[rid])
-    assert by_id["cloud-metadata-ssrf"]["recommended"] and by_id["cloud-metadata-ssrf"]["floor"]
 
 
 # ── pause gate: same bar as `prismor unlock` ──────────────────────────────────
