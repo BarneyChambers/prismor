@@ -4,12 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Prismor Dashboard</title>
-<link rel="icon" type="image/png" href="https://prismor.dev/Prismor_Logo.png" />
+<link rel="icon" type="image/png" href="/static/prismor-logo.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="/static/chart.umd.min.js"></script>
+<script src="/static/marked.min.js"></script>
 <style>
 /* The Docs page is a frame, not a document: the search bar stays put and the
    list and the reader scroll independently -- reading a long page must not
@@ -2462,7 +2462,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div class="topbar">
   <div class="topbar-left">
     <a class="topbar-brand" href="#" onclick="document.querySelector('.tab-btn[data-tab=&quot;overview&quot;]')?.click();return false">
-      <img class="topbar-logo" src="https://prismor.dev/Prismor_Logo.png" alt="Prismor" />
+      <img class="topbar-logo" src="/static/prismor-logo.png" alt="Prismor" />
       <span class="sidebar-brand-name">Prismor</span>
     </a>
     <span class="breadcrumb-sep">/</span>
@@ -3392,7 +3392,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="up-modal" role="dialog" aria-modal="true" aria-label="Prismor Enterprise">
     <div class="up-modal-hero">
       <button class="up-modal-close" onclick="closeUpgradeModal()" aria-label="Close">✕</button>
-      <img src="https://prismor.dev/Prismor_Logo.png" alt="" />
+      <img src="/static/prismor-logo.png" alt="" />
       <h3>Prismor Enterprise</h3>
       <p>Everything in the open-source agent, plus an org control plane for security teams. Cloud or self-hosted.</p>
     </div>
@@ -3417,7 +3417,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <!-- ═══ LOADING SCREEN ═══════════════════════════════════════════════════ -->
 <div id="loadingScreen">
   <div id="loadingCard">
-    <img src="https://prismor.dev/Prismor_Logo.png" id="loadingLogo" alt="Prismor" />
+    <img src="/static/prismor-logo.png" id="loadingLogo" alt="Prismor" />
     <div id="loadingTitle">Prismor</div>
     <div id="loadingBar"><div id="loadingFill"></div></div>
     <div id="loadingLabel">Loading dashboard…</div>

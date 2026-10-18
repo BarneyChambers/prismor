@@ -1587,7 +1587,7 @@ def report_payload(workspace: Path) -> Dict[str, Any]:
             "extensions": [{k: r.get(k) for k in keep} for r in view["rows"][:2000]]}
 
 
-def send_report(workspace: Path, *, timeout: int = 5) -> bool:
+def send_report(workspace: Path, *, timeout: int = 5, force: bool = False) -> bool:
     """POST the ledger to the control plane so a fleet sees what one machine
     sees. Same contract as ``discover.send_report``: a silent no-op when the
     device is not enrolled, and it never raises."""
@@ -1596,15 +1596,29 @@ def send_report(workspace: Path, *, timeout: int = 5) -> bool:
         ident = _identity.load_identity()
         if not ident or _identity.revoked_info() is not None:
             return False
+        # Control plane known unreachable (see telemetry_spool): don't pay the
+        # timeout on the hook path; the next ledger change reports again. A
+        # user-run `prismor extensions report` passes force and always tries.
+        from prismor.runtime.enterprise import telemetry_spool as _spool
+        now = time.time()
+        if not force and _spool.backoff_active(now):
+            return False
         from prismor.runtime.http_ua import user_agent as _ua
+        from urllib.error import HTTPError, URLError
         from urllib.request import Request, urlopen
         body = report_payload(workspace)
         base = str(ident.get("api_base") or _identity.api_base()).rstrip("/")
         req = Request(f"{base}/api/extensions/report", data=json.dumps(body).encode("utf-8"), method="POST",
                       headers={"Content-Type": "application/json", "User-Agent": _ua(),
                                "Authorization": f"Bearer {ident.get('device_key')}"})
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310 - the enrolled control plane  # nosec B310
-            return 200 <= resp.status < 300
+        try:
+            with urlopen(req, timeout=timeout) as resp:  # noqa: S310 - the enrolled control plane  # nosec B310
+                return 200 <= resp.status < 300
+        except HTTPError:
+            return False
+        except (URLError, OSError):
+            _spool.note_upload_failure(now)
+            return False
     except Exception:
         return False
 
