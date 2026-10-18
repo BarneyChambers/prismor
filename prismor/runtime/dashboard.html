@@ -2289,13 +2289,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #loadingScreen { background: var(--app-bg); }
 
   /* policy page */
-  .prec-details { border: 1px solid var(--hairline); border-radius: 8px; margin-bottom: 18px; background: var(--surface); }
-  .prec-details > summary {
-    list-style: none; cursor: pointer; display: flex; align-items: center; gap: 14px; padding: 14px 18px;
-  }
-  .prec-details > summary::-webkit-details-marker { display: none; }
-  .prec-summary { font-size: 14px; font-weight: 500; color: var(--ink); flex: 1; }
-  .prec-toggle { font-size: 12.5px; color: var(--muted); }
+  .pc-agent-note { font-size: 13px; color: var(--gray-600); line-height: 1.5; margin: 4px 0 14px; }
+  .pc-advanced { margin-bottom: 18px; }
+  .pc-sub { display: flex; align-items: center; gap: 6px; margin: 18px 0 4px; flex-wrap: wrap; }
+  .pc-sub .kpi-label { margin-right: 6px; }
+  .pc-sub-btn { font: inherit; font-size: 12.5px; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface); color: var(--muted); cursor: pointer; }
+  .pc-sub-btn.active { color: var(--ink); border-color: var(--ink); }
+  #pcAgent { min-width: 180px; }
+  #pcAgentControls, #globalToolGrid .tp-block { border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 4px 18px; }
+  #globalToolGrid .tp-block { padding: 14px 18px; }
   .rt-bar { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); padding: 12px 18px; margin-bottom: 14px; font-size: 13.5px; color: var(--ink); }
   .rt-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .rt-grow { flex: 1; }
@@ -2310,11 +2312,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .cl-body ul { padding-left: 18px; }
   .cl-body li { margin: 4px 0; }
   .cl-out { white-space: pre-wrap; font-size: 11.5px; background: var(--gray-100); border-radius: 6px; padding: 10px; margin: 0 28px 16px; max-height: 160px; overflow: auto; }
-  .prec-details[open] > summary { border-bottom: 1px solid var(--hairline); }
-  .prec-details[open] .prec-toggle::after { content: ' · hide'; }
-  .prec-details .drawer-event-card { border: none; background: var(--surface); border-radius: 0 0 8px 8px; padding: 16px 18px; margin: 0; }
-  .prec-details .drawer-event-card > .drawer-section-title,
-  .prec-details .drawer-event-card > .drawer-section-title + div { display: none; }
   .policy-scope-nav { background: none; padding: 0; gap: 4px; border-bottom: 1px solid var(--hairline); border-radius: 0; margin-bottom: 22px; align-items: center; }
   .policy-scope-btn { font-size: 13.5px; padding: 10px 12px; border-radius: 0; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .policy-scope-btn.active { background: none; box-shadow: none; color: var(--ink); border-bottom-color: var(--ink); }
@@ -3150,30 +3147,46 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <span class="hint">human-only · live within 30 s</span>
   </div>
 
+  <!-- One question first: who does this apply to? Everything below follows it. -->
   <div class="rt-bar">
+    <div class="rt-cell"><label class="kpi-label" for="pcAgent">Applies to</label>
+      <select id="pcAgent" class="fsel" onchange="setPolicyAgent(this.value)"><option value="">All agents</option></select></div>
+    <div class="rt-cell rt-grow"><span id="rtPolicy">…</span></div>
     <div class="rt-cell"><span class="kpi-label">Version</span><span id="rtVersion">…</span></div>
-    <div class="rt-cell rt-grow"><span class="kpi-label">Applied policy</span><span id="rtPolicy">…</span></div>
   </div>
 
   <div id="enrollBanner"></div>
   <div id="workspaceBanner"></div>
-  <details class="prec-details" id="precDetails">
-    <summary>
-      <span class="kpi-label">Which policy governs</span>
-      <span id="precSummary" class="prec-summary">Loading…</span>
-      <span class="prec-toggle">Show the four layers</span>
-    </summary>
-    <div id="policyPrecedenceCard" class="drawer-event-card"></div>
-  </details>
 
+  <!-- One agent: what the engine can scope per agent -->
+  <div id="pcAgentPane" style="display:none">
+    <div class="pc-agent-note" id="pcAgentNote"></div>
+    <div id="pcAgentControls" class="agent-ctrl-card"></div>
+  </div>
+
+  <div id="pcAllPane">
   <div class="policy-scope-nav">
     <button class="policy-scope-btn active" data-pscope="rules">Rules</button>
-    <button class="policy-scope-btn" data-pscope="egress">Network egress</button>
-    <span class="policy-scope-sep">YAML files</span>
-    <button class="policy-scope-btn" data-pscope="project">Project</button>
-    <button class="policy-scope-btn" data-pscope="global">Global</button>
-    <button class="policy-scope-btn" data-pscope="enterprise">Enterprise</button>
-    <button class="policy-scope-btn" data-pscope="effective">Effective (merged)</button>
+    <button class="policy-scope-btn" data-pscope="tools">Tools</button>
+    <button class="policy-scope-btn" data-pscope="egress">Network</button>
+    <button class="policy-scope-btn" data-pscope="advanced">Advanced</button>
+  </div>
+
+  <!-- Advanced: the policy layers and the raw YAML behind them -->
+  <div id="pscope-advanced-head" class="pc-advanced" style="display:none">
+    <div id="policyPrecedenceCard"></div>
+    <div class="pc-sub">
+      <span class="kpi-label">YAML</span>
+      <button class="pc-sub-btn" data-psub="project">Project</button>
+      <button class="pc-sub-btn" data-psub="effective">Effective (merged)</button>
+      <button class="pc-sub-btn" data-psub="enterprise">Enterprise</button>
+      <button class="pc-sub-btn" data-psub="global">Global</button>
+    </div>
+  </div>
+
+  <!-- Tool permissions for every agent -->
+  <div id="pscope-tools" class="policy-scope-pane">
+    <div id="globalToolGrid"><div class="empty">Loading…</div></div>
   </div>
 
   <!-- Per-rule toggle list (project-scoped) -->
@@ -3373,6 +3386,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="policy-actions">
       <span style="font-size: 12px;color:var(--gray-400)">Read-only: edit Global or Project to change this.</span>
     </div>
+  </div>
   </div>
 </div>
 
@@ -5421,11 +5435,54 @@ document.querySelectorAll('.policy-scope-btn').forEach(btn => {
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+const _YAML_SCOPES = ['project', 'effective', 'enterprise', 'global'];
+let _lastYamlScope = 'project';
 function setPolicyScopeTab(scope) {
-  document.querySelectorAll('.policy-scope-btn').forEach(b => b.classList.remove('active'));
+  // The YAML files live under Advanced; picking Advanced reopens the last one.
+  if (scope === 'advanced') scope = _lastYamlScope;
+  const yaml = _YAML_SCOPES.includes(scope);
+  if (yaml) _lastYamlScope = scope;
+  if (_pcAgent) setPolicyAgent('');  // tabs are the shared policy, never one agent's
+  document.querySelectorAll('.policy-scope-btn').forEach(b => b.classList.toggle('active', b.dataset.pscope === (yaml ? 'advanced' : scope)));
+  document.querySelectorAll('.pc-sub-btn').forEach(b => b.classList.toggle('active', b.dataset.psub === scope));
+  document.getElementById('pscope-advanced-head').style.display = yaml ? '' : 'none';
   document.querySelectorAll('.policy-scope-pane').forEach(p => p.classList.remove('active'));
-  document.querySelector('.policy-scope-btn[data-pscope="' + scope + '"]')?.classList.add('active');
   document.getElementById('pscope-' + scope)?.classList.add('active');
+  if (scope === 'tools') renderGlobalTools();
+}
+document.querySelectorAll('.pc-sub-btn').forEach(b => b.addEventListener('click', () => setPolicyScopeTab(b.dataset.psub)));
+
+// ── "Applies to": all agents, or one ──────────────────────────────────────
+let _pcAgent = '';
+function fillPolicyAgents() {
+  const sel = document.getElementById('pcAgent');
+  if (!sel || !_agentsCache) return;
+  // Busiest first: the agent you mean is almost always one that ran recently.
+  const agents = (_agentsCache.agents || []).slice().sort((a, b) => (b.total_calls || 0) - (a.total_calls || 0));
+  sel.innerHTML = '<option value="">All agents</option>' + agents.map(a =>
+    '<option value="' + safeAttr(a.name) + '">' + safe(a.name) +
+      (!a.enabled ? ' (off)' : a.mode ? ' (' + safe(a.mode) + ')' : '') + '</option>').join('');
+  sel.value = _pcAgent;
+}
+function setPolicyAgent(name) {
+  _pcAgent = name || '';
+  const sel = document.getElementById('pcAgent');
+  if (sel) sel.value = _pcAgent;
+  document.getElementById('pcAgentPane').style.display = _pcAgent ? '' : 'none';
+  document.getElementById('pcAllPane').style.display = _pcAgent ? 'none' : '';
+  if (!_pcAgent) return;
+  const eff = (_policyData || {}).effective || {};
+  document.getElementById('pcAgentNote').innerHTML =
+    'Settings for <b>' + safe(_pcAgent) + '</b> only. The ' + (eff.total || '') + ' rules are shared by every agent: ' +
+    'this agent\'s mode decides whether they block or only report. ' +
+    '<a href="#" onclick="setPolicyAgent(\'\');return false">Edit the shared rules</a>';
+  renderAgentControls(_pcAgent);
+}
+function renderGlobalTools() {
+  const el = document.getElementById('globalToolGrid');
+  if (!el || !_agentsCache) return;
+  el.innerHTML = '<div class="pc-agent-note">Applies to every agent. Pick an agent under <b>Applies to</b> to add rules for just that one.</div>' +
+    renderToolPolicyGrid({name: '', deny_tools: _agentsCache.global_deny_tools, ask_tools: _agentsCache.global_ask_tools});
 }
 function policyScopeTarget(scope) {
   return ['global', 'project', 'enterprise', 'rules', 'effective'].includes(scope) ? scope : 'effective';
@@ -5714,8 +5771,13 @@ function agentStat(label, value, accent){
     '<div class="agent-stat-value'+(accent?' accent':'')+'">'+value+'</div></div>';
 }
 function renderAgentControls(agentName){
+  // Drawn on the agent page and on Policy Control when that agent is picked.
+  if (_pcAgent === agentName && document.getElementById('pcAgentControls'))
+    _renderAgentControlsInto(document.getElementById('pcAgentControls'), agentName);
   const el = document.getElementById('agentControls');
-  if (!el) return;
+  if (el) _renderAgentControlsInto(el, agentName);
+}
+function _renderAgentControlsInto(el, agentName){
   const a = (_agentsCache?.agents||[]).find(x=>x.name===agentName);
   if (!a){ el.innerHTML = '<div class="node-panel-empty">This agent has recorded sessions but has not registered live controls yet. Controls appear once it runs in a Prismor-enabled workspace.</div>'; return; }
   const modeOpts = [['','inherit (global)'],['observe','observe'],['enforce','enforce']]
@@ -5768,7 +5830,7 @@ function renderToolPolicyGrid(a){
       '</span></div>').join('');
   return '<div class="agent-ctrl tp-block"><label>Tool permissions</label>'+
     '<div class="tp-grid">'+rows+'</div>'+
-    '<span class="agent-ctrl-hint">Per-tool handling for this agent. Ask routes the call '+
+    '<span class="agent-ctrl-hint">Per-tool handling for '+(a.name ? 'this agent' : 'every agent')+'. Ask routes the call '+
     'to the approvals queue; a headless gateway waits and fails closed if unanswered.</span></div>';
 }
 
@@ -5777,7 +5839,14 @@ async function toolPolicySet(agent, tool, action){
     const ws = _serverWorkspace || '';
     const r = await apiFetch('/api/tool-policy', {method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({scope:'agent', agent, tool, action, workspace: ws})});
+      // No agent = the rule for every agent (Policy Control → Tools).
+      body: JSON.stringify({scope: agent ? 'agent' : 'global', agent: agent || null, tool, action, workspace: ws})});
+    if (!agent) {
+      if (_agentsCache) { _agentsCache.global_deny_tools = r.deny_tools || []; _agentsCache.global_ask_tools = r.ask_tools || []; }
+      renderGlobalTools();
+      toast('✓ '+tool+': '+action+' for every agent');
+      return;
+    }
     const a = (_agentsCache?.agents||[]).find(x=>x.name===agent);
     if (a){ a.deny_tools = r.deny_tools || []; a.ask_tools = r.ask_tools || []; }
     renderAgentControls(agent);
@@ -7012,6 +7081,9 @@ async function loadAgents() {
     _agentsCache = data;
     renderAgents(data);
     syncNavCounts();
+    fillPolicyAgents();
+    if (document.getElementById('pscope-tools')?.classList.contains('active')) renderGlobalTools();
+    if (_pcAgent) renderAgentControls(_pcAgent);
   } catch (e) {
     console.error('[prismor] agents:', e);
     if (!_agentsCache) {
@@ -7084,6 +7156,8 @@ async function agentSet(name, fields) {
       const a = (_agentsCache.agents || []).find(x => x.name === name);
       if (a) { a.enabled = result.enabled; a.mode = result.mode; a.iam_profile = result.iam_profile; }
       renderAgents(_agentsCache);
+      fillPolicyAgents();
+      if (_pcAgent === name) renderAgentControls(name);
       if (document.getElementById('page-agent')?.classList.contains('active')) { renderAgentHero(name); renderAgentControls(name); }
     }
     if (fields.enabled === false)      toast(name + ' blocked: all tool calls denied');
@@ -7339,6 +7413,7 @@ async function loadPolicy() {
     _policyData = data;
     _policyCache = data;
     renderPolicyTab(data);
+    if (!_agentsCache) loadAgents();  // fills "Applies to" and the Tools tab
   } catch(e) { console.error('[prismor] policy:', e); }
 }
 
@@ -7464,8 +7539,6 @@ function renderPolicyTab(data) {
     const text = !win ? 'No policy layers loaded yet.'
       : (win.label || win.scope) + ' governs · ' + (win.mode || eff.mode || 'observe')
         + (eff.total ? ' · ' + (eff.blocking || 0) + ' of ' + eff.total + ' rules block' : '');
-    const sum = document.getElementById('precSummary');
-    if (sum) sum.textContent = text;
     const rt = document.getElementById('rtPolicy');
     if (rt) rt.innerHTML = safe(text) + (win ? ' <button class="btn-ghost" onclick="openPolicyScope(\'' + safeJsArg(policyScopeTarget(win.scope)) + '\')">Open</button>' : '');
   }

@@ -1010,7 +1010,12 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                     })
 
                 iam_profiles = list_agent_ids(load_iam_config(workspace))
-                self._send_json({"agents": items, "iam_profiles": iam_profiles})
+                from prismor.runtime.agents import load_agents_config
+                cfg = load_agents_config(workspace)
+                self._send_json({"agents": items, "iam_profiles": iam_profiles,
+                                 # Tool rules that apply to every agent.
+                                 "global_deny_tools": list(cfg.get("global_deny_tools") or []),
+                                 "global_ask_tools": list(cfg.get("global_ask_tools") or [])})
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
             return
