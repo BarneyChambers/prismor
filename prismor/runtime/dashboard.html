@@ -2515,6 +2515,32 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-stat.warn b { color: var(--tone-warn-fg); }
   .rule-row.locked, html[data-theme="dark"] .rule-row.locked { background: var(--surface-muted); }
 
+  /* A faint rainbow drifting behind everything. Fixed, never intercepts
+     clicks, slower than anyone would notice, and still for reduced motion. */
+  body::before {
+    content: ''; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(38vmax 30vmax at 18% 22%, rgba(255,122,162,.24), transparent 70%),
+      radial-gradient(34vmax 28vmax at 82% 18%, rgba(255,196,92,.21), transparent 70%),
+      radial-gradient(40vmax 32vmax at 70% 78%, rgba(96,200,255,.22), transparent 70%),
+      radial-gradient(36vmax 30vmax at 24% 82%, rgba(150,120,255,.21), transparent 70%),
+      radial-gradient(30vmax 24vmax at 50% 50%, rgba(110,220,160,.15), transparent 70%);
+    filter: blur(40px);
+    animation: bg-drift 60s ease-in-out infinite alternate;
+  }
+  html[data-theme="dark"] body::before { opacity: .55; }
+  /* Frosted chrome so the tint reads through the top bar and sidebar too. */
+  .topbar, .tab-nav, html[data-theme="dark"] .topbar, html[data-theme="dark"] .tab-nav {
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2); backdrop-filter: blur(18px) saturate(1.2);
+  }
+  @keyframes bg-drift {
+    0%   { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50%  { transform: translate3d(4vmax, -3vmax, 0) rotate(8deg) scale(1.06); }
+    100% { transform: translate3d(-3vmax, 3vmax, 0) rotate(-6deg) scale(1.02); }
+  }
+  @media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+
   /* Cards */
   .card, .drawer-event-card, .rt-bar, .prec-table, .tp-grid, .agent-ctrl-card, .banner, .chart-card { border-radius: var(--r-card); }
 
