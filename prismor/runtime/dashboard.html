@@ -2514,6 +2514,10 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-stat b { font-size: 24px; font-weight: 500; }
   .ext-stat.warn b { color: var(--tone-warn-fg); }
   .rule-row.locked, html[data-theme="dark"] .rule-row.locked { background: var(--surface-muted); }
+  .rule-floor-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px 14px 102px; background: var(--tone-warn-bg); border-bottom: 1px solid var(--hairline); font-size: 12px; color: var(--ink-2); }
+  .rule-floor-form > span:first-child { flex-basis: 100%; }
+  .rule-floor-form .finput { width: 220px; }
+  .rule-floor-err { color: var(--tone-danger-fg); }
 
   /* A faint rainbow drifting behind everything. Fixed, never intercepts
      clicks, slower than anyone would notice, and still for reduced motion. */
@@ -3319,7 +3323,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     <div class="rules-legend">
       <span><span class="rule-verdict blocks">blocks</span> stops the call</span>
       <span><span class="rule-verdict reports">reports</span> call proceeds</span>
-      <span><span class="rule-lock"><svg class="icon"><use href="#i-lock"/></svg> Pinned</span> cannot be turned off</span>
+      <span><span class="rule-lock"><svg class="icon"><use href="#i-lock"/></svg> Pinned</span> safety floor, off only with your unlock password</span>
       <span class="rules-legend-note">Toggle = rule on or off. Block vs report comes from the policy mode.</span>
     </div>
     <div class="rules-toolbar">
@@ -7864,9 +7868,13 @@ function renderRules() {
     const on = _rulesState[r.id];
     const locked = !!r.locked;
     const lockBadge = locked
-      ? '<span class="rule-lock" title="' + safeAttr(r.lockReason || 'Pinned rule') + '"><svg class="icon"><use href="#i-lock"/></svg> '
-        + (r.selfProtect ? 'Always on' : 'Pinned') + '</span>'
+      ? '<span class="rule-lock" title="' + safeAttr(r.floorOff ? 'Pinned rule you turned off with your unlock password'
+          : (r.lockReason || 'Pinned rule') + (r.floorOffAllowed ? ' Turning it off needs your unlock password.' : '')) + '"><svg class="icon"><use href="#i-lock"/></svg> '
+        + (r.selfProtect ? 'Always on' : r.floorOff ? 'Pinned · off' : 'Pinned') + '</span>'
       : '';
+    // A pinned rule can still be switched by the person who knows the unlock password.
+    const floorSwitch = locked && r.floorOffAllowed;
+    const fixed = (locked && !floorSwitch) || _policyLocked;
     // What this rule does right now. Without it every row is an identical
     // green toggle whether it stops a call or merely notes it.
     const verdict = !on ? ''
@@ -7879,16 +7887,52 @@ function renderRules() {
       + '<span class="rule-sev ' + safeAttr(r.severity) + '">' + safe(String(r.severity || '').toLowerCase()) + '</span>'
       + '<div class="rule-main"><div class="rule-meta"><div class="rule-id">' + safe(r.id) + '</div>' + verdict + lockBadge + '</div>'
       + '<div class="rule-title">' + safe(r.title) + '</div></div>'
-      + '<label class="rule-toggle' + (locked || _policyLocked ? ' locked' : '') + '"><input type="checkbox" data-rid="' + safeAttr(r.id) + '"'
-      + (on ? ' checked' : '') + (locked || _policyLocked ? ' disabled' : '') + '><span class="rule-track"></span></label>'
-      + '</div>';
+      + '<label class="rule-toggle' + (fixed ? ' locked' : '') + '"><input type="checkbox" data-rid="' + safeAttr(r.id) + '"'
+      + (floorSwitch ? ' data-floor="1"' : '') + (on ? ' checked' : '') + (fixed ? ' disabled' : '') + '><span class="rule-track"></span></label>'
+      + '</div>'
+      + (_floorAsk === r.id ? floorOffForm(r) : '');
   }).join('');
   list.querySelectorAll('input[data-rid]').forEach(cb => {
     cb.addEventListener('change', () => {
+      if (cb.dataset.floor) {
+        // Pinned rules switch now, not on Save: off asks for the password first.
+        if (cb.checked) floorOffSet(cb.dataset.rid, false);
+        else { _floorAsk = cb.dataset.rid; renderRules(); }
+        return;
+      }
       _rulesState[cb.dataset.rid] = cb.checked;
       renderRules();
     });
   });
+  const pw = document.getElementById('floorPw');
+  if (pw) { pw.focus(); pw.addEventListener('keydown', e => { if (e.key === 'Enter') floorOffSet(_floorAsk, true); if (e.key === 'Escape') { _floorAsk = ''; renderRules(); } }); }
+}
+
+let _floorAsk = '';
+function floorOffForm(r) {
+  return '<div class="rule-floor-form">'
+    + '<span>Turning off <b>' + safe(r.id) + '</b> removes a safety-floor rule for every agent on this machine.</span>'
+    + '<input id="floorPw" type="password" class="finput" autocomplete="current-password" placeholder="Unlock password" />'
+    + '<button class="btn-primary" onclick="floorOffSet(_floorAsk, true)">Turn off</button>'
+    + '<button class="btn-ghost" onclick="_floorAsk=\'\';renderRules()">Cancel</button>'
+    + '<span id="floorPwErr" class="rule-floor-err"></span></div>';
+}
+async function floorOffSet(rule, off) {
+  const pw = document.getElementById('floorPw');
+  try {
+    const res = await fetch('/api/policy/floor-off', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule, off, password: off ? (pw ? pw.value : '') : undefined})});
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = document.getElementById('floorPwErr');
+      if (err) err.textContent = d.error || ('HTTP ' + res.status); else toast(d.error || 'Failed', true);
+      if (pw) { pw.value = ''; pw.focus(); }
+      return;
+    }
+    _floorAsk = '';
+    toast(off ? rule + ' turned off' : rule + ' is pinned again');
+    loadRules(); loadPolicy();
+  } catch (e) { toast(e.message, true); }
 }
 
 document.getElementById('rulesSearch').addEventListener('input', renderRules);
@@ -8034,7 +8078,7 @@ document.querySelector('.policy-scope-btn[data-pscope="egress"]')?.addEventListe
 document.getElementById('rulesSave').addEventListener('click', async () => {
   const ws = activeWorkspace();
   if (!ws) { setPolicySaveStatus('rulesSaveStatus', 'No project workspace detected', 'status-err'); return; }
-  const disabled = _rulesCatalog.filter(r => !_rulesState[r.id]).map(r => r.id);
+  const disabled = _rulesCatalog.filter(r => !_rulesState[r.id] && !r.locked).map(r => r.id);
   setPolicySaveStatus('rulesSaveStatus', 'Saving…', 'status-saving');
   try {
     const result = await apiFetch('/api/policy/rules', {
@@ -8045,7 +8089,7 @@ document.getElementById('rulesSave').addEventListener('click', async () => {
     if (result.ok) {
       _rulesCatalog.forEach(r => {
         r.enabled = _rulesState[r.id];
-        if (r.locked) _rulesState[r.id] = true;
+        if (r.locked && !r.floorOff) _rulesState[r.id] = true;
       });
       const ignored = Array.isArray(result.ignored) ? result.ignored.length : 0;
       setPolicySaveStatus(

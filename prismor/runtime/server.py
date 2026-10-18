@@ -1085,6 +1085,42 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": str(exc)}, status=500)
             return
 
+        if path == "/api/policy/floor-off":
+            # A pinned (safety-floor) rule off or back on. Off needs the unlock
+            # password; on only tightens, so it needs nothing. See floor_off.py.
+            from prismor.runtime import floor_off, unlock
+            from prismor.runtime.allow import is_floor_rule
+            from prismor.runtime.policy_engine import PolicyEngine, is_self_protection_rule
+            try:
+                body = self._read_json_body()
+            except ValueError:
+                self._send_json({"error": "invalid JSON"}, status=400)
+                return
+            rule_id = str(body.get("rule") or "")
+            if not body.get("off"):
+                floor_off.turn_on(rule_id)
+                self._send_json({"ok": True, "rule": rule_id, "off": False})
+                return
+            if not is_floor_rule(rule_id):
+                self._send_json({"error": f"{rule_id} is not pinned; use the normal toggle"}, status=400)
+                return
+            if is_self_protection_rule(rule_id):
+                self._send_json({"error": "This rule guards Prismor itself and cannot be turned off. "
+                                          "For a one-off change, run prismor unlock."}, status=403)
+                return
+            engine = PolicyEngine(workspace=self._resolve_workspace({}) or Path.cwd())
+            if engine.workspace_managed or engine.remote_policy_meta:
+                self._send_json({"error": "Your organization manages this workspace, so its safety floor "
+                                          "can only be changed by an org admin."}, status=403)
+                return
+            ok, msg = unlock.verify(str(body.get("password") or ""))
+            if not ok:
+                self._send_json({"error": msg}, status=401)
+                return
+            floor_off.turn_off(rule_id, by=os.environ.get("USER", ""))
+            self._send_json({"ok": True, "rule": rule_id, "off": True})
+            return
+
         if path == "/api/pause":
             from prismor.runtime import pause as _pause
             try:

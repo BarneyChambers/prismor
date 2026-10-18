@@ -4143,10 +4143,15 @@ def get_policy_rule_catalog(workspace: Optional[Path] = None) -> List[Dict[str, 
     # dispatch — never recomputed here, or the dashboard would drift from
     # enforcement the first time the resolution rules change.
     modes: Dict[str, str] = {}
+    floor_off: set = set()
+    floor_off_allowed = False
     try:
         engine = PolicyEngine(workspace=workspace) if workspace else PolicyEngine()
         for compiled in engine.rules:
             modes[compiled.id] = engine._resolve_mode(compiled)
+        floor_off = set(getattr(engine, "floor_off", set()))
+        # Same condition the engine uses: the floor is local to waive only off-org.
+        floor_off_allowed = not engine.workspace_managed and not engine.remote_policy_meta
     except Exception:
         modes = {}
 
@@ -4162,6 +4167,8 @@ def get_policy_rule_catalog(workspace: Optional[Path] = None) -> List[Dict[str, 
             self_protect = is_self_protection_rule(rid)
             requested_enabled = rid not in disabled
             enabled = True if locked else requested_enabled
+            if rid in floor_off:
+                enabled = False
             mode = modes.get(rid, "")
             rules.append({
                 "id": rid,
@@ -4172,6 +4179,9 @@ def get_policy_rule_catalog(workspace: Optional[Path] = None) -> List[Dict[str, 
                 "enabled": enabled,
                 "locked": locked,
                 "selfProtect": self_protect,
+                # Pinned, but turned off with the unlock password (floor_off.py).
+                "floorOff": rid in floor_off,
+                "floorOffAllowed": bool(locked and not self_protect and floor_off_allowed),
                 "requestedEnabled": requested_enabled,
                 # What this rule does right now: stop the call, or report it.
                 "mode": mode,
