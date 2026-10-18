@@ -40,7 +40,7 @@ import time
 from datetime import datetime, timezone
 from itertools import islice
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 __all__ = [
@@ -48,7 +48,8 @@ __all__ = [
     "match_install_command", "install_finding", "note_install_command",
     "on_skill_invoked", "fetch_allowed_by_skill", "on_remote_fetch",
     "wrap_hooks", "unwrap_hooks", "run_wrapped_hook", "why", "format_rows", "overview", "send_report", "tag_event", "session_extensions",
-    "unreviewed_in_session", "extension_detail",
+    "unreviewed_in_session", "extension_detail", "set_enabled", "disabled_ids", "disabled_finding",
+    "rewrap_disabled_hooks",
 ]
 
 _MAX_BYTES = 512 * 1024
@@ -239,8 +240,68 @@ def _plugins() -> List[Dict[str, Any]]:
     return rows
 
 
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def _codex_plugin_table() -> Dict[str, Any]:
+    try:
+        import tomllib
+        table = tomllib.loads(_read_text(_codex_home() / "config.toml")).get("plugins") or {}
+    except Exception:
+        return {}
+    return table if isinstance(table, dict) else {}
+
+
+def _codex_plugins() -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for pid, conf in _codex_plugin_table().items():
+        name, _, market = pid.partition("@")
+        base = _codex_home() / "plugins" / "cache" / market / name
+        revs = sorted((d for d in base.glob("*") if d.is_dir()), key=lambda d: d.stat().st_mtime) if base.is_dir() else []
+        if not revs:
+            continue
+        root = revs[-1]
+        manifest = _read_json(root / ".codex-plugin" / "plugin.json") or {}
+        caps = ["declares_mcp"] if (root / ".mcp.json").exists() else []
+        if (root / "hooks" / "hooks.json").exists():
+            caps += ["declares_hooks", "runs_code"]
+        rows.append({
+            "id": f"plugin:{pid}", "kind": "plugin", "name": pid, "path": str(root),
+            "sha256": _sha(f"{manifest.get('version')}:{root.name}".encode()),
+            "version": manifest.get("version"), "origin": manifest.get("repository") or None,
+            "capabilities": caps, "hosts": [], "agent": "codex",
+        })
+    return rows
+
+
+def _set_codex_plugin(plugin_id: str, enabled: bool) -> None:
+    """Flip ``enabled`` under ``[plugins."<id>"]`` in Codex's config.toml,
+    editing that one line so comments and layout elsewhere stay as they are."""
+    path = _codex_home() / "config.toml"
+    lines = _read_text(path).splitlines()
+    header = f'[plugins."{plugin_id}"]'
+    value = f"enabled = {'true' if enabled else 'false'}"
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip() == header)
+    except StopIteration:
+        lines += ["", header, value]
+    else:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+        hit = next((i for i in range(start + 1, end) if re.match(r"\s*enabled\s*=", lines[i])), None)
+        if hit is None:
+            lines.insert(start + 1, value)
+        else:
+            lines[hit] = value
+    tmp = path.with_suffix(".toml.prismor.tmp")
+    tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
 def _hook_sources(workspace: Path, plugins: List[Dict[str, Any]]) -> List[Tuple[Path, Optional[Dict[str, Any]]]]:
     out: List[Tuple[Path, Optional[Dict[str, Any]]]] = [(p, None) for p in _claude_settings_files(workspace)]
+    # Codex keeps hooks in its own hooks.json, in the same shape as Claude's.
+    out += [(_codex_home() / "hooks.json", None), (workspace / ".codex" / "hooks.json", None)]
     out += [(Path(pl["path"]) / "hooks" / "hooks.json", pl) for pl in plugins]
     return out
 
@@ -314,7 +375,11 @@ def _hook_row(source: Path, event: str, command: str, plugin: Optional[Dict[str,
 def _skill_rows(workspace: Path, plugins: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     from prismor.runtime.skills_audit import _frontmatter, _remote_sources, discover_skill_files
     rows = []
-    for path in discover_skill_files(workspace):
+    paths = discover_skill_files(workspace)
+    # Codex plugins ship skills under their cache root, which skill discovery does not walk.
+    paths += [p for pl in plugins if pl.get("agent") == "codex"
+              for p in sorted(Path(pl["path"]).glob("skills/*/SKILL.md")) if p not in paths]
+    for path in paths:
         text = _read_text(path)
         fm = _frontmatter(text)
         caps = []
@@ -375,6 +440,15 @@ def _mcp_rows(workspace: Path) -> List[Dict[str, Any]]:
         if p and p not in seen and p.endswith(".json"):
             seen.add(p)
             _walk(_read_json(Path(p)), p)
+    # Codex declares servers in TOML: [mcp_servers.<name>] command/args or url.
+    for toml_path in (_codex_home() / "config.toml", workspace / ".codex" / "config.toml"):
+        try:
+            import tomllib
+            servers = tomllib.loads(_read_text(toml_path)).get("mcp_servers") or {}
+        except Exception:
+            continue
+        if isinstance(servers, dict) and servers:
+            _walk({"mcpServers": servers}, str(toml_path))
     dedup: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         dedup.setdefault(r["id"], r)
@@ -399,10 +473,13 @@ def _agents_for(path: str) -> List[str]:
 def discover_extensions(workspace: Path) -> List[Dict[str, Any]]:
     """Every skill, plugin, third-party hook and MCP server this workspace's agents load."""
     plugins = _plugins()
-    rows = list(plugins) + _skill_rows(workspace, plugins)
+    codex_plugins = _codex_plugins()
+    rows = list(plugins) + codex_plugins + _skill_rows(workspace, plugins + codex_plugins)
     for source, plugin in _hook_sources(workspace, plugins):
         for event, h in _iter_hook_entries(_read_json(source)):
-            if not _is_own(h["command"]):
+            # Judge the command a wrapper runs, not the wrapper: the wrapper is
+            # Prismor's shim, so checking it would hide every wrapped hook.
+            if not _is_own(_unwrap(h["command"])):
                 rows.append(_hook_row(source, event, h["command"], plugin))
     rows += _mcp_rows(workspace)
     dedup: Dict[str, Dict[str, Any]] = {}
@@ -900,14 +977,19 @@ def _rewrite_hooks(workspace: Path, fn) -> List[str]:
     return touched
 
 
-def wrap_hooks(workspace: Path) -> List[str]:
+def wrap_hooks(workspace: Path, only: Optional[Set[str]] = None) -> List[str]:
     """Route every third-party hook command through ``prismor exec-hook`` so each
     run lands in the trail. A plugin update rewrites its hooks.json, so
-    SessionStart re-applies this while ``PRISMOR_WRAP_HOOKS=1``."""
+    SessionStart re-applies this while ``PRISMOR_WRAP_HOOKS=1``.
+
+    ``only``: wrap just the hooks whose command hash is in the set (a hook
+    turned off from the dashboard), leaving the rest as they are."""
     prefix = _wrapper_prefix()
 
     def _wrap(cmd: str) -> str:
         if _is_own(cmd) or f" {_WRAP_MARKER} " in cmd:
+            return cmd
+        if only is not None and _sha(cmd.encode())[:8] not in only:
             return cmd
         return f"{prefix} --id {_sha(cmd.encode())[:8]} -- {shlex.quote(cmd)}"
     return _rewrite_hooks(workspace, _wrap)
@@ -918,12 +1000,19 @@ def unwrap_hooks(workspace: Path) -> List[str]:
 
 
 def run_wrapped_hook(ext_id: str, command: str) -> int:
-    """Run one third-party hook, transparent to the agent, and record that it ran."""
+    """Run one third-party hook, transparent to the agent, and record that it ran.
+    A hook turned off from the dashboard is skipped: it exits 0 with no output,
+    which every agent reads as "nothing to add"."""
     stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
     try:
         payload = json.loads(stdin or b"{}")
     except Exception:
         payload = {}
+    if _hook_disabled(ext_id):
+        _audit("hook_skipped", {"id": f"hook:{ext_id}", "kind": "hook", "name": command[:120],
+                                "sha256": _sha(command.encode())},
+               str(payload.get("session_id") or ""), hook_event=payload.get("hook_event_name"))
+        return 0
     started = time.time()
     proc = subprocess.run(command, shell=True, input=stdin, capture_output=True)  # noqa: S602 - the agent would run this exact string  # nosec B602
     sys.stdout.buffer.write(proc.stdout)
@@ -933,6 +1022,177 @@ def run_wrapped_hook(ext_id: str, command: str) -> int:
            str(payload.get("session_id") or ""), exit_code=proc.returncode,
            ms=int((time.time() - started) * 1000), hook_event=payload.get("hook_event_name"))
     return proc.returncode
+
+
+# ── Turning an extension off and on ──────────────────────────────────────────
+#
+# Each kind is switched off where it can be switched off for real:
+#   plugin -- in the agent itself (Claude Code's ``enabledPlugins``), so none of
+#             its skills, hooks or servers load in new sessions;
+#   skill, mcp -- Prismor blocks the agent's calls to it, in observe mode too;
+#   hook   -- the one hook is routed through ``prismor exec-hook``, which skips it.
+# The off list lives in the ledger (``disabled``), so it is machine-wide like
+# the extensions themselves.
+
+_OFF_EFFECT = {
+    "plugin": "Turned off in Claude Code. New sessions start without it.",
+    "skill": "Prismor blocks the agent from running this skill.",
+    "mcp": "Prismor blocks the agent's calls to this server.",
+    "hook": "Prismor skips this hook when the agent runs it.",
+}
+
+
+def _claude_user_settings() -> Path:
+    return Path.home() / ".claude" / "settings.json"
+
+
+def _set_claude_plugin(plugin_id: str, enabled: bool) -> None:
+    """What ``claude plugin enable|disable`` does at user scope."""
+    path = _claude_user_settings()
+    config = _read_json(path) if path.exists() else {}
+    if not isinstance(config, dict):
+        raise ValueError(f"{path} is not a JSON object; not editing it")
+    plugins = config.get("enabledPlugins")
+    if not isinstance(plugins, dict):
+        plugins = config["enabledPlugins"] = {}
+    plugins[plugin_id] = enabled
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".prismor.tmp")
+    tmp.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _hook_disabled(hook_sha: str) -> bool:
+    # The wrapper has no workspace; the ledger is machine-wide, so read it
+    # straight from Prismor's home without the workspace migration.
+    try:
+        from prismor.runtime.store import prismor_home
+        off = (_read_json(prismor_home() / "extensions.json") or {}).get("disabled") or {}
+    except Exception:
+        return False
+    return any(eid.startswith("hook:") and eid.endswith("#" + hook_sha) for eid in off)
+
+
+def disabled_ids(workspace: Path) -> Dict[str, Any]:
+    off = _load(workspace).get("disabled")
+    return off if isinstance(off, dict) else {}
+
+
+def set_enabled(workspace: Path, ref: str, enabled: bool) -> Dict[str, Any]:
+    """Turn one extension off (``enabled=False``) or back on."""
+    data = _load(workspace)
+    rows = discover_extensions(workspace) + _observed_rows(data["items"])
+    row = next((r for r in rows if r["id"] == ref), None)
+    if row is None:
+        raise ValueError(f"no extension {ref!r}")
+    kind = row["kind"]
+    if kind == "plugin" and row.get("agent") == "codex":
+        _set_codex_plugin(str(row["name"]), enabled)
+    elif kind == "plugin":
+        _set_claude_plugin(str(row["name"]), enabled)
+    elif kind == "hook" and not enabled and not row.get("wrapped"):
+        wrap_hooks(workspace, only={_sha(str(row.get("command") or "").encode())[:8]})
+    elif kind == "hook" and enabled and row.get("wrapped") and not _wrap_all_hooks():
+        # Back on: put the original command back, byte for byte. Codex trusts a
+        # hook by the hash of its entry, so the restored entry is trusted again.
+        _unwrap_one(workspace, _sha(str(row.get("command") or "").encode())[:8])
+    off = data.setdefault("disabled", {})
+    if enabled:
+        off.pop(ref, None)
+    else:
+        off[ref] = {"kind": kind, "name": row.get("name"), "at": _now()}
+        if kind == "skill" and row.get("path"):
+            # Agents without a skill tool (Codex) use a skill by reading its
+            # folder, so the folder is what gets blocked.
+            off[ref]["dir"] = str(Path(str(row["path"])).parent)
+    _save(workspace, data)
+    _audit("extension_enabled" if enabled else "extension_disabled", row)
+    effect = _OFF_EFFECT.get(kind, "")
+    if kind == "plugin" and row.get("agent") == "codex":
+        effect = "Turned off in Codex. New sessions start without it."
+    return {"id": ref, "kind": kind, "enabled": enabled, "effect": "Back on." if enabled else effect}
+
+
+def _wrap_all_hooks() -> bool:
+    return os.environ.get("PRISMOR_WRAP_HOOKS", "").lower() in ("1", "true", "yes", "on")
+
+
+def _unwrap_one(workspace: Path, hook_sha: str) -> List[str]:
+    def _fn(cmd: str) -> str:
+        orig = _unwrap(cmd)
+        return orig if orig != cmd and _sha(orig.encode())[:8] == hook_sha else cmd
+    return _rewrite_hooks(workspace, _fn)
+
+
+def _touches(event: Dict[str, Any], folder: str) -> bool:
+    """Does this call read or run anything inside ``folder``?"""
+    if not folder:
+        return False
+    home = str(Path.home())
+    forms = {folder, folder.replace(home, "~", 1), folder.replace(home, "$HOME", 1)}
+    meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    raw = meta.get("raw") if isinstance(meta.get("raw"), dict) else {}
+    text = " ".join(str(x or "") for x in (event.get("command"), event.get("path"),
+                                            json.dumps(raw.get("tool_input") or "")))
+    if any(f in text for f in forms):
+        return True
+    # A wildcard path (`cat ~/.codex/skills/pdf*/SKILL.md`) names the folder
+    # without spelling it: expand it the way the shell would and look.
+    import glob
+    for tok in re.findall(r"[^\s'\"`;|&<>()]*[*?\[][^\s'\"`;|&<>()]*", text):
+        if "/" not in tok:
+            continue
+        pattern = home + tok[1:] if tok.startswith("~/") else os.path.expandvars(tok)
+        for hit in islice(glob.iglob(pattern), 200):
+            if hit == folder or hit.startswith(folder + os.sep):
+                return True
+    return False
+
+
+def rewrap_disabled_hooks(workspace: Path) -> None:
+    """A plugin update rewrites its hooks.json and drops the wrapper; put it
+    back on the hooks that are turned off. Called at session start."""
+    shas = {eid.rpartition("#")[2] for eid in disabled_ids(workspace) if eid.startswith("hook:")}
+    if shas:
+        wrap_hooks(workspace, only=shas)
+
+
+def disabled_finding(workspace: Path, event: Dict[str, Any], session_id: str = "") -> Optional[Dict[str, Any]]:
+    """A blocking finding when this call is to a skill or MCP server that was
+    turned off. Reads the ledger file only, like ``tag_event``."""
+    off = disabled_ids(workspace)
+    if not off:
+        return None
+    meta = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+    tool = str(meta.get("tool_name") or "")
+    hit = None
+    if tool == "Skill":
+        from prismor.runtime.scoped_agent import resolve_skill_name
+        name = (resolve_skill_name(event) or "").rpartition(":")[2]
+        hit = next((o for o in off.values() if o.get("kind") == "skill" and name and o.get("name") == name), None)
+    elif not tool.startswith("mcp__"):
+        hit = next((o for o in off.values() if o.get("kind") == "skill" and _touches(event, str(o.get("dir") or ""))), None)
+    if hit is None and tool.startswith("mcp__"):
+        server = _mcp_server(tool)
+        hit = next((o for o in off.values() if o.get("kind") == "mcp" and _serves(str(o.get("name") or ""), server)), None)
+    if hit is None:
+        return None
+    what = "skill" if hit["kind"] == "skill" else "MCP server"
+    if what == "skill" and tool != "Skill":
+        evidence = f"this call reads the files of the skill '{hit.get('name')}', which is turned off in the Prismor dashboard"
+    else:
+        evidence = f"{tool} belongs to the {what} '{hit.get('name')}', turned off in the Prismor dashboard"
+    return {
+        "id": f"{session_id}:extension-disabled:{hit.get('name')}",
+        "ruleId": "extension-disabled",
+        "severity": "medium",
+        "category": "agent-control",  # an operator's switch: blocks in observe mode too
+        "mode": "enforce",
+        "title": f"The {what} '{hit.get('name')}' is turned off",
+        "evidence": evidence,
+        "eventIndex": 0,
+        "remediation": "Turn it back on under Extensions in the Prismor dashboard.",
+    }
 
 
 # ── Views ────────────────────────────────────────────────────────────────────
@@ -995,7 +1255,16 @@ def overview(workspace: Path, events: int = 40) -> Dict[str, Any]:
     docs: Dict[str, List[Dict[str, Any]]] = {}
     for url, ref in data["remote_refs"].items():
         docs.setdefault(str(ref.get("extension")), []).append({"url": url, **ref})
+    off = data.get("disabled") if isinstance(data.get("disabled"), dict) else {}
+    claude_plugins = (_read_json(_claude_user_settings()) or {}).get("enabledPlugins") or {}
+    plugin_off = {f"plugin:{pid}" for pid, on in claude_plugins.items() if on is False}
+    plugin_off |= {f"plugin:{pid}" for pid, conf in _codex_plugin_table().items()
+                   if isinstance(conf, dict) and conf.get("enabled") is False}
     for r in rows:
+        # Off here, or off because the plugin it ships in is off (however
+        # that happened: this page, `claude plugin disable`, /plugin).
+        r["enabled"] = r["id"] not in off and r["id"] not in plugin_off
+        r["offVia"] = r.get("parent") if r.get("parent") in plugin_off else None
         r["invocations"] = (data["items"].get(r["id"]) or {}).get("invocations", [])
         r["remote_refs"] = docs.get(r["id"], [])
         r["approved"] = r["status"] == "approved"

@@ -18,6 +18,7 @@ Read endpoints:
     GET /api/workspaces    → registered workspaces + enrollment status
     GET /api/policy        → all policy layers for a workspace (?workspace=…)
     GET /api/agents        → agent registry merged with per-agent call stats
+    POST /api/extensions/toggle → turn an extension off or on ({id, enabled})
     GET /api/docs          → bundled docs (?name=<file.md> one doc, ?q=… search)
     GET /api/query-prompt  → copy-paste prompt teaching an agent to query the store
     GET /metrics           → Prometheus text exposition (see docs/observability.md)
@@ -1015,6 +1016,21 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": True, **approve(workspace, str(body.get("id") or ""))})
             except SystemExit as exc:
                 self._send_json({"error": str(exc)}, status=404)
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
+
+        # POST /api/extensions/toggle — turn one extension off or back on
+        if path == "/api/extensions/toggle":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length)) if length else {}
+                from prismor.runtime.extensions import set_enabled
+                ws_str = body.get("workspace")
+                workspace = Path(ws_str) if ws_str else (_SERVER_WORKSPACE or Path.cwd())
+                self._send_json({"ok": True, **set_enabled(workspace, str(body.get("id") or ""), bool(body.get("enabled")))})
+            except SystemExit as exc:  # hooks not installed: nothing to wrap a hook with
+                self._send_json({"error": str(exc)}, status=409)
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=400)
             return
