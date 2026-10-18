@@ -2307,6 +2307,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .rt-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #16a34a; }
   .rt-dot.off { background: #d97706; }
   .upgrade-btn.rt-appr { color: var(--tone-warn-fg); background: var(--tone-warn-bg); border-color: transparent; font-weight: 600; }
+  .confirm-modal { max-width: 440px; }
+  .confirm-inner { padding: 22px 24px 18px; }
+  .confirm-inner h3 { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .confirm-inner p { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--ink-2); white-space: pre-line; }
+  .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   .appr-list { padding: 8px 28px 22px; max-height: 60vh; overflow-y: auto; }
   .appr-row { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hairline); }
   .appr-row:last-child { border-bottom: 0; }
@@ -2445,6 +2450,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
     --tone-ok-bg: #eaf5ee;     --tone-ok-fg: #2f7d4f;
     --sev-critical: #c4362b; --sev-high: #d9822b; --sev-medium: #d9a524; --sev-low: #9aa7b8;
     --ctl-sm: 28px; --ctl-md: 32px; --r-ctl: 6px; --r-card: 8px;
+    /* Muted text at 4.7:1+ on white, grey and tinted surfaces (was 3.4–3.8:1). */
+    --muted: #626d7c; --gray-400: #626d7c; --gray-500: #5a6574;
   }
   html[data-theme="dark"] {
     --tone-danger-bg: rgba(224,104,90,.14); --tone-danger-fg: #f0a197;
@@ -2506,6 +2513,42 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .tab-btn { min-height: 36px; }
   b, strong { font-weight: 600; }
   [hidden] { display: none !important; }  /* component display rules must not resurrect hidden elements */
+  /* Keyboard focus is always visible, including on custom switches. */
+  .rule-toggle input:focus-visible + .rule-track { outline: 2px solid var(--ink); outline-offset: 2px; }
+  button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--ink); outline-offset: 2px;
+  }
+
+  /* Phone width: the top bar keeps its actions on screen. Status text goes
+     first, then labels shrink to icons; the bar scrolls sideways before any
+     action can be pushed off the edge. */
+  @media (max-width: 720px) {
+    .topbar { gap: 8px; }
+    .topbar-left .breadcrumb-sep, .topbar-left h1, .topbar-left .sidebar-brand-name, #breadcrumbLabel { display: none; }
+    #lastUpdated, #rtVersion:not(:has(button)), .topbar [onclick="openPageHelp()"] { display: none; }
+    .topbar-right { gap: 6px; overflow-x: auto; flex-wrap: nowrap; min-width: 0; scrollbar-width: none; }
+    .topbar-right > * { flex: none; }
+    #refreshBtn { font-size: 0; gap: 0; padding: 0 8px; }
+    #refreshBtn .icon { font-size: 13px; }
+    .topbar-days { max-width: 112px; }
+    .page { padding-left: 12px !important; padding-right: 12px !important; }
+    .rules-toolbar, .rules-filters, .rt-bar, .pc-sub, .policy-scope-nav { flex-wrap: wrap; }
+    .rules-toolbar .rules-search { flex-basis: 100%; }
+    .grid, .grid-2, .grid-1-2, .grid-4 { grid-template-columns: minmax(0, 1fr) !important; }
+    .card, .chart-container { min-width: 0; max-width: 100%; }
+    table { display: block; overflow-x: auto; max-width: 100%; }
+    .sess-ctrl-row { grid-template-columns: minmax(0, 1fr) !important; }
+    .sess-ctrl-row > *, .sess-id-wrap { min-width: 0; }
+    .sess-title { max-width: 100%; }
+    .ext-layout, .files-layout { grid-template-columns: minmax(0, 1fr) !important; }
+    .tp-row { flex-wrap: wrap; gap: 6px; }
+    .tp-row > span { min-width: 0; overflow-wrap: anywhere; }
+    .mcp-name { min-width: 0; overflow-wrap: anywhere; }
+    .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+    .rule-row .rule-sev { grid-column: 1 / -1; min-width: 0; }
+    .rule-floor-form { padding-left: 16px; }
+    .theme-toggle { font-size: 0; gap: 0; padding: 0; width: 32px; justify-content: center; }
+  }
 
   /* Tabs: section tabs are underlined everywhere (Policy, Extensions kinds);
      the boxed segmented control is only for switching a view of the same data. */
@@ -2607,7 +2650,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 </svg>
 
 <!-- ═══ SIDEBAR ═══════════════════════════════════════════════════ -->
-<div class="tab-nav">
+<div class="tab-nav" role="navigation" aria-label="Main">
   <div class="nav-group">Run</div>
   <button class="tab-btn active" data-tab="overview" data-label="Overview"><svg class="icon"><use href="#i-home"/></svg><span>Overview</span></button>
   <button class="tab-btn" data-tab="sessions" data-label="Sessions"><svg class="icon"><use href="#i-radio"/></svg><span>Sessions</span><span class="tab-count" id="navSessions"></span></button>
@@ -2631,7 +2674,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 </div>
 
 <!-- ═══ TOP BAR (breadcrumb) ══════════════════════════════════════ -->
-<div class="topbar">
+<div class="topbar" role="banner">
   <div class="topbar-left">
     <a class="topbar-brand" href="#" onclick="document.querySelector('.tab-btn[data-tab=&quot;overview&quot;]')?.click();return false">
       <img class="topbar-logo" src="/static/prismor-logo.png" alt="Prismor" />
@@ -3157,7 +3200,6 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="card" style="margin-bottom:16px">
     <div class="bar" style="margin-bottom:10px">
       <div class="card-title" id="extdUsageTitle">Usage</div>
-      <div class="bar-right"><select class="fsel" id="extdDays" onchange="_depDays=+this.value;_depCache=null;openExtension(_extViewId,true)"></select></div>
     </div>
     <div id="extdUsage"></div>
   </div>
@@ -3592,6 +3634,20 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <a class="prismor-cta-btn" href="#" onclick="openUpgradeModal();return false">Talk to us</a>
 </div>
 
+<!-- ═══ CONFIRM (replaces the browser's blocking confirm()) ═══════════════ -->
+<div class="up-modal-overlay" id="confirmOverlay">
+  <div class="up-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+    <div class="confirm-inner">
+      <h3 id="confirmTitle"></h3>
+      <p id="confirmBody"></p>
+      <div class="confirm-actions">
+        <button class="btn-ghost" id="confirmCancel">Cancel</button>
+        <button class="btn-primary" id="confirmOk">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ APPROVALS ═══════════════════════════════════════════════════════ -->
 <div class="up-modal-overlay" id="apprOverlay" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="up-modal" role="dialog" aria-modal="true" aria-labelledby="apprTitle">
@@ -3814,7 +3870,7 @@ function applyTheme(theme) {
     btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
     btn.title = next === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   }
-  if (label) label.textContent = next === 'dark' ? 'Dark' : 'Light';
+  if (label) label.textContent = 'Theme: ' + (next === 'dark' ? 'Dark' : 'Light');
   syncChartTheme();
 }
 
@@ -4629,7 +4685,6 @@ async function extApprove(id) {
 // Secrets and packages exist only on the usage side; plugins and hooks only
 // on the ledger side; skills and MCP servers have both.
 const EXT_KINDS = [['skill', 'Skills'], ['mcp', 'MCP servers'], ['secret', 'Secrets'], ['package', 'Packages'], ['plugin', 'Plugins'], ['hook', 'Hooks']];
-const EXT_DAYS = [[7, 'Last 7 days'], [30, 'Last 30 days'], [90, 'Last 90 days'], [365, 'Last year']];
 let _depCache = null, _extTab = 'all', _extQuery = '';
 // The time window is one global control in the top bar; Extensions reads it
 // rather than keeping a second, competing selector.
@@ -4827,8 +4882,7 @@ function extTally(rows, key) {
 }
 function renderExtensionUsage(it) {
   const deps = it.deps;
-  document.getElementById('extdDays').innerHTML = EXT_DAYS.map(([d, l]) => '<option value="' + d + '"' + (_depDays === d ? ' selected' : '') + '>' + l + '</option>').join('');
-  document.getElementById('extdUsageTitle').textContent = 'Usage in the last ' + _depDays + ' days';
+  document.getElementById('extdUsageTitle').textContent = 'Usage in the last ' + _depDays + ' days (top-bar window)';
   const el = document.getElementById('extdUsage');
   if (!deps.length) {
     el.innerHTML = '<div class="empty">' + (it.kind === 'plugin' || it.kind === 'hook'
@@ -5573,7 +5627,7 @@ async function scopeSave() {
 async function drawerAction(action) {
   const sessId = _drawerSessId;
   const ws     = _drawerWs;
-  if (action === 'pause' && !confirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session. Nothing is blocked or flagged until you resume.')) return;
+  if (action === 'pause' && !(await askConfirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session. Nothing is blocked or flagged until you resume.'))) return;
 
   // Disable all footer buttons immediately to prevent double-clicks
   document.querySelectorAll('#sessDrawerFooter button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
@@ -6139,8 +6193,8 @@ function renderSessionView(data){
 }
 async function sessViewAction(action){
   const sid = _sessionViewState.sessionId, ws = _sessionViewState.workspace;
-  if (action==='pause' && !confirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session until you resume.')) return;
-  if (action==='clear' && !confirm('Clear the scoped rules for this session?\n\nThe session falls back to the full default policy.')) return;
+  if (action==='pause' && !(await askConfirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session until you resume.'))) return;
+  if (action==='clear' && !(await askConfirm('Clear the scoped rules for this session?\n\nThe session falls back to the full default policy.'))) return;
   try {
     await apiFetch('/api/sessions/'+encodeURIComponent(sid)+'/control', {
       method:'PATCH', headers:{'Content-Type':'application/json'},
@@ -6575,7 +6629,7 @@ async function applyNodePolicy(action, scope){
   const setStatus = (m,err)=>{ if(statusEl){ statusEl.textContent=m; statusEl.style.color=err?'#b91c1c':'var(--gray-500)'; } };
   const where = {session:'this session', agent:'this agent'+(st.agent?' ('+st.agent+')':''), global:'all agents'}[scope];
   if (scope==='agent' && !st.agent){ setStatus('\u2717 No agent recorded for this session.', true); return; }
-  if (scope!=='session' && !confirm((action==='deny'?'Block':'Allow')+' \u201c'+tool+'\u201d for '+where+'?\n\nThis affects future tool calls across sessions.')) return;
+  if (scope!=='session' && !(await askConfirm((action==='deny'?'Block':'Allow')+' \u201c'+tool+'\u201d for '+where+'?\n\nThis affects future tool calls across sessions.'))) return;
   setStatus('Applying\u2026');
   try {
     if (scope==='session'){
@@ -7248,6 +7302,7 @@ document.getElementById('globalDays').addEventListener('change',function(){
   loadAgents(); ensureAllSessions(true);
   // Extensions is driven by the same window; refresh it if it has data.
   if (_depCache) { _depCache = null; loadDependencies().then(renderExtensions); }
+  if (document.getElementById('page-extension')?.classList.contains('active') && _extViewId) openExtension(_extViewId, true);
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -7387,13 +7442,13 @@ async function agentSet(name, fields) {
   }
 }
 
-function agentToggleBtn(name, currentlyEnabled) {
-  if (currentlyEnabled && !confirm('Block agent "' + name + '"?\n\nEvery tool call from this agent will be denied (kill switch) until you re-enable it here.')) return;
+async function agentToggleBtn(name, currentlyEnabled) {
+  if (currentlyEnabled && !(await askConfirm('Block agent "' + name + '"?\n\nEvery tool call from this agent will be denied (kill switch) until you re-enable it here.'))) return;
   agentSet(name, { enabled: !currentlyEnabled });
 }
-function agentToggle(name, cb) {
+async function agentToggle(name, cb) {
   const enabling = cb.checked;
-  if (!enabling && !confirm('Block agent "' + name + '"?\n\nEvery tool call from this agent will be denied (kill switch) until you unblock it here or via:\nprismor agents set ' + name + ' --enabled')) {
+  if (!enabling && !(await askConfirm('Block agent "' + name + '"?\n\nEvery tool call from this agent will be denied (kill switch) until you unblock it here or via:\nprismor agents set ' + name + ' --enabled'))) {
     cb.checked = true;
     return;
   }
@@ -7582,8 +7637,8 @@ function renderSessDetail(el, data, idx) {
 }
 
 async function sessAction(sessId, action, workspace, idx) {
-  if (action === 'pause' && !confirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session. Nothing is blocked or flagged until you resume.')) return;
-  if (action === 'clear' && !confirm('Clear the scoped rules for this session?\n\nThe session falls back to the full default policy.')) return;
+  if (action === 'pause' && !(await askConfirm('Pause Prismor for this session?\n\nProtection is fully disabled for the session. Nothing is blocked or flagged until you resume.'))) return;
+  if (action === 'clear' && !(await askConfirm('Clear the scoped rules for this session?\n\nThe session falls back to the full default policy.'))) return;
   try {
     const ws = workspace || _serverWorkspace || '';
     const body = { action, workspace: ws };
@@ -7641,6 +7696,41 @@ async function loadPolicy() {
     renderPolicyTab(data);
     if (!_agentsCache) loadAgents();  // fills "Applies to" and the Tools tab
   } catch(e) { console.error('[prismor] policy:', e); }
+}
+
+// ── Accessible names: icon-only buttons (the narrow sidebar, the phone top
+// bar) get their label from title / data-label; the sidebar marks the page.
+function labelControls(root) {
+  (root || document).querySelectorAll('button, a[onclick], [role=button]').forEach(b => {
+    if (b.hasAttribute('aria-label')) return;
+    const text = (b.textContent || '').trim();
+    const name = b.dataset.label || (!text && b.title) || '';
+    if (name) b.setAttribute('aria-label', name);
+  });
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.contains('active') ? t.setAttribute('aria-current', 'page') : t.removeAttribute('aria-current'));
+}
+labelControls();
+document.querySelectorAll('.tab-btn').forEach(t => t.addEventListener('click', () => setTimeout(() => labelControls(), 0)));
+
+// ── askConfirm: a styled, non-blocking replacement for window.confirm ─────
+// First line is the question, the rest the explanation. Resolves true/false.
+function askConfirm(message, okLabel) {
+  const [title, ...rest] = String(message).split('\n');
+  const ov = document.getElementById('confirmOverlay');
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmBody').textContent = rest.join('\n').trim();
+  const ok = document.getElementById('confirmOk'), cancel = document.getElementById('confirmCancel');
+  // The button names the action ("Block agent…?" -> Block), never a bare OK.
+  ok.textContent = okLabel || (title.match(/^(\w+)/) || [, 'Continue'])[1];
+  const prev = document.activeElement;
+  ov.classList.add('open'); cancel.focus();
+  return new Promise(resolve => {
+    const done = v => { ov.classList.remove('open'); document.removeEventListener('keydown', key, true); ok.onclick = cancel.onclick = ov.onclick = null; prev?.focus?.(); resolve(v); };
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    ok.onclick = () => done(true); cancel.onclick = () => done(false);
+    ov.onclick = e => { if (e.target === ov) done(false); };
+    document.addEventListener('keydown', key, true);
+  });
 }
 
 // ── Approvals: blocked calls a person can let through once ────────────────
@@ -7709,7 +7799,7 @@ async function loadRuntime() {
   try { renderRuntime(await apiFetch('/api/runtime')); } catch(e) { console.error('[prismor] runtime:', e); }
 }
 async function togglePause(paused) {
-  if (paused && !confirm('Pause Prismor on this machine?\n\nNothing is blocked for 24 hours (or until you resume). Screening and telemetry keep running.')) return;
+  if (paused && !(await askConfirm('Pause Prismor on this machine?\n\nNothing is blocked for 24 hours (or until you resume). Screening and telemetry keep running.'))) return;
   try {
     renderRuntime(await apiFetch('/api/pause', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({paused})}));
     toast(paused ? 'Prismor paused for 24 h' : 'Prismor resumed');
@@ -8056,7 +8146,7 @@ function renderRules() {
       + '<span class="rule-sev ' + safeAttr(r.severity) + '">' + safe(String(r.severity || '').toLowerCase()) + '</span>'
       + '<div class="rule-main"><div class="rule-meta"><div class="rule-id">' + safe(r.id) + '</div>' + verdict + lockBadge + '</div>'
       + '<div class="rule-title">' + safe(r.title) + '</div></div>'
-      + '<label class="rule-toggle' + (fixed ? ' locked' : '') + '"><input type="checkbox" data-rid="' + safeAttr(r.id) + '"'
+      + '<label class="rule-toggle' + (fixed ? ' locked' : '') + '"><input type="checkbox" aria-label="' + safeAttr(r.id) + '" data-rid="' + safeAttr(r.id) + '"'
       + (floorSwitch ? ' data-floor="1"' : '') + (on ? ' checked' : '') + (fixed ? ' disabled' : '') + '><span class="rule-track"></span></label>'
       + '</div>'
       + (_floorAsk === r.id ? floorOffForm(r) : '');
@@ -8228,7 +8318,7 @@ async function egressAction(payload) {
 
 function setEgress(field, value) { egressAction({ action: 'set', field, value }); }
 
-function _addEgress(listName) {
+async function _addEgress(listName) {
   const host = (document.getElementById('egressHost').value || '').trim();
   const reason = (document.getElementById('egressReason').value || '').trim();
   if (!host) { setPolicySaveStatus('egressAddStatus', 'Enter a host first', 'status-err'); return; }
@@ -8297,8 +8387,8 @@ document.getElementById('globalPolicyDiscard').addEventListener('click', () => {
   document.getElementById('globalPolicyEditor').value = _globalPolicyOriginal || DEFAULT_GLOBAL_YAML;
   setPolicySaveStatus('globalPolicySaveStatus', 'Discarded changes', 'status-ok');
 });
-document.getElementById('globalPolicyReset').addEventListener('click', () => {
-  if (!confirm('Reset global policy to empty (use built-in defaults)?')) return;
+document.getElementById('globalPolicyReset').addEventListener('click', async () => {
+  if (!(await askConfirm('Reset global policy to empty (use built-in defaults)?'))) return;
   document.getElementById('globalPolicyEditor').value = '';
 });
 
@@ -8325,8 +8415,8 @@ document.getElementById('projectPolicyDiscard').addEventListener('click', () => 
   document.getElementById('projectPolicyEditor').value = _projectPolicyOriginal || DEFAULT_PROJECT_YAML;
   setPolicySaveStatus('projectPolicySaveStatus', 'Discarded changes', 'status-ok');
 });
-document.getElementById('projectPolicyReset').addEventListener('click', () => {
-  if (!confirm('Reset project policy? The file will be left empty.')) return;
+document.getElementById('projectPolicyReset').addEventListener('click', async () => {
+  if (!(await askConfirm('Reset project policy? The file will be left empty.'))) return;
   document.getElementById('projectPolicyEditor').value = '';
 });
 
