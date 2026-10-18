@@ -1219,7 +1219,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .used-row { display:flex; align-items:center; gap:10px; width:100%; padding:6px 4px; background:none; border:0; border-radius:6px; font:inherit; color:var(--gray-800); text-align:left; cursor:pointer; }
   .used-row:hover { background:var(--gray-100); }
   .used-row .used-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size:11px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
+  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size:12px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
   .sess-sub span { font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400); margin-left:6px; }
   .sess-none { padding:2px 0 6px; }
   .sess-hook-ev { font-size: 11.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
@@ -1237,7 +1237,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   @keyframes devflash { 0%,35% { box-shadow:inset 0 0 0 2px #ef4444; background:rgba(239,68,68,.12); } 100% { box-shadow:none; } }
   .dev-note { font-size:12.5px; color:var(--gray-600); background:var(--gray-50); border-radius:6px; padding:8px 10px; margin:8px 0; }
   .sess-ext-hooks summary:not(.sess-hook-src) { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
-  .sess-ran-title { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
+  .sess-ran-title { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
   .sess-ran-group { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; }
   .sess-ran-group em { font-style:normal; color:var(--gray-500); margin-right:2px; }
   .sess-ran-docs { font-weight:600; color:var(--gray-600); margin-left:6px; }
@@ -1808,12 +1808,13 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-ext-all > summary::-webkit-details-marker { display: none; }
   .sess-ext-toggle { margin-left: auto; font-size: 14px; line-height: 1; color: var(--gray-400); }
   .sess-summary .sess-ext-head { display:grid; grid-template-columns:8px 92px minmax(0,1fr) auto; align-items:center; gap:12px; margin:0; }
+  .sess-summary .sess-ran-title { font-size:13px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--gray-700); }
   .sess-summary .sess-sum { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sess-dot.none { background:transparent; }
   .sess-warn { color:#d97706; font-weight:600; }
   .sess-hook-src { display:grid; grid-template-columns:minmax(0,1.4fr) 48px 48px 64px minmax(0,2fr) 90px; align-items:center; gap:10px; padding:7px 4px; cursor:pointer; list-style:none; border-bottom:1px solid var(--gray-100); }
   .sess-hook-src::-webkit-details-marker { display:none; }
-  .sess-hook-cols { cursor:default; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-400); padding-bottom:5px; }
+  .sess-hook-cols { cursor:default; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-400); padding-bottom:5px; }
   .sess-hook-name { font-weight:600; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sess-hook-name::before { content:'\25B8'; display:inline-block; width:14px; color:var(--gray-400); transition:transform .15s; }
   .sess-ext-hooks[open] .sess-hook-name::before { transform:rotate(90deg); }
@@ -2137,16 +2138,17 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
-  .hook-item { display:grid; grid-template-columns:minmax(0,2.2fr) 130px 64px 70px 70px 70px 96px 110px; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; }
-  .hook-item.hdr { cursor:default; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
+  .hook-item { display:grid; grid-template-columns:minmax(180px,3fr) 128px 52px 60px 64px 64px 84px 108px; align-items:center; gap:8px; padding:9px 12px; cursor:pointer; }
+  .hook-item.hdr { cursor:default; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .hook-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-launch { display:block; font-size:11px; font-weight:400; color:var(--gray-500); overflow:hidden; text-overflow:ellipsis; }
   .hook-item .num, .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
   .hook-sess { margin:-4px 0 8px 18px; padding:6px 10px; border-left:2px solid var(--gray-200); }
   .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size:12px; cursor:pointer; border-radius:4px; }
   .hook-sess-row:hover:not(.hdr) { background:var(--gray-100); }
-  .hook-sess-row.hdr { cursor:default; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-400); }
+  .hook-sess-row.hdr { cursor:default; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-400); }
   .hook-sess-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hook-cmd { margin-top:6px; font-size:11px; color:var(--gray-500); overflow-wrap:anywhere; }
+  .hook-cmd { margin-top:6px; font-size:12px; color:var(--gray-500); overflow-wrap:anywhere; }
   @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } .hook-item > :nth-child(2), .hook-item > :nth-child(4), .hook-item > :nth-child(6), .hook-item > :nth-child(7), .hook-item > :nth-child(8) { display:none; } }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
   .ext-spark { display:inline-flex; align-items:flex-end; gap:1px; height:22px; width:100%; }
@@ -4403,7 +4405,7 @@ let _hookStats = null, _hookStatsDays = 0, _hookOpen = {};
 async function renderHookStats() {
   const ext = document.getElementById('extList');
   document.getElementById('extViews').style.display = 'none';
-  document.getElementById('extFilters').innerHTML = extDaysSelect('_depDays=+this.value;renderExtensions()') +
+  document.getElementById('extFilters').innerHTML =
     '<input class="finput" type="search" spellcheck="false" autocomplete="off" placeholder="Filter hooks…" value="' + safeAttr(_extQuery) + '" oninput="_extQuery=this.value;renderHookList()" style="min-width:220px" />';
   renderExtEvents({events: ((_extCache || {}).events || []).filter(e => e.kind === 'hook')});
   if (!_hookStats || _hookStatsDays !== _depDays) {
@@ -4414,10 +4416,12 @@ async function renderHookStats() {
   }
   const hs = _hookStats.hooks || [], sum = k => hs.reduce((n, h) => n + (h[k] || 0), 0);
   const runs = sum('runs'), fails = sum('failures'), timeouts = sum('timeouts');
+  // The hook an agent waits on longest, typically: the one worth fixing first.
+  const slow = hs.filter(h => h.runs >= 3).sort((a, b) => (b.p50Ms || 0) - (a.p50Ms || 0))[0];
   document.getElementById('extSummary').innerHTML = [
-    [hs.length, 'Hooks ran', 'distinct hooks in Claude Code sessions, however each was launched'],
+    [hs.length, 'Hooks ran', 'in Claude Code sessions'],
     [fmtNum(runs), 'Runs', 'one per hook per agent event'],
-    [fmtMs(hs.reduce((n, h) => n + h.totalMs, 0)), 'Total hook time', 'summed; hooks of one event run in parallel'],
+    [slow ? fmtMs(slow.p50Ms) : '-', 'Slowest median wait', slow ? hookIdentity(slow).script + ' on ' + slow.event : 'no hook ran 3+ times'],
     [fails, 'Failed runs', timeouts ? timeouts + ' timed out, ' + (fails - timeouts) + ' exited with an error' : 'a non-zero exit or a timeout', fails ? 'warn' : '']]
     .map(([n, label, sub, cls]) => '<div class="ext-stat ' + (cls || '') + '" style="cursor:default"><b>' + n + '</b><span>' + label + '</span><small>' + safe(sub) + '</small></div>').join('');
   renderHookList();
@@ -4434,7 +4438,7 @@ function renderHookList() {
   const failed = h => h.failures ? '<b style="color:#ef4444" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + (h.timeouts ? '<small style="font-weight:500"> · ' + h.timeouts + ' t/o</small>' : '') + '</b>' : '-';
   document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
     const id = hookIdentity(h), k = h.event + '|' + h.command;
-    const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg</span><span class="num">Failed</span><span>Last ran</span></div>' +
+    const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg wait</span><span class="num">Failed</span><span>Last ran</span></div>' +
       h.sessions.map(x => '<div class="hook-sess-row" onclick="openSessionView(\'' + safeJsArg(x.sessionId) + '\')"><span class="dev-mono">' + safe(x.sessionId.slice(0, 8)) + '</span>' +
         '<span class="ext-quiet" title="' + safeAttr(x.cwd) + '">' + safe(tildify(x.cwd || '')) + '</span><span class="num">' + x.runs + '</span>' +
         '<span class="num"' + tone(x.totalMs / x.runs) + '>' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b style="color:#ef4444">' + x.failures + '</b>' : '-') + '</span>' +
@@ -4444,11 +4448,12 @@ function renderHookList() {
       ((h.variants || []).length ? '<div class="empty">Also launched as:</div>' + h.variants.map(v => '<div class="hook-cmd dev-mono">' + safe(v) + '</div>').join('') : '') +
       (h.failures || h.blocked || h.cancelled ? '<div class="empty">' + [h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error', h.blocked && h.blocked + ' blocked the call (exit 2)', h.cancelled && h.cancelled + ' cancelled when the turn stopped'].filter(Boolean).join(' · ') + '</div>' : '') + '</div>' : '';
     return '<div class="ext-row hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
-      '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span></span>' +
+      '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span>' +
+        '<small class="hook-launch dev-mono">' + safe((h.identity || '').replace(/^(?:python|node|bash|sh)\s+(?:-m\s+)?/, '')) + '</small></span>' +
       '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
-      '<span class="num"' + tone(h.p50Ms) + ' title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num"' + tone(h.p95Ms) + '>' + fmtMs(h.p95Ms) + '</span>' +
+      '<span class="num"' + tone(h.p50Ms) + ' title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num ext-quiet">' + fmtMs(h.p95Ms) + '</span>' +
       '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
-  }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not.') + '</div>';
+  }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not. Widen the time window at the top to look further back.') + '</div>';
 }
 function renderExtKindList() {
   const kind = _extTab, q = _extQuery.toLowerCase();

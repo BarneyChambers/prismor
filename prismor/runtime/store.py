@@ -4476,7 +4476,8 @@ def get_hook_stats(hours: int = 24 * 7, root: Optional[Path] = None) -> Dict[str
         # launches of it (another machine's venv, an env prefix).
         commands = sorted(hook.pop("commands").items(), key=lambda kv: -kv[1])
         outcomes = hook["outcomes"]
-        out.append({**hook, "command": commands[0][0], "variants": [c for c, _ in commands[1:6]],
+        out.append({**hook, "command": commands[0][0], "identity": _hook_identity(commands[0][0]),
+                    "variants": [c for c, _ in commands[1:6]],
                     "runs": runs, "sessionCount": len(sessions), "totalMs": sum(ms),
                     "failures": outcomes.get("error", 0) + outcomes.get("timeout", 0),
                     "timeouts": outcomes.get("timeout", 0), "blocked": outcomes.get("blocked", 0),
