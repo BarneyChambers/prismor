@@ -1215,11 +1215,11 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .sess-sum b { color:var(--gray-900); font-weight:600; }
   .sess-dot { width:8px; height:8px; border-radius:50%; background:var(--gray-300); align-self:center; flex:none; }
   .sess-dot.ok { background:#22c55e; } .sess-dot.warn { background:#f59e0b; } .sess-dot.bad { background:#ef4444; }
-  .sess-sub { font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
+  .sess-sub { font-size: 12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-500); margin:12px 0 6px; }
   .used-row { display:flex; align-items:center; gap:10px; width:100%; padding:6px 4px; background:none; border:0; border-radius:6px; font:inherit; color:var(--gray-800); text-align:left; cursor:pointer; }
   .used-row:hover { background:var(--gray-100); }
   .used-row .used-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size:12px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
+  .used-icon { width:16px; height:16px; flex:none; border-radius:3px; display:inline-flex; align-items:center; justify-content:center; position:relative; overflow:hidden; font-size: 11px; font-weight:700; background:var(--gray-200); color:var(--gray-600); }
   .sess-sub span { font-weight:400; text-transform:none; letter-spacing:0; color:var(--gray-400); margin-left:6px; }
   .sess-none { padding:2px 0 6px; }
   .sess-hook-ev { font-size: 11.5px; font-weight:600; color:var(--gray-600); background:var(--gray-100); border-radius:4px; padding:1px 6px; font-family:var(--font-mono); }
@@ -1227,17 +1227,19 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .dev-fail-label { font-size: 12px; font-weight:700; color:#b91c1c; margin-bottom:4px; }
   .dev-fail-head { display:flex; gap:8px; align-items:baseline; min-width:0; }
   .dev-fail-cmd { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-  .dev-fail-err:hover { -webkit-line-clamp:unset; }
-  .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size:12px; color:var(--gray-500); }
-  .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size:12px; }
+  .dev-fail-err { margin-top:6px; padding:6px 8px; border-radius:4px; background:rgba(239,68,68,.08); color:#b91c1c; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .dev-fail .dev-fail-err { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .dev-fail .dev-fail-err:hover { -webkit-line-clamp:unset; }
+  .dev-fail-full { margin-top:6px; } .dev-fail-full > summary { cursor:pointer; font-size: 12px; color:var(--gray-500); }
+  .dev-fail-full pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:260px; overflow:auto; margin:6px 0 0; font-size: 12px; }
   .dev-before { margin:-2px 0 8px 12px; }
   .dev-locate { flex:none; padding:2px 10px; font-size: 12px; }
   #sessFlowCanvas .tree-leaf.flash { animation:devflash 1.6s ease-out; }
   @keyframes devflash { 0%,35% { box-shadow:inset 0 0 0 2px #ef4444; background:rgba(239,68,68,.12); } 100% { box-shadow:none; } }
   .dev-note { font-size:12.5px; color:var(--gray-600); background:var(--gray-50); border-radius:6px; padding:8px 10px; margin:8px 0; }
-  .sess-ext-hooks summary:not(.sess-hook-src) { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
-  .sess-ran-title { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
+  .sess-ext-hooks summary { cursor:pointer; color:var(--gray-500); font-weight:600; padding:4px 2px 8px; }
+  .sess-ext-hooks > summary.sess-hook-src { color:inherit; font-weight:inherit; padding:7px 4px; }
+  .sess-ran-title { font-size: 11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gray-400); }
   .sess-ran-group { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; }
   .sess-ran-group em { font-style:normal; color:var(--gray-500); margin-right:2px; }
   .sess-ran-docs { font-weight:600; color:var(--gray-600); margin-left:6px; }
@@ -1806,15 +1808,14 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   #page-session .sess-ran-under { margin-bottom: 8px; padding: 0 14px; }
   .sess-ext-all > summary { list-style: none; cursor: pointer; padding: 9px 0; margin: 0; }
   .sess-ext-all > summary::-webkit-details-marker { display: none; }
-  .sess-ext-toggle { margin-left: auto; font-size: 14px; line-height: 1; color: var(--gray-400); }
+  .sess-ext-toggle { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--gray-500); }
   .sess-summary .sess-ext-head { display:grid; grid-template-columns:8px 92px minmax(0,1fr) auto; align-items:center; gap:12px; margin:0; }
-  .sess-summary .sess-ran-title { font-size:13px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--gray-700); }
   .sess-summary .sess-sum { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sess-dot.none { background:transparent; }
-  .sess-warn { color:#d97706; font-weight:600; }
+  .sess-warn { color:#b45309; font-weight:600; }
   .sess-hook-src { display:grid; grid-template-columns:minmax(0,1.4fr) 48px 48px 64px minmax(0,2fr) 90px; align-items:center; gap:10px; padding:7px 4px; cursor:pointer; list-style:none; border-bottom:1px solid var(--gray-100); }
   .sess-hook-src::-webkit-details-marker { display:none; }
-  .sess-hook-cols { cursor:default; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--gray-400); padding-bottom:5px; }
+  .sess-hook-cols { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); padding-bottom:5px; }
   .sess-hook-name { font-weight:600; color:var(--gray-800); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .sess-hook-name::before { content:'\25B8'; display:inline-block; width:14px; color:var(--gray-400); transition:transform .15s; }
   .sess-ext-hooks[open] .sess-hook-name::before { transform:rotate(90deg); }
@@ -2138,18 +2139,18 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   .ext-item.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
   .ext-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ext-item .num { font-variant-numeric:tabular-nums; text-align:right; }
-  .hook-item { display:grid; grid-template-columns:minmax(180px,3fr) 128px 52px 60px 64px 64px 84px 108px; align-items:center; gap:8px; padding:9px 12px; cursor:pointer; }
-  .hook-item.hdr { cursor:default; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); background:none; border:0; padding-top:0; padding-bottom:4px; }
-  .hook-item .ext-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hook-launch { display:block; font-size:11px; font-weight:400; color:var(--gray-500); overflow:hidden; text-overflow:ellipsis; }
-  .hook-item .num, .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .hook-item { grid-template-columns:minmax(170px,3fr) 124px 48px 60px 64px 64px 96px 112px; }
+  .hook-launch { display:block; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hook-item .num { white-space:nowrap; }
+  .hook-sess-row .num { font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+  .hook-slow { color:#b45309; font-weight:600; } .hook-bad { color:#b91c1c; font-weight:600; }
   .hook-sess { margin:-4px 0 8px 18px; padding:6px 10px; border-left:2px solid var(--gray-200); }
-  .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size:12px; cursor:pointer; border-radius:4px; }
+  .hook-sess-row { display:grid; grid-template-columns:80px minmax(0,1fr) 56px 70px 56px 110px; gap:10px; padding:5px 4px; font-size: 12px; cursor:pointer; border-radius:4px; }
   .hook-sess-row:hover:not(.hdr) { background:var(--gray-100); }
-  .hook-sess-row.hdr { cursor:default; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-400); }
+  .hook-sess-row.hdr { cursor:default; font-size: 11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray-500); }
   .hook-sess-row > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .hook-cmd { margin-top:6px; font-size:12px; color:var(--gray-500); overflow-wrap:anywhere; }
-  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } .hook-item > :nth-child(2), .hook-item > :nth-child(4), .hook-item > :nth-child(6), .hook-item > :nth-child(7), .hook-item > :nth-child(8) { display:none; } }
+  @media (max-width:720px) { .hook-item { grid-template-columns:minmax(0,1fr) 56px 64px; } }
   .ext-item-agents { display:flex; gap:4px; overflow:hidden; }
   .ext-spark { display:inline-flex; align-items:flex-end; gap:1px; height:22px; width:100%; }
   .ext-spark i { flex:1; min-height:1px; background:var(--accent); opacity:.75; border-radius:1px; }
@@ -3880,12 +3881,12 @@ function sessExtRow(x, calls) {
   const kv = [['Where it came from', x.origin], ['Installed', extBy(x.installed_by)], ['File', x.path], ['Runs', hook ? x.name.slice(x.name.indexOf(': ') + 2) : x.command],
     ['Hosts it names', (x.hosts || []).join(', ')]].filter(([, v]) => v).map(([k, v]) => '<dt>' + k + '</dt><dd>' + safe(v) + '</dd>').join('');
   const docs = (x.documents || []).map(doc => '<dt>Sent the agent to</dt><dd>' + safe(doc.url) + (doc.sha256 ? ' · sha256 ' + safe(String(doc.sha256).slice(0, 12)) + ' · ' + doc.bytes + ' bytes' : '') +
-    (doc.last_changed ? ' · <b style="color:#ef4444">changed ' + safe(extWhen(doc.last_changed)) + '</b>' : '') + '</dd>').join('');
+    (doc.last_changed ? ' · <b class="hook-bad">changed ' + safe(extWhen(doc.last_changed)) + '</b>' : '') + '</dd>').join('');
   const id = safeJsArg(x.id);
   const what = hook ? '<span class="sess-hook-ev">' + safe(hook.event) + '</span><span class="ext-name">' + safe(hook.script) + '</span>'
     : '<span class="ext-kind">' + safe(x.kind === 'mcp' ? 'MCP server' : x.kind) + '</span><span class="ext-name">' + safe(x.name) + '</span>';
   const hr = hook ? hookRunsOf(x) : null;
-  const use = hook ? (hr.n ? '<span class="ext-quiet">' + hr.n + ' run' + (hr.n === 1 ? '' : 's') + ' · avg ' + fmtMs(hr.avg) + (hr.fail ? ' · <b style="color:#ef4444">' + hr.fail + ' failed</b>' : '') + '</span>' : '<span class="ext-quiet">no runs recorded</span>') : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b style="color:#ef4444">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
+  const use = hook ? (hr.n ? '<span class="ext-quiet">' + hr.n + ' run' + (hr.n === 1 ? '' : 's') + ' · avg ' + fmtMs(hr.avg) + (hr.fail ? ' · <b class="hook-bad">' + hr.fail + ' failed</b>' : '') + '</span>' : '<span class="ext-quiet">no runs recorded</span>') : '<span class="ext-quiet">' + (mine.length ? mine.length + ' call' + (mine.length === 1 ? '' : 's') + ' in this session' + (blocked ? ', <b class="hook-bad">' + blocked + ' blocked</b>' : '') : x.role === 'invoked' ? 'loaded by the agent' : 'no calls traced to it') + '</span>';
   return '<div class="ext-row' + (x.reviewed || (hook && hook.prismor) ? '' : ' review') + (_sessExtOpen[x.id] ? ' open' : '') + '">' +
     '<div class="ext-head" onclick="_sessExtOpen[\'' + id + '\']=!_sessExtOpen[\'' + id + '\'];renderSessionExtensions()">' +
       (hook && hook.prismor ? '<span class="ext-badge approved" title="Prismor\'s own screening hook.">prismor</span>' : sessReviewBadge(x)) + what + sessCaps(x) + use +
@@ -4051,7 +4052,7 @@ function devRca(r) {
   const bits = [];
   if (r.failures) bits.push('<b>' + plural(r.failures, 'call') + ' failed</b>');
   if (r.denied) bits.push('<b>' + r.denied + ' blocked</b>');
-  if (r.loops.length) bits.push('<b style="color:#ef4444">stuck retrying ' + plural(r.loops.length, 'time') + '</b>');
+  if (r.loops.length) bits.push('<b class="hook-bad">stuck retrying ' + plural(r.loops.length, 'time') + '</b>');
   if (r.reverts.length) bits.push('<b style="color:#d97706">' + plural(r.reverts.length, 'edit') + ' undone</b>');
   if (r.churn.length) bits.push(plural(r.churn.length, 'file') + ' rewritten repeatedly');
   const line = bits.length ? bits.join(' · ') + ' <span class="ext-quiet">out of ' + r.calls + ' calls</span>' : 'All ' + r.calls + ' calls succeeded';
@@ -4433,25 +4434,25 @@ function hookIdentity(h) {
 }
 function renderHookList() {
   const q = _extQuery.toLowerCase(), hs = ((_hookStats || {}).hooks || []).filter(h => !q || (h.event + ' ' + h.command).toLowerCase().includes(q));
-  const tone = ms => ms >= 5000 ? ' style="color:#ef4444;font-weight:600"' : ms >= HOOK_SLOW_MS ? ' style="color:#d97706;font-weight:600"' : '';
-  const hdr = '<div class="hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
-  const failed = h => h.failures ? '<b style="color:#ef4444" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + (h.timeouts ? '<small style="font-weight:500"> · ' + h.timeouts + ' t/o</small>' : '') + '</b>' : '-';
+  const tone = ms => ms >= 5000 ? ' hook-bad' : ms >= HOOK_SLOW_MS ? ' hook-slow' : '';
+  const hdr = '<div class="ext-item hook-item hdr"><span>Hook</span><span>Event</span><span class="num">Runs</span><span class="num">Sessions</span><span class="num" title="Half the runs took less">Median</span><span class="num">p95</span><span class="num">Failed</span><span>Last ran</span></div>';
+  const failed = h => h.failures ? '<b class="hook-bad" title="' + safeAttr([h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error'].filter(Boolean).join(', ')) + '">' + h.failures + '</b>' + (h.timeouts ? ' <small class="ext-quiet">' + h.timeouts + ' t/o</small>' : '') : '-';
   document.getElementById('extList').innerHTML = hs.length ? hdr + hs.map((h, i) => {
     const id = hookIdentity(h), k = h.event + '|' + h.command;
     const sess = _hookOpen[k] ? '<div class="hook-sess"><div class="hook-sess-row hdr"><span>Session</span><span>Project</span><span class="num">Runs</span><span class="num">Avg wait</span><span class="num">Failed</span><span>Last ran</span></div>' +
       h.sessions.map(x => '<div class="hook-sess-row" onclick="openSessionView(\'' + safeJsArg(x.sessionId) + '\')"><span class="dev-mono">' + safe(x.sessionId.slice(0, 8)) + '</span>' +
         '<span class="ext-quiet" title="' + safeAttr(x.cwd) + '">' + safe(tildify(x.cwd || '')) + '</span><span class="num">' + x.runs + '</span>' +
-        '<span class="num"' + tone(x.totalMs / x.runs) + '>' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b style="color:#ef4444">' + x.failures + '</b>' : '-') + '</span>' +
+        '<span class="num' + tone(x.totalMs / x.runs) + '">' + fmtMs(Math.round(x.totalMs / x.runs)) + '</span><span class="num">' + (x.failures ? '<b class="hook-bad">' + x.failures + '</b>' : '-') + '</span>' +
         '<span class="ext-quiet">' + safe(extWhen(x.last)) + '</span></div>').join('') +
       (h.sessionCount > h.sessions.length ? '<div class="empty">Showing the latest ' + h.sessions.length + ' of ' + h.sessionCount + ' sessions.</div>' : '') +
       '<div class="hook-cmd dev-mono">' + safe(h.command) + '</div>' +
       ((h.variants || []).length ? '<div class="empty">Also launched as:</div>' + h.variants.map(v => '<div class="hook-cmd dev-mono">' + safe(v) + '</div>').join('') : '') +
       (h.failures || h.blocked || h.cancelled ? '<div class="empty">' + [h.timeouts && h.timeouts + ' timed out (the agent killed it)', h.failures - h.timeouts && (h.failures - h.timeouts) + ' exited with an error', h.blocked && h.blocked + ' blocked the call (exit 2)', h.cancelled && h.cancelled + ' cancelled when the turn stopped'].filter(Boolean).join(' · ') + '</div>' : '') + '</div>' : '';
-    return '<div class="ext-row hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
+    return '<div class="ext-row ext-item hook-item' + (_hookOpen[k] ? ' open' : '') + '" onclick="_hookOpen[this.dataset.k]=!_hookOpen[this.dataset.k];renderHookList()" data-k="' + safeAttr(k) + '">' +
       '<span class="ext-name" title="' + safeAttr(h.command) + '">' + safe(id.script) + ' <span class="ext-quiet">' + safe(id.from) + '</span>' +
-        '<small class="hook-launch dev-mono">' + safe((h.identity || '').replace(/^(?:python|node|bash|sh)\s+(?:-m\s+)?/, '')) + '</small></span>' +
+        '<small class="hook-launch ext-quiet dev-mono">' + safe((h.identity || '').replace(/^(?:python|node|bash|sh)\s+(?:-m\s+)?/, '')) + '</small></span>' +
       '<span><span class="sess-hook-ev">' + safe(h.event) + '</span></span><span class="num">' + fmtNum(h.runs) + '</span><span class="num">' + h.sessionCount + '</span>' +
-      '<span class="num"' + tone(h.p50Ms) + ' title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num ext-quiet">' + fmtMs(h.p95Ms) + '</span>' +
+      '<span class="num' + tone(h.p50Ms) + '" title="avg ' + safeAttr(fmtMs(h.avgMs)) + ', max ' + safeAttr(fmtMs(h.maxMs)) + '">' + fmtMs(h.p50Ms) + '</span><span class="num ext-quiet">' + fmtMs(h.p95Ms) + '</span>' +
       '<span class="num">' + failed(h) + '</span><span class="ext-quiet">' + safe(extWhen(h.last)) + '</span></div>' + sess;
   }).join('') : '<div class="empty">' + (q ? 'No hooks match.' : 'No hook runs in this window. Claude Code records each hook run in its session transcript; other agents do not. Widen the time window at the top to look further back.') + '</div>';
 }
