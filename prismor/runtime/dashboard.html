@@ -3795,8 +3795,11 @@ function renderDocsList(items, query, matched) {
 async function docsCopyAgentPrompt() {
   try {
     const data = await apiFetch('/api/query-prompt');
-    await navigator.clipboard.writeText(data.prompt);
-    toast('Prompt copied. Paste it into your agent and finish the last line.');
+    // The search box holds the question; ask that instead of leaving a placeholder.
+    const q = (document.getElementById('docsSearch')?.value || '').trim();
+    await navigator.clipboard.writeText(q ? data.prompt.replace('<what I want to know>', q) : data.prompt);
+    toast(q ? 'Prompt copied with your question. Paste it into your agent.'
+            : 'Prompt copied. Paste it into your agent and finish the last line.');
     openDoc('query-your-data.md');
   } catch (e) {
     toast('Could not copy: ' + (e && e.message || e), true);
