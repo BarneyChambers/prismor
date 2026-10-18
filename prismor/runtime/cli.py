@@ -769,6 +769,10 @@ def main(argv: Optional[List[str]] = None) -> None:
         _run_discover(args, workspace, repo_root)
         return
 
+    if args.command == "aibom":
+        from prismor.runtime import aibom as _aibom
+        raise SystemExit(_aibom.run(workspace, fmt=args.format, output=args.output))
+
     if args.command == "logout":
         from prismor.runtime.enterprise import identity as _identity, remote_policy as _remote
         had = _identity.clear_identity()
@@ -796,6 +800,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     # uninstalling hooks or touching observe-mode screening/telemetry.
     if args.command in ("unlock", "lock"):
         raise SystemExit(_unlock_cmd(args, workspace))
+
+    if args.command == "approvals":
+        raise SystemExit(_approvals_cmd(args))
 
     if args.command in ("pause", "pause-hard"):
         from prismor.runtime import pause as _pause
@@ -2109,6 +2116,65 @@ def main(argv: Optional[List[str]] = None) -> None:
                 pass
 
         force_observe = args.mode == "observe" and os.environ.get("PRISMOR_LOCAL_DRY_RUN", "").lower() in {"1", "true", "yes", "on"}
+
+        # One-shot human approval (approvals_local.py): a person ran
+        # `prismor approvals approve <id>` for exactly this call. Not for
+        # self-protection rules, not on org-managed workspaces (the org's own
+        # approval queue owns those), and not where the agent can ask inline -
+        # its native prompt is the better surface there.
+        _approval_req = None
+        if blocking is not None and not force_observe and _pstate is None:
+            try:
+                from prismor.runtime.contract import verdict_of as _verdict_of
+                from prismor.runtime.policy_engine import _SELF_PROTECTION_RULE_IDS as _SP_IDS
+                from prismor.runtime.enterprise import workspace_scope as _ws_scope
+                _v0 = _verdict_of(blocking)
+                _inline_ask = _v0 == "step_up" and not payload.get("agent_id") and (
+                    args.agent in ("claude", "qwen", "copilot", "antigravity")
+                    or (args.agent == "cursor" and _agent_event in _CURSOR_ASK_EVENTS))
+                if (_v0 in ("block", "step_up") and not _inline_ask
+                        and _hook_event in ("PreToolUse", "", None)
+                        and str(blocking.get("ruleId") or "") not in _SP_IDS
+                        and not _ws_scope.is_managed(workspace)):
+                    from prismor.runtime import approvals_local as _appr
+                    _afp = _appr.fingerprint(args.agent, workspace, payload, event)
+                    _granted = _appr.consume(_afp)
+                    if _granted is None:
+                        _wait = _appr.wait_seconds(args.agent)
+                        _what = str(event.get("command") or event.get("path") or event.get("url")
+                                    or blocking.get("evidence") or normalized.get("toolName") or "")
+                        _approval_req = _appr.request(
+                            _afp, agent=args.agent, session_id=str(normalized.get("sessionId") or ""),
+                            finding=blocking, summary=_what, waiting_seconds=_wait)
+                        if _wait:
+                            _appr.notify(f"Prismor: {args.agent} is waiting",
+                                         f"{blocking.get('title')} - prismor approvals approve {_approval_req['id']}")
+                            sys.stderr.write(
+                                f"[prismor] waiting {_wait}s for approval: prismor approvals approve {_approval_req['id']}\n")
+                            if _appr.wait(_approval_req["id"], _wait):
+                                _granted = _approval_req
+                                _approval_req = None
+                    if _granted is not None:
+                        sys.stderr.write(
+                            f"[prismor] allowed once by human approval {_granted['id']} "
+                            f"(rule: {blocking.get('ruleId')})\n")
+                        _granted_finding, blocking = blocking, None
+                        try:
+                            from prismor.runtime.enterprise import audit_trail as _audit
+                            if _audit.enabled():
+                                _audit.append_approval_record(
+                                    status="approved_local", approval_id=_granted["id"],
+                                    tool=str(normalized.get("toolName") or ""),
+                                    rule_id=_granted_finding.get("ruleId"),
+                                    severity=_granted_finding.get("severity"),
+                                    reason=str(_granted_finding.get("title") or ""),
+                                    fingerprint=_afp, agent=args.agent,
+                                    session_id=str(normalized.get("sessionId") or ""))
+                        except Exception:
+                            pass
+            except Exception:
+                _approval_req = None  # approvals are a way out, never a reason to fail
+
         if blocking is not None and not force_observe and _pstate is None:
             # R4 authorization verdict, driven by the surfaced enforce finding's
             # `action`. `block` (or unset) → DENY; `step_up` → inline human
@@ -2145,6 +2211,16 @@ def main(argv: Optional[List[str]] = None) -> None:
                 )
             except Exception:
                 pass  # best-effort — a block must never depend on its own help text
+            if _approval_req is not None:
+                # Narrowest way out first: this call, once. Addressed to the
+                # agent too, since it is the one that has to relay it and retry.
+                unblock_text = (
+                    f"To run just this once, the user approves it in their own terminal:\n"
+                    f"  prismor approvals approve {_approval_req['id']}\n"
+                    "Agent: ask the user to run that, wait for them to say it is done, then retry "
+                    "this exact call once. Do not try a different way around the block."
+                    + (f"\n\n{unblock_text}" if unblock_text else "")
+                )
             if unblock_text:
                 reason += f"\n\n{unblock_text}"
 
@@ -3968,6 +4044,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--fix-mode", choices=["observe", "enforce"], default="observe",
         help="Mode to install newly hooked agents in (default: observe)")
 
+    aibom_parser = subparsers.add_parser(
+        "aibom",
+        help="Export an AI bill of materials (CycloneDX 1.6): agents, models, MCP servers, plugins, skills, hooks",
+    )
+    aibom_parser.add_argument("--format", choices=["cyclonedx", "markdown"], default="cyclonedx",
+                              help="cyclonedx (JSON, default) or markdown for people")
+    aibom_parser.add_argument("--output", "-o", help="Write to this file instead of stdout")
+    aibom_parser.add_argument("--workspace", help="Workspace path")
+
     # ── sandbox ────────────────────────────────────────────────────────
     sandbox_parser = subparsers.add_parser(
         "sandbox",
@@ -4494,6 +4579,13 @@ def build_parser() -> argparse.ArgumentParser:
                           help="Remove the unlock password entirely (self-edit stays blocked)")
     unlock_p.add_argument("--workspace", help="Workspace path")
     subparsers.add_parser("lock", help="Close the self-edit window opened by `prismor unlock`")
+
+    approvals_p = subparsers.add_parser(
+        "approvals", help="List blocked actions waiting for you; approve or deny one, once")
+    approvals_p.add_argument("action", nargs="?", choices=["list", "approve", "deny"], default="list")
+    approvals_p.add_argument("id", nargs="?", help="Request id from the block message")
+    approvals_p.add_argument("--all", action="store_true", help="With list: include decided and used requests")
+    approvals_p.add_argument("--json", action="store_true", help="Machine-readable output")
 
     workspace_p = subparsers.add_parser("workspace", help="Show or set whether this workspace is org-managed or personal")
     workspace_p.add_argument("action", nargs="?", choices=["managed", "personal", "auto"], help="managed = report to org; personal = local-only; auto = let org patterns decide")
@@ -6179,6 +6271,61 @@ def _policy_test(workspace: Path, test_file: Optional[str] = None, policy_file: 
     print()
     if result["failed"]:
         raise SystemExit(1)
+
+
+def _approvals_cmd(args: Any) -> int:
+    """`prismor approvals [list|approve <id>|deny <id>]` - see approvals_local.py."""
+    from prismor.runtime import approvals_local as _appr
+    import datetime as _dt
+
+    if args.action == "list":
+        recs = _appr.list_requests(include_done=args.all)
+        if args.json:
+            print(json.dumps(recs, indent=2))
+            return 0
+        if not recs:
+            print("Nothing waiting for approval.")
+            return 0
+        for r in recs:
+            when = _dt.datetime.fromtimestamp(float(r.get("created", 0))).strftime("%H:%M")
+            print(f"{r['id']}  {r['status']:<8} {when}  {r.get('agent', '')}  "
+                  f"[{r.get('severity', '')}] {r.get('title', '')} (rule: {r.get('rule', '')})")
+            if r.get("summary"):
+                print(f"        {r['summary'][:160]}")
+        pending = [r for r in recs if r["status"] == "pending"]
+        if pending:
+            print(f"\nApprove one: prismor approvals approve {pending[0]['id']}")
+        return 0
+
+    if not args.id:
+        print(f"Usage: prismor approvals {args.action} <id>   (ids: prismor approvals)", file=sys.stderr)
+        return 2
+    if args.action == "approve" and not sys.stdin.isatty():
+        # An agent's shell tool has no terminal. This is the check that still
+        # holds inside an unlock window, where the self-edit rule is lifted.
+        print("prismor approvals approve must be run by you, in a terminal.", file=sys.stderr)
+        return 1
+    rec = _appr.decide(args.id, approve=args.action == "approve")
+    if rec is None:
+        print(f"No approval request {args.id!r}. See: prismor approvals", file=sys.stderr)
+        return 1
+    if rec.get("decided_at") is None or rec["status"] not in ("approved", "denied"):
+        print(f"{rec['id']} is already {rec['status']}.", file=sys.stderr)
+        return 1
+    agent = rec.get("agent") or "the agent"
+    print(f"{'Approved once' if rec['status'] == 'approved' else 'Denied'}: "
+          f"[{rec.get('severity')}] {rec.get('title')}")
+    if rec.get("summary"):
+        print(f"  {rec['summary'][:200]}")
+    if rec["status"] == "denied":
+        print(f"It stays blocked. {agent} was already told no; nothing else to do.")
+    elif rec.get("was_waiting"):
+        print(f"{agent} was holding this call open - it continues now. Nothing to retry.")
+    else:
+        mins = _appr.APPROVED_TTL // 60
+        print(f"{agent} is not waiting on it, so Prismor cannot resume it for you. Go back to "
+              f"{agent} and tell it to retry - the same call runs once within {mins} minutes.")
+    return 0
 
 
 def _unlock_cmd(args, workspace: Path) -> int:
