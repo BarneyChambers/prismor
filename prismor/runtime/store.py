@@ -1445,6 +1445,28 @@ def _extract_mcp_or_tool(raw_json: str) -> Optional[Dict[str, str]]:
 _MIGRATED_PATHS: set = set()
 
 
+def ensure_read_indexes() -> None:
+    """Indexes only the dashboard's reads need, built from the dashboard and
+    never from a hook: on a large store the first build takes seconds, and a
+    hook that waited on it would stall the agent.
+
+    events(ts, type) lets the tool-call breakdown count from the index
+    instead of reading every event row (7 s -> 30 ms on a 500 MB store)."""
+    for ws in _state_query_workspaces():
+        db_path = get_db_path(ws)
+        if not db_path.exists():
+            continue
+        try:
+            conn = sqlite3.connect(db_path, timeout=30)
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_events_ts_type ON events(ts, type)")
+                conn.commit()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            pass
+
+
 def _connect_ro(db_path: Path):
     """Open a SQLite DB read-only; returns None if unavailable.
 
@@ -1787,7 +1809,7 @@ def get_aggregate_stats(hours: int = 24) -> Dict[str, Any]:
             for row in conn.execute(
                 f"""
                 SELECT e.raw_json, s.agent, (f.finding_id IS NOT NULL AND {_ENFORCED_SQL}) as blocked
-                FROM events e
+                FROM events e INDEXED BY idx_events_ts
                 JOIN sessions s ON s.session_id = e.session_id
                 LEFT JOIN findings f ON f.session_id = e.session_id
                                     AND f.event_index = (
@@ -2043,8 +2065,42 @@ def get_sessions_page(
     for r in items:
         r.pop("_sortRaw", None)
         r.pop("_updatedRaw", None)
+    titles = _first_prompts([r["sessionId"] for r in items], workspaces)
+    for r in items:
+        r["title"] = titles.get(r["sessionId"], "")
 
     return {"items": items, "total": total, "page": page, "pages": pages, "limit": limit, "facets": facets}
+
+
+def _first_prompts(session_ids: List[str], workspaces: List[Path]) -> Dict[str, str]:
+    """What each session was started to do: its first real prompt, one line.
+    A person recognises "fix the login bug" where a session id says nothing.
+    Slash-command wrappers and pasted tags are skipped."""
+    want, out = set(session_ids), {}
+    for ws in workspaces:
+        if not want:
+            break
+        conn = _connect_ro(get_db_path(ws))
+        if conn is None:
+            continue
+        try:
+            for sid in list(want):
+                for (text,) in conn.execute(
+                    "SELECT substr(content_text, 1, 400) FROM events WHERE session_id = ? "
+                    "AND type = 'prompt' ORDER BY id LIMIT 5",
+                    (sid,),
+                ):
+                    line = re.sub(r"<[^>]+>", " ", text or "")
+                    line = " ".join(line.split())
+                    if line and not line.startswith("/") and not line.lower().startswith(("caveat:", "clear")):
+                        out[sid] = line[:140]
+                        want.discard(sid)
+                        break
+        except sqlite3.Error:
+            pass
+        finally:
+            conn.close()
+    return out
 
 
 def get_mcp_usage(hours: int = 24 * 7) -> Dict[str, Dict[str, Any]]:
@@ -2121,25 +2177,30 @@ def get_mcp_usage(hours: int = 24 * 7) -> Dict[str, Dict[str, Any]]:
 # numbering must not be windowed: filtering by ts first restarts it at 0 and
 # silently joins a session's findings onto the wrong events whenever that
 # session began before the cutoff. Number everything, then filter.
+# Only the window's events are read, through the ts index; each one's
+# position in its session (what findings key on) is counted from the
+# (session_id, id) index. Numbering every event in the store instead read
+# the whole table and took seconds on a large one.
 _NET_SQL = """
-WITH numbered AS (
-    SELECT id, session_id, ts, type, command_text, url_text,
-           ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY id) - 1 AS rn
-    FROM events
-)
-SELECT n.session_id, n.ts, n.type, n.command_text, n.url_text, f.enrichment_json
-FROM numbered n
+SELECT x.session_id, x.ts, x.type, x.command_text, x.url_text, f.enrichment_json
+FROM (
+    SELECT e.id, e.session_id, e.ts, e.type, e.command_text, e.url_text,
+           (SELECT COUNT(*) FROM events e2
+             WHERE e2.session_id = e.session_id AND e2.id < e.id) AS rn
+    FROM events e INDEXED BY idx_events_ts
+    WHERE e.ts >= ?
+      AND ((e.url_text IS NOT NULL AND e.url_text != '')
+       OR e.command_text LIKE '%://%' OR e.command_text LIKE '%curl%'
+       OR e.command_text LIKE '%wget%' OR e.command_text LIKE '%git %'
+       OR e.command_text LIKE '%ssh %' OR e.command_text LIKE '%scp %'
+       OR e.command_text LIKE '%nc %')
+    ORDER BY e.id DESC
+    LIMIT 40000
+) x
 LEFT JOIN findings f
-       ON f.session_id = n.session_id AND f.event_index = n.rn
+       ON f.session_id = x.session_id AND f.event_index = x.rn
       AND (f.category = 'network_isolation' OR f.enrichment_json LIKE '%egressHost%')
-WHERE n.ts >= ?
-  AND ((n.url_text IS NOT NULL AND n.url_text != '')
-   OR n.command_text LIKE '%://%' OR n.command_text LIKE '%curl%'
-   OR n.command_text LIKE '%wget%' OR n.command_text LIKE '%git %'
-   OR n.command_text LIKE '%ssh %' OR n.command_text LIKE '%scp %'
-   OR n.command_text LIKE '%nc %')
-ORDER BY n.id DESC
-LIMIT 40000
+ORDER BY x.id DESC
 """
 
 
@@ -2434,33 +2495,32 @@ def get_findings_page(
             # The triggering event for a finding is identified by event_index
             # (its 0-based position in the session's event list). SQLite does
             # not support correlating an outer column inside a subquery's
-            # OFFSET clause (`OFFSET COALESCE(f.event_index, 0)` errors with
-            # "no such column: f.event_index" even though the column exists),
-            # so number each session's events with ROW_NUMBER() and join on
-            # equality instead — see PrismorSec/prismor#129.
+            # OFFSET clause, so number each session's events with
+            # ROW_NUMBER() and join on equality -- see PrismorSec/prismor#129.
+            # Only ids are numbered (a covering index answers it) and only the
+            # trigger's timestamp is read here: event rows carry the raw hook
+            # payload, so reading them all made this take ~30 s on a 500 MB
+            # store. The page's own rows get their trigger detail below.
             for row in conn.execute(
                 f"""
-                WITH numbered_events AS (
-                    SELECT *, ROW_NUMBER() OVER (
+                WITH numbered AS (
+                    SELECT id, session_id, ROW_NUMBER() OVER (
                         PARTITION BY session_id ORDER BY id
                     ) - 1 AS rn
                     FROM events
+                    WHERE session_id IN (SELECT session_id FROM findings)
                 )
                 SELECT f.finding_id, f.session_id, f.title, f.category,
-                       f.severity, f.evidence, f.event_index, s.agent,
-                       te.ts          as trig_ts,
-                       te.type        as trig_type,
-                       te.command_text as trig_cmd,
-                       te.path_text    as trig_path,
-                       te.url_text     as trig_url,
-                       te.content_text as trig_content,
-                       te.agent_event  as trig_hook,
+                       f.severity, substr(f.evidence, 1, 800) as evidence, s.agent,
+                       n.id            as trig_id,
+                       te.ts           as trig_ts,
                        s.updated_at    as session_updated
                 FROM findings f
                 JOIN sessions s ON s.session_id = f.session_id
-                LEFT JOIN numbered_events te
-                    ON te.session_id = f.session_id
-                    AND te.rn = COALESCE(f.event_index, 0)
+                LEFT JOIN numbered n
+                    ON n.session_id = f.session_id
+                    AND n.rn = COALESCE(f.event_index, 0)
+                LEFT JOIN events te ON te.id = n.id
                 {where}
                 ORDER BY COALESCE(te.ts, s.updated_at) DESC
                 LIMIT 20000
@@ -2468,24 +2528,19 @@ def get_findings_page(
                 params,
             ):
                 ts_raw = row["trig_ts"] or row["session_updated"] or ""
-                trig_kind = (row["trig_type"] or "").strip() or row["trig_hook"] or ""
-                trig_detail = (row["trig_cmd"] or row["trig_path"] or row["trig_url"]
-                              or row["trig_content"] or "")
                 rows.append({
                     "id": (row["finding_id"] or "")[:20],
                     "sessionId": row["session_id"] or "",
                     "title": row["title"] or "Unknown",
                     "category": _CATEGORY_MAP.get(row["category"] or "", "dangerous_command"),
                     "severity": (row["severity"] or "low").lower(),
-                    "evidence": (row["evidence"] or "")[:800],
+                    "evidence": row["evidence"] or "",
                     "agent": row["agent"] or "unknown",
                     "ts": _relative_time_store(ts_raw) if ts_raw else "",
                     "tsAbs": _absolute_time_store(ts_raw),
                     "_tsRaw": ts_raw,
-                    "trigger": {
-                        "kind": trig_kind,
-                        "detail": (trig_detail or "")[:1200],
-                    },
+                    "_db": db_path,
+                    "_trigId": row["trig_id"],
                 })
         except Exception:
             pass
@@ -2501,8 +2556,34 @@ def get_findings_page(
     page = max(1, min(page, pages))
     offset = (page - 1) * limit
     items = rows[offset: offset + limit]
+    # Trigger detail for this page only, one lookup by id per store.
+    by_db: Dict[Any, List[Dict[str, Any]]] = {}
     for r in items:
-        r.pop("_tsRaw", None)
+        by_db.setdefault(r["_db"], []).append(r)
+    for db_path, page_rows in by_db.items():
+        ids = [r["_trigId"] for r in page_rows if r["_trigId"] is not None]
+        found: Dict[int, Any] = {}
+        conn = _connect_ro(db_path) if ids else None
+        if conn is not None:
+            try:
+                for ev in conn.execute(
+                    "SELECT id, type, agent_event, command_text, path_text, url_text, content_text "
+                    f"FROM events WHERE id IN ({','.join('?' * len(ids))})",  # nosec B608
+                    ids,
+                ):
+                    found[ev["id"]] = ev
+            except Exception:
+                pass
+            finally:
+                conn.close()
+        for r in page_rows:
+            ev = found.get(r["_trigId"])
+            detail = (ev["command_text"] or ev["path_text"] or ev["url_text"] or ev["content_text"] or "") if ev else ""
+            r["trigger"] = {"kind": ((ev["type"] or "").strip() or ev["agent_event"] or "") if ev else "",
+                            "detail": detail[:1200]}
+    for r in rows:
+        for k in ("_tsRaw", "_db", "_trigId"):
+            r.pop(k, None)
 
     return {
         "items": items, "total": total, "page": page, "pages": pages, "limit": limit,
@@ -3015,9 +3096,12 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
                     allowed_24h += row["cnt"]
                 checked_24h += row["cnt"]
 
+            # Every panel uses the window the KPIs use, so the counts above
+            # and the rows below agree.
             for row in conn.execute(
                 "SELECT ecosystem, verdict, COUNT(*) as cnt "
-                "FROM supply_chain_events GROUP BY ecosystem, verdict"
+                "FROM supply_chain_events WHERE ts >= datetime('now', ?) GROUP BY ecosystem, verdict",
+                (f"-{hours} hours",),
             ):
                 eco = row["ecosystem"] or "unknown"
                 ecosystem_total[eco] += row["cnt"]
@@ -3026,8 +3110,9 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
 
             for row in conn.execute(
                 "SELECT package_name, ecosystem, ioc_id, COUNT(*) as cnt "
-                "FROM supply_chain_events WHERE verdict='block' "
-                "GROUP BY package_name ORDER BY cnt DESC LIMIT 20"
+                "FROM supply_chain_events WHERE verdict='block' AND ts >= datetime('now', ?) "
+                "GROUP BY package_name ORDER BY cnt DESC LIMIT 20",
+                (f"-{hours} hours",),
             ):
                 name = row["package_name"] or ""
                 pkg_blocks[name] += row["cnt"]
@@ -3043,10 +3128,11 @@ def get_supply_chain_stats(hours: int = 24) -> Dict[str, Any]:
                        COALESCE(recommended_version, '') as recommended,
                        COALESCE(session_id, '') as session_id, ioc_id
                 FROM supply_chain_events
-                WHERE verdict IN ('block','warn')
+                WHERE verdict IN ('block','warn') AND ts >= datetime('now', ?)
                 ORDER BY ts DESC
                 LIMIT 20000
-                """
+                """,
+                (f"-{hours} hours",),
             ):
                 try:
                     sigs = json.loads(row["signals_json"] or "[]")

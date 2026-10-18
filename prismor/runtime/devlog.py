@@ -510,11 +510,19 @@ def _shell_writes() -> List[Dict[str, Any]]:
         ).fetchall()
     finally:
         conn.close()
-    out = []
+    # Parsing is the slow part (~2 ms a command), and a live agent adds an
+    # event every few seconds: keep each command's parse by event id so a
+    # refresh parses only what is new.
+    parsed = _SHELL_CACHE.get("parsed") if _SHELL_CACHE.get("db") == str(prismor_home()) else None
+    parsed = parsed if parsed is not None else {}
+    out, keep = [], {}
     for eid, sid, ts, cmd, cwd in rows:
-        for path, diff in _shell_write_diffs(cmd or "", cwd):
+        if eid not in parsed:
+            parsed[eid] = _shell_write_diffs(cmd or "", cwd)
+        keep[eid] = parsed[eid]
+        for path, diff in keep[eid]:
             out.append({"id": eid, "sessionId": sid, "ts": ts, "path": path, "diff": diff})
-    _SHELL_CACHE.update(top=top, db=str(prismor_home()), rows=out)
+    _SHELL_CACHE.update(top=top, db=str(prismor_home()), rows=out, parsed=keep)
     return out
 
 

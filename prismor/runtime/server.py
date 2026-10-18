@@ -43,12 +43,14 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import sys
+import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse, parse_qs, unquote, urlsplit
 
 from prismor.runtime.store import (
@@ -329,15 +331,57 @@ def _docs_list(root: Path):
     return out
 
 
+# Words that carry no meaning in a question ("why was my command blocked").
+_DOC_STOPWORDS = frozenset(
+    "a an and are as at be by can do does for from how i if in is it its me my of on or "
+    "so that the this to was we what when where which who why will with you your prismor".split()
+)
+# Plain words a newcomer types, mapped to the words the docs use.
+_DOC_SYNONYMS = {
+    "block": ("deny", "stop"), "stop": ("block", "pause", "kill"), "deny": ("block",),
+    "allow": ("exempt", "permit"), "secret": ("key", "token", "credential", "cloak"),
+    "key": ("secret", "token", "credential"), "hide": ("cloak", "redact", "mask"),
+    "token": ("secret", "key"), "password": ("secret", "credential"),
+    "off": ("disable", "pause", "uninstall"), "disable": ("off", "pause"),
+    "remove": ("uninstall", "delete"), "delete": ("remove", "purge"),
+    "uninstall": ("remove",), "update": ("upgrade",), "upgrade": ("update",),
+    "slow": ("timeout", "latency"), "data": ("telemetry", "store"),
+    "leave": ("egress", "send", "upload"), "send": ("egress", "upload", "telemetry"),
+    "privacy": ("telemetry", "data", "redact"), "start": ("install", "setup", "getting"),
+    "begin": ("getting", "start"), "setup": ("install",), "install": ("setup",),
+}
+
+
+def _doc_stem(word: str) -> str:
+    """blocked/blocking/blocks -> block: enough for matching, not linguistics."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > len(suffix) + 3 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _doc_terms(query: str) -> List[List[str]]:
+    """One group per meaningful word: the word's stem and its synonyms. A
+    section matches a group if any of them appears."""
+    words = [w for w in re.findall(r"[a-z0-9][a-z0-9_.-]*", query.lower()) if w not in _DOC_STOPWORDS]
+    groups = []
+    for w in words:
+        stem = _doc_stem(w)
+        groups.append(list(dict.fromkeys([stem, *_DOC_SYNONYMS.get(stem, ()), *_DOC_SYNONYMS.get(w, ())])))
+    return groups
+
+
 def _docs_search(root: Path, query: str, limit: int = 60):
-    """Case-insensitive substring scan over the docs. No index -- the corpus
-    is a few dozen small files."""
-    # Every word must appear in the line -- a two-word query matching only
-    # "decloak" or only "hook" is noise, and nobody types a phrase expecting
-    # an exact substring.
-    terms = [t for t in query.lower().split() if t]
-    if not terms:
+    """Ranked search over the docs: a page scores for each query word in its
+    title, its headings and its sections, so the page about the thing asked
+    comes first. Filler words are dropped, words match by stem, and a few
+    plain words also match the docs' own vocabulary (hide -> cloak). The
+    corpus is a few dozen small files, so it is scanned per query."""
+    groups = _doc_terms(query)
+    if not groups:
         return []
+    # "what is a hook" wants the definition first.
+    define = bool(re.match(r"\s*(what\s+(is|are|does)|what's|define|meaning)\b", query.lower()))
     results = []
     for f in sorted(root.glob("*.md")):
         try:
@@ -345,18 +389,64 @@ def _docs_search(root: Path, query: str, limit: int = 60):
         except OSError:
             continue
         title = _doc_title(text, f.name)
-        hits = []
+        tlow = (title + " " + f.stem.replace("-", " ")).lower()
+        score = sum(15 for g in groups if any(t in tlow for t in g))
+        if f.name == "glossary.md" and define:
+            score += 25
+        # Sections: the text under each heading, scored on its own.
+        sections, cur, fenced = [], {"heading": "", "line": 1, "lines": []}, False
         for i, line in enumerate(text.splitlines(), 1):
-            low = line.lower()
-            if all(t in low for t in terms):
-                hits.append({"line": i, "snippet": line.strip()[:200]})
-                if len(hits) >= 3:
-                    break
-        if hits or all(t in title.lower() for t in terms):
-            results.append({"name": f.name, "title": title, "hits": hits})
-        if len(results) >= limit:
-            break
-    return results
+            if line.startswith("```"):
+                fenced = not fenced
+            if line.startswith("#") and not fenced:
+                sections.append(cur)
+                cur = {"heading": line.lstrip("#").strip(), "line": i, "lines": []}
+            cur["lines"].append((i, line))
+        sections.append(cur)
+        best = []
+        for sec in sections:
+            body = " ".join(l for _, l in sec["lines"]).lower()
+            covered = [g for g in groups if any(t in body for t in g)]
+            if not covered:
+                continue
+            head = sec["heading"].lower()
+            in_head = sum(1 for g in groups if any(t in head for t in g))
+            sec_score = 3 * in_head + len(covered)
+            if in_head == len(groups):
+                # A heading that is the question or the term itself ("Why was
+                # my command blocked?", "Hook") is the answer, not a mention.
+                sec_score += 12 if len(head.split()) <= 2 * len(groups) + 1 else 8
+            if len(covered) == len(groups):
+                sec_score += 2 * len(groups)  # every word asked about, in one place
+            best.append((sec_score, sec))
+        best.sort(key=lambda x: -x[0])
+        score += sum(sc for sc, _ in best[:2])
+        if not score or (len(groups) > 1 and not best and score < 15 * len(groups)):
+            continue
+        hits = []
+        for _, sec in best[:3]:
+            lines = [(i, l) for i, l in sec["lines"] if l.strip() and not l.startswith("#")]
+            i, line = max(lines or sec["lines"], key=lambda il: sum(1 for g in groups if any(t in il[1].lower() for t in g)))
+            hits.append({"line": i, "snippet": line.strip()[:200], "section": sec["heading"]})
+        full = all(any(t in tlow or any(t in " ".join(l for _, l in sec["lines"]).lower() for _, sec in best) for t in g)
+                   for g in groups)
+        results.append({"name": f.name, "title": title, "hits": hits, "score": score, "full": full})
+    # Pages with every word asked about, when there are any; otherwise the
+    # closest, so one misspelt word does not empty the list.
+    if any(r["full"] for r in results):
+        results = [r for r in results if r["full"]]
+    for r in results:
+        del r["full"]
+    results.sort(key=lambda r: (-r["score"], r["title"]))
+    # Pages that only mention the words in passing are noise next to the
+    # page about them: keep what scores within reach of the best.
+    if results:
+        floor = results[0]["score"] * 0.35
+        results = [r for r in results if r["score"] >= floor][:20]
+    terms = sorted({t for g in groups for t in g}, key=len, reverse=True)
+    for r in results:
+        r["terms"] = terms
+    return results[:limit]
 
 
 # The workspace where the server was launched (set by run_server).
@@ -1133,6 +1223,18 @@ class _DashboardServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _warm_dashboard_reads() -> None:
+    """Pay the one-off costs before anyone opens a page: the read index, and
+    the parse of recent shell commands the Files page lists."""
+    from prismor.runtime import devlog
+    from prismor.runtime.store import ensure_read_indexes
+    for step in (ensure_read_indexes, lambda: devlog.files("")):
+        try:
+            step()
+        except Exception:
+            pass
+
+
 def run_server(
     host: str = "127.0.0.1",
     port: int = 7070,
@@ -1154,6 +1256,7 @@ def run_server(
     if workspace:
         _migrate_workspace_runtime_state(workspace, prismor_home())
         initialize_database(workspace)
+    threading.Thread(target=_warm_dashboard_reads, daemon=True).start()
 
     import errno as _errno
     while True:
@@ -1170,7 +1273,6 @@ def run_server(
     url = f"http://{host}:{port}" + (f"/?token={_SERVER_TOKEN}" if _SERVER_TOKEN else "")
     print(f"[prismor] dashboard → {url}  (Ctrl-C to stop)  state → {prismor_home()}", flush=True)
     if open_browser:
-        import threading
         import webbrowser
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
