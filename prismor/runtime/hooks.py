@@ -367,7 +367,7 @@ def hook_health(workspace: Path, *, self_test: bool = False) -> List[Dict[str, A
                     continue
             for command in launchers:
                 try:
-                    argv = shlex.split(command)
+                    argv = shlex.split(_strip_powershell_wrapper(command))
                 except ValueError:
                     row.update(state="fail", detail="dispatcher command has invalid quoting")
                     break
@@ -981,12 +981,13 @@ def _config_path(agent: str, scope: str, workspace: Path) -> Path:
 
 # Generated launcher that fixes up sys.path and hands off to the CLI. Written
 # to disk rather than inlined into the hook command because every agent config
-# format takes a *shell string*, and on Windows the interpreter running that
-# string is cmd.exe — where a `PYTHONPATH=... python ...` prefix is not a
-# variable assignment but an attempt to execute a program literally named
+# format takes a *shell string*, and on Windows that string often runs under
+# cmd.exe — where a `PYTHONPATH=... python ...` prefix is not a variable
+# assignment but an attempt to execute a program literally named
 # `PYTHONPATH=...`. The hook then fails, hook failure is non-blocking, and
 # Prismor reports installed while screening nothing. A plain
-# `"python" "file" <args>` line is the one shape cmd.exe and sh agree on.
+# `"python" "file" <args>` line is the one shape cmd.exe and sh agree on;
+# PowerShell needs its own (see _POWERSHELL_HOOK_AGENTS).
 _SHIM_NAME = "hook-dispatch.py"
 
 _SHIM_TEMPLATE = (
@@ -1042,7 +1043,31 @@ def _dispatcher_command(*, repo_root: Path, workspace: Path, agent: str, mode: s
     py = sys.executable or "python3"
     shim = _write_dispatch_shim(repo_root)
     ws_flag = f'--workspace "{workspace}" ' if pin_workspace else ""
-    return f'"{py}" "{shim}" hook-dispatch --agent {agent} {ws_flag}--mode {mode}'
+    command = f'"{py}" "{shim}" hook-dispatch --agent {agent} {ws_flag}--mode {mode}'
+    if _IS_WINDOWS and agent in _POWERSHELL_HOOK_AGENTS:
+        return _POWERSHELL_PREFIX + command + _POWERSHELL_SUFFIX
+    return command
+
+
+# Agents that run hook commands through PowerShell on Windows (verified live:
+# Codex 0.163, Gemini CLI 0.64, Copilot CLI). There a line starting with a
+# quoted path is a string expression, not a call ("C:\Program is not
+# recognized"), and `powershell -Command` reports a native exit 2 as 1. Codex
+# and Gemini read 1 as a broken hook and run the tool anyway; Copilot denies
+# every call. `& <cmd>; exit $LASTEXITCODE` invokes the launcher and hands its
+# exit code back unchanged. cmd.exe agents keep the plain form: there `;` is
+# not a separator and the suffix would reach argparse.
+_IS_WINDOWS = os.name == "nt"
+_POWERSHELL_HOOK_AGENTS = frozenset({"codex", "copilot", "gemini"})
+_POWERSHELL_PREFIX = "& "
+_POWERSHELL_SUFFIX = "; exit $LASTEXITCODE"
+
+
+def _strip_powershell_wrapper(command: str) -> str:
+    """The generated launcher line inside its PowerShell wrapper, if any."""
+    if command.startswith(_POWERSHELL_PREFIX) and command.endswith(_POWERSHELL_SUFFIX):
+        return command[len(_POWERSHELL_PREFIX):-len(_POWERSHELL_SUFFIX)]
+    return command
 
 
 # `Skill` is how Claude loads a skill. Without it a skill invocation never

@@ -1324,7 +1324,7 @@ class PolicyEngine:
         # local-only affordance for a developer's own machine. Arriving from the
         # signed org bundle (or a repo exemption overlay) it would mean an admin
         # had turned the floor off fleet-wide, which the floor exists to prevent.
-        if source != "project" and "selection" in override_settings:
+        if source not in ("project", "user") and "selection" in override_settings:
             sys.stderr.write(
                 f"[prismor] Ignoring settings.selection from the {source} policy layer "
                 f"(the safety floor stays on for managed workspaces)\n"
@@ -1394,20 +1394,39 @@ class PolicyEngine:
             if candidate.exists():
                 override_path = candidate
 
-        if override_path is not None and override_path.exists():
+        # The user layer (~/.prismor/policy.yaml) sits between the defaults and
+        # the project. `setup --scope global` writes its rule selection there,
+        # because a global hook attributes each call to the repo it runs in
+        # (cwd -> git root), and that repo usually has no .prismor/policy.yaml
+        # of its own. Without this layer every repo except the one setup ran
+        # in fell back to the defaults, which warn where the selection blocks.
+        # It is also the file `prismor policy` edits as "global". Skipped when a
+        # caller names the policy file outright, and when it is the project
+        # file (workspace == ~).
+        user_path: Optional[Path] = None
+        if policy_path is None:
+            from prismor.runtime.store import prismor_home
+            user_path = prismor_home() / "policy.yaml"
+            if not user_path.exists() or (override_path is not None
+                                          and user_path.resolve() == override_path.resolve()):
+                user_path = None
+
+        for layer_path, source in ((user_path, "user"), (override_path, "project")):
+            if layer_path is None or not layer_path.exists():
+                continue
             try:
-                override_raw = _load_yaml(override_path)
+                override_raw = _load_yaml(layer_path)
                 if override_raw is not None and not isinstance(override_raw, dict):
                     raise ValueError("the top level must be a mapping (version:, rules:, settings:)")
             except Exception as exc:  # malformed YAML or shape: fall back, say so
                 override_raw = None
                 detail = " ".join(str(exc).split())[:240]
-                self.project_policy_error = f"{override_path}: {detail}"
+                self.project_policy_error = f"{layer_path}: {detail}"
                 # Skipping the layer dropped the mode's own protections (egress
                 # default-deny, opted-in rules) while the floor kept blocking,
                 # so a typo quietly weakened the policy. Keep enforcing the last
                 # version that parsed instead.
-                override_raw = _load_last_good(override_path)
+                override_raw = _load_last_good(layer_path)
                 self.project_policy_fallback = override_raw is not None
                 kept = ("The last version that parsed is still enforced"
                         if override_raw is not None else
@@ -1415,13 +1434,13 @@ class PolicyEngine:
                 if self.project_policy_error not in _WARNED_PROJECT_ERRORS:  # once per process
                     _WARNED_PROJECT_ERRORS.add(self.project_policy_error)
                     sys.stderr.write(
-                        f"[prismor] {override_path} is invalid ({detail}). {kept}. "
-                        f"Fix it, then check with: prismor policy validate {override_path}\n"
+                        f"[prismor] {layer_path} is invalid ({detail}). {kept}. "
+                        f"Fix it, then check with: prismor policy validate {layer_path}\n"
                     )
             else:
-                _remember_last_good(override_path)
+                _remember_last_good(layer_path)
             if override_raw is not None:
-                self._apply_override(override_raw, rules_by_id, allowlist_raw, settings, "project")
+                self._apply_override(override_raw, rules_by_id, allowlist_raw, settings, source)
 
         # Merge signed, org-managed remote policy (enterprise control plane).
         # Applied AFTER the project layer so an org admin's policy is

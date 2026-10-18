@@ -664,6 +664,10 @@ rules:
       - '\b(bash|sh|zsh|dash|ksh)\b[^\n]*<\(\s*(curl|wget)\b'
       # eval of remotely-fetched content: eval "$(curl ...)"
       - '\beval\b[^\n]*\b(curl|wget)\b'
+      # PowerShell: iwr ... | iex, and iex (irm ...) / iex (New-Object Net.WebClient).DownloadString(...).
+      # curl and wget are aliases of Invoke-WebRequest there.
+      - '\b(?:iwr|irm|curl|wget|Invoke-WebRequest|Invoke-RestMethod)\b[^|;\n]*\|\s*(?:iex|Invoke-Expression)\b'
+      - '\b(?:iex|Invoke-Expression)\b[^\n]*\b(?:iwr|irm|Invoke-WebRequest|Invoke-RestMethod|DownloadString)\b'
     action: block
 
   # ── HIGH: Sensitive file access ───────────────────────────────────────
@@ -693,7 +697,7 @@ rules:
     event_types: [shell]
     fields: [command]
     patterns:
-      - '(?:^|[;&|{]|(?<!\$)\(|\b(?:then|do|else|xargs|sudo|time|exec)\b)\s*(?:cat|tac|head|tail|less|more|bat|nl|strings|xxd|od|hexdump|sort|uniq|awk|sed(?![^\n;&|<>]*\s-i)|cut(?![^\n;&|<>]*-f\s*1\b)|(?:grep|egrep|rg)(?![^\n;&|<>]*\s-[a-zA-Z]*[qclLo]))\b(?!\s*[<>])[^\n;&|<>]*?(?:^|[\s"''=/])(?:\.env(?!\.(?:example|sample|template|dist|defaults|schema)\b)(?:\.[\w-]+)?|\.npmrc|\.pypirc|\.netrc|id_rsa|id_ed25519|\.aws/credentials)(?=$|[\s"'';&|)])'
+      - '(?:^|[;&|{]|(?<!\$)\(|\b(?:then|do|else|xargs|sudo|time|exec)\b)\s*(?:cat|tac|head|tail|less|more|bat|nl|strings|xxd|od|hexdump|sort|uniq|awk|Get-Content|gc|type|sed(?![^\n;&|<>]*\s-i)|cut(?![^\n;&|<>]*-f\s*1\b)|(?:grep|egrep|rg)(?![^\n;&|<>]*\s-[a-zA-Z]*[qclLo]))\b(?!\s*[<>])[^\n;&|<>]*?(?:^|[\s"''=/]|(?<=[\w~:.])\\)(?:\.env(?!\.(?:example|sample|template|dist|defaults|schema)\b)(?:\.[\w-]+)?|\.npmrc|\.pypirc|\.netrc|id_rsa|id_ed25519|\.aws[/\\]credentials)(?=$|[\s"'';&|)])'
     action: block
 
   # ── HIGH: Suspicious network destinations ─────────────────────────────
@@ -1030,6 +1034,22 @@ rules:
       - '(^|\n)/etc/systemd/system/'
       - '(^|\n)/lib/systemd/system/'
       - '(^|\n)/usr/lib/systemd/system/'
+    action: warn
+
+  # ── HIGH: Persistence — Windows autorun ───────────────────────────
+  # The Windows counterpart of persistence-systemd: a Run/RunOnce registry
+  # value or a scheduled task starts a program at every logon.
+  - id: persistence-windows-autorun
+    severity: HIGH
+    category: persistence
+    title: Detects Windows Run-key and scheduled-task autostart entries
+    event_types: [shell]
+    fields: [command]
+    patterns:
+      - '\b(?:New-ItemProperty|Set-ItemProperty|reg(?:\.exe)?\s+add)\b[^\n]*\\CurrentVersion\\Run(?:Once)?\b'
+      # The key path held in a variable first: $k = '...\Run'; Set-ItemProperty -Path $k ...
+      - '\\CurrentVersion\\Run(?:Once)?\b[\s\S]{0,2000}?\b(?:New-ItemProperty|Set-ItemProperty)\b'
+      - '\b(?:schtasks(?:\.exe)?\s+/create|Register-ScheduledTask)\b'
     action: warn
 
   # ── CRITICAL: Direct writes to core auth files ─────────────────────

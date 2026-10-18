@@ -57,7 +57,9 @@ _MARKER = "prismor/runtime/cloaking/hooks/"
 
 
 def _managed_hook_name(command: Any) -> str | None:
-    text = str(command or "")
+    # Quotes and backslashes: see _hook_entry. Older Windows installs wrote the
+    # bare native path, which the forward-slash markers never matched.
+    text = str(command or "").strip('"').replace("\\", "/")
     if not any(marker in text for marker in _LEGACY_MARKERS):
         return None
     name = Path(text).name
@@ -125,7 +127,11 @@ def _merge_claude_entries(
 
 
 def _hook_entry(script: Path) -> Dict[str, Any]:
-    return {"type": "command", "command": str(script)}
+    # Quoted, forward slashes: the hook runs under sh (Git Bash on Windows),
+    # where an unquoted `C:\Program Files\...` splits at the space and the
+    # backslashes are escapes, so the guard never ran and cloaking reported
+    # installed while screening nothing.
+    return {"type": "command", "command": f'"{script.as_posix()}"'}
 
 
 _CLAUDE_MD_BLOCK = """

@@ -61,7 +61,17 @@ _deny_if_unprotected() {
   local how="$1"; shift
   [[ $# -gt 0 ]] || return 0
   local report
-  report="$(PYTHONPATH="$_PKG_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c \
+  # The first interpreter that can import the checker. On Windows `python3`
+  # is usually the Microsoft Store alias stub, which exits non-zero, so this
+  # check failed and the read went through.
+  local py=""
+  for c in "${PRISMOR_PYTHON:-}" python3 python; do
+    [[ -n "$c" ]] || continue
+    if PYTHONPATH="$_PKG_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$c" -c \
+        'import prismor.runtime.cloaking.env_guard' >/dev/null 2>&1; then py="$c"; break; fi
+  done
+  [[ -n "$py" ]] || return 0
+  report="$(PYTHONPATH="$_PKG_ROOT${PYTHONPATH:+:$PYTHONPATH}" "$py" -c \
     'from prismor.runtime.cloaking.env_guard import main; main()' "$@" 2>/dev/null)" || return 0
   [[ -n "$report" ]] || return 0
   local total
