@@ -142,6 +142,7 @@ packages = [
 # .claude/skills/ directory. Files are listed explicitly — a `docs/` directory
 # mapping would drag in demo.gif (force-include ignores wheel `exclude`).
 "SKILL.md" = "prismor/runtime/data/SKILL.md"
+"docs/acp.md" = "prismor/runtime/data/docs/acp.md"
 "docs/agentic-architecture-review.md" = "prismor/runtime/data/docs/agentic-architecture-review.md"
 "docs/architecture.md" = "prismor/runtime/data/docs/architecture.md"
 "docs/attestation-bundle.md" = "prismor/runtime/data/docs/attestation-bundle.md"

@@ -1626,6 +1626,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             sys.stderr.write(f"[prismor] {exc}\n")
             sys.exit(2)
 
+    # ── acp (Agent Client Protocol stdio proxy for Zed/JetBrains agents) ──
+    if args.command == "acp":
+        register_workspace(workspace)
+        from prismor.runtime.acp_proxy import run_acp
+        sys.exit(run_acp(args, workspace))
+
     # ── hook-dispatch (called by IDE hooks) ────────────────────────────
     if args.command == "hook-dispatch":
         from prismor.runtime import perf as _perf
@@ -4267,6 +4273,27 @@ def build_parser() -> argparse.ArgumentParser:
                                 "then every file and shell action is policy-screened "
                                 "and its output redacted, including in agents that "
                                 "have no hook support.")
+
+    # ── acp ────────────────────────────────────────────────────────────
+    acp_parser = subparsers.add_parser(
+        "acp",
+        help="Govern an ACP agent (Zed, JetBrains, …) — a stdio proxy the editor launches in its place",
+        description="Run as the editor's agent command and relay Agent Client Protocol "
+        "JSON-RPC to the real agent, screening terminal/create, fs/write_text_file, "
+        "fs/read_text_file and session/request_permission before the editor carries them out, "
+        "and scanning file and terminal output before the agent sees it. In Zed: "
+        '"agent_servers": {"Claude (Prismor)": {"command": "prismor", '
+        '"args": ["acp", "--", "npx", "-y", "@agentclientprotocol/claude-agent-acp"]}}',
+    )
+    acp_parser.add_argument("--mode", choices=["observe", "enforce"], default="enforce",
+                            help="enforce=refuse policy violations (default), observe=log only")
+    acp_parser.add_argument("--workspace", help="Workspace path for policy + session store "
+                            "(default: each ACP session's own cwd)")
+    acp_parser.add_argument("--no-audit", dest="no_audit", action="store_true",
+                            help="Don't screen/record the tool calls the agent runs in-process "
+                            "(use when its own Prismor hooks already record them)")
+    acp_parser.add_argument("agent_command", nargs=argparse.REMAINDER,
+                            help="-- followed by the agent command, e.g. -- claude-agent-acp")
 
     # ── mirror (governed built-ins over MCP) ───────────────────────────
     mirror_parser = subparsers.add_parser(
