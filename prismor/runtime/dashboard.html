@@ -1054,6 +1054,9 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   /* clickable agent chip */
   .agent-pill.link { cursor:pointer; transition:all .12s; }
+  .ext-agent.link, .sess-link { cursor:pointer; }
+  .ext-agent.link:hover, .sess-link:hover { text-decoration: underline; }
+  .sess-link { color: inherit; font-family: var(--font-mono); }
   .agent-pill.link:hover { background:var(--gray-800); color:#fff; }
 
   /* ── Agent hero ── */
@@ -2363,7 +2366,15 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 
   /* mcp servers */
   .mcp-summary { margin-bottom: 28px; }
-  .mcp-card { margin-bottom: 16px; }
+  .mcp-card { margin-bottom: 8px; padding-top: 10px; padding-bottom: 10px; }
+  .mcp-card > summary { list-style: none; cursor: pointer; margin-bottom: 0; }
+  .mcp-card > summary::-webkit-details-marker { display: none; }
+  .mcp-card > summary::before { content: "\25B8"; color: var(--muted); font-size: 12px; transition: transform .12s; }
+  .mcp-card[open] > summary::before { transform: rotate(90deg); }
+  .mcp-card[open] > summary { margin-bottom: 10px; }
+  .mcp-brief { display: inline-flex; gap: 12px; font-size: 12px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .mcp-head-right { display: inline-flex; align-items: center; gap: 10px; }
+  .mcp-card .tp-btns { display: inline-flex; align-items: center; gap: 8px; }
   .mcp-card-direct { border-color: #efdcae; }
   .mcp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
   .mcp-avatar { width: 28px; height: 28px; border-radius: 6px; background: var(--md-primary-soft); color: var(--ink); display: inline-grid; place-items: center; font-weight: 600; font-size: 13px; }
@@ -2712,6 +2723,8 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
 <div id="page-mcpservers" class="page">
   <div class="section"><h2>MCP Servers</h2><div class="rule"></div>
     <span class="hint">where each server is configured, and how its tools are handled</span>
+    <button class="inline-link-btn" style="margin-left:auto" onclick="mcpExpandAll()">Expand all</button>
+    <button class="inline-link-btn" onclick="mcpExpandAll(false)">Collapse all</button>
   </div>
   <div id="mcpSummary" class="kpi-strip mcp-summary" hidden></div>
   <div id="mcpServersList"><div class="empty">Loading MCP servers…</div></div>
@@ -3084,6 +3097,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
         </tr></thead>
         <tbody id="agentsBody"><tr><td colspan="7" class="empty">Loading agents…</td></tr></tbody>
       </table>
+      <div id="agentsPagerWrap"></div>
     </div>
   </div>
 
@@ -3192,7 +3206,7 @@ body:has(#page-docs.page.active) .prismor-cta{display:none}
   <div class="view-topbar">
     <button class="view-back" onclick="goBack()">Back</button>
     <div class="crumbs">
-      <a onclick="document.querySelector('.tab-btn[data-tab=&quot;extensions&quot;]')?.click()">Extensions</a><span class="sep">/</span>
+      <a id="extdParent" onclick="document.querySelector('.tab-btn[data-tab=&quot;' + (this.dataset.tab || 'extensions') + '&quot;]')?.click()">Extensions</a><span class="sep">/</span>
       <span id="extdCrumb">Extension</span>
     </div>
   </div>
@@ -4121,6 +4135,9 @@ let _extViewId = null, _extDetail = null;
 async function openExtension(id, isBack) {
   if (!isBack) { recordView({view:'extension', id: id}); _pushCurrentView(); }
   _extViewId = id; _extDetail = null;
+  // Opened from MCP Servers, the crumb leads back there rather than to Extensions.
+  const from = (document.querySelector('.tab-btn.active') || {}).dataset?.tab, par = document.getElementById('extdParent');
+  if (!isBack && from) { par.dataset.tab = from === 'mcpservers' ? 'mcpservers' : 'extensions'; par.textContent = from === 'mcpservers' ? 'MCP Servers' : 'Extensions'; }
   showSubPage('page-extension');
   document.getElementById('extdCrumb').textContent = id;
   ['extdHead', 'extdUsage', 'extdAgents', 'extdCalls', 'extdSessions'].forEach(k => document.getElementById(k).innerHTML = '<div class="empty">Loading…</div>');
@@ -4185,20 +4202,24 @@ function renderExtensionDetail(row) {
   const more = d.history ? '' : ' <a class="ext-sess" onclick="loadExtensionDetail(\'' + safeJsArg(_extViewId) + '\', true)">search full history</a>';
   document.getElementById('extdCallCount').innerHTML = (d.calls || []).length + ' call' + ((d.calls || []).length === 1 ? '' : 's') + more;
   const agentOf = Object.fromEntries((d.sessions || []).map(s => [s.session, s.agent]));
-  document.getElementById('extdCalls').innerHTML = (d.calls || []).length ? d.calls.map(c => {
+  const rerender = () => renderExtensionDetail(row), sig = _extViewId + (d.history ? ':h' : '');
+  const cp = clientPage('extdCallsPager', d.calls || [], 20, rerender, sig);
+  const sp = clientPage('extdSessPager', d.sessions || [], 20, rerender, sig);
+  document.getElementById('extdCalls').innerHTML = (d.calls || []).length ? cp.rows.map(c => {
     const agent = agentOf[c.session] || c.agent || 'any';
-    return '<div class="extd-call"><div class="extd-call-head"><span class="ext-agent">' + agentIcon(agent) + safe(extAgentName(agent)) + '</span>' +
+    return '<div class="extd-call"><div class="extd-call-head">' + agentLink(agent) +
       '<code>' + safe(String(c.tool).replace(/^mcp__.*?__/, '')) + '</code>' +
       '<a class="ext-sess" onclick="navigateToSession(\'' + safeJsArg(c.session) + '\')">session ' + safe(String(c.session).slice(0, 8)) + '</a>' +
       '<span class="ext-quiet">' + safe(extWhen(c.ts)) + (c.via ? ' · ' + safe(c.via) : '') + '</span></div>' +
       (c.input && c.input !== '""' && c.input !== '{}' ? '<pre>' + safe(c.input) + '</pre>' : '<div class="ext-quiet" style="margin-top:4px">no input</div>') + '</div>';
-  }).join('') : '<div class="empty">' + (row.kind === 'hook' ? 'A hook runs around calls rather than causing them, so it has no calls of its own.' : 'No tool call traced to it yet.') + '</div>';
-  document.getElementById('extdSessions').innerHTML = (d.sessions || []).length ? d.sessions.map(s =>
+  }).join('') + cp.html : '<div class="empty">' + (row.kind === 'hook' ? 'A hook runs around calls rather than causing them, so it has no calls of its own.' : 'No tool call traced to it yet.') + '</div>';
+  document.getElementById('extdSessions').innerHTML = (d.sessions || []).length ? sp.rows.map(s =>
     '<div class="ext-row"><div class="ext-use" onclick="navigateToSession(\'' + safeJsArg(s.session) + '\')">' +
-      '<span class="ext-agent">' + agentIcon(s.agent) + safe(extAgentName(s.agent)) + '</span><span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
+      agentLink(s.agent) + '<span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
       '<span class="ext-quiet">' + safe(s.role === 'invoked' ? 'loaded it' : s.role === 'ambient' ? 'ran around every call' : 'called its tools') + '</span>' +
-      '<span class="ext-use-meta">' + safe(extWhen(s.ts)) + '</span></div></div>').join('')
+      '<span class="ext-use-meta">' + safe(extWhen(s.ts)) + '</span></div></div>').join('') + sp.html
     : '<div class="empty">None recorded.</div>';
+  cp.wire(); sp.wire();
 }
 function openExtensionsFor(agent, filter) {
   _extTab = 'all'; _extView = 'installed'; _extAgent = agent || ''; _extFilter = filter || 'all'; _extOpen = {};
@@ -4479,7 +4500,11 @@ function fileRow(f, label) {
 function renderFiles() {
   const el = document.getElementById('filesList'), fs = _filesData;
   if (!fs.length) return;
-  if (_filesView === 'recent') { el.innerHTML = fs.map(f => fileRow(f, f.path)).join(''); return; }
+  if (_filesView === 'recent') {
+    const pg = clientPage('filesPager', fs, 50, renderFiles, document.getElementById('filesSearch').value + '|' + fs.length);
+    el.innerHTML = pg.rows.map(f => fileRow(f, f.path)).join('') + pg.html;
+    return pg.wire();
+  }
   // Folder tree under the paths' common directory; a folder with one subfolder and no files merges into it.
   const parts = fs.map(f => f.path.split('/'));
   let common = parts[0].length - 1;
@@ -4561,7 +4586,7 @@ function renderExtSessions(d) {
   const note = quiet ? '<div class="ext-quiet" style="padding:6px 2px 10px">' + quiet + ' session' + (quiet === 1 ? '' : 's') + ' loaded no extension (only the third-party hooks that run around every call) and ' + (quiet === 1 ? 'is' : 'are') + ' not listed.</div>' : '';
   return list.length ? note + list.map(s =>
     '<div class="ext-row' + (s.unreviewed ? ' review' : '') + '"><div class="ext-use" onclick="navigateToSession(\'' + safeJsArg(s.session) + '\')">' +
-      '<span class="ext-agent">' + agentIcon(s.agent) + safe(extAgentName(s.agent)) + '</span><span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
+      agentLink(s.agent) + '<span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
       ((s.used || []).length ? extUseChips(s) : '<span class="ext-quiet">loaded nothing' + (s.hooks ? ' · ' + s.hooks + ' third-party hook' + (s.hooks === 1 ? '' : 's') + ' ran around it' : '') + '</span>') +
       '<span class="ext-use-meta">' + safe(extWhen(s.ts)) + '</span></div></div>').join('')
     : '<div class="empty">No session has run under an extension yet.</div>';
@@ -4579,7 +4604,7 @@ function extAgentBody(a, d) {
 }
 function renderExtAgents(d) {
   return (d.agents || []).length ? d.agents.map(a =>
-    '<div class="ext-row ext-agent-card' + (a.unreviewed_sessions ? ' review' : '') + '"><div class="ext-agent-head"><b>' + agentIcon(a.agent) + safe(extAgentName(a.agent)) + '</b>' +
+    '<div class="ext-row ext-agent-card' + (a.unreviewed_sessions ? ' review' : '') + '"><div class="ext-agent-head"><b>' + agentLink(a.agent) + '</b>' +
       '<a class="ext-sess" onclick="_extView=\'sessions\';_extAgent=\'' + safeJsArg(a.agent) + '\';renderExtensions()">sessions</a>' +
       '<a class="ext-sess" onclick="openExtensionsFor(\'' + safeJsArg(a.agent) + '\')">installed</a></div>' + extAgentBody(a, d) + '</div>').join('')
     : '<div class="empty">No agents yet.</div>';
@@ -4626,7 +4651,8 @@ function renderExtensions() {
     : ['skill','plugin','hook','mcp'].includes(_extFilter) ? r.kind === _extFilter
     : (r.capabilities || []).includes(_extFilter))
     .sort((a, b) => (b.needs_review - a.needs_review) || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
-  document.getElementById('extList').innerHTML = rows.length ? rows.slice(0, 300).map(r => {
+  const pg = clientPage('extListPager', rows, 50, renderExtensions, [_extAgent, _extFilter, rows.length].join('|'));
+  document.getElementById('extList').innerHTML = rows.length ? pg.rows.map(r => {
     const rev = r.needs_review;
     const kv = [['Id', r.id], ['Loaded by', (r.agents || []).map(extAgentName).join(', ')], ['Path', r.path], ['Origin', r.origin], ['Installed by', extBy(r.installed_by)],
       ['First seen', r.first_seen ? extWhen(r.first_seen) : ''], ['Hosts named', (r.hosts || []).join(', ')],
@@ -4645,12 +4671,13 @@ function renderExtensions() {
         (r.capabilities || []).map(c => '<span class="ext-cap ' + safeAttr(c) + '">' + safe(c.replace(/_/g, ' ')) + '</span>').join('') +
         (r.never_used ? '<span class="ext-never">never used</span>' : (r.used_in || []).length ? '<span class="ext-quiet">' + r.used_in.length + ' session' + (r.used_in.length === 1 ? '' : 's') + '</span>' : '') +
         '<span class="ext-origin">' + safe(r.origin || '') + '</span>' +
-        (r.agents || []).filter(a => a !== 'any').map(a => '<span class="ext-agent">' + agentIcon(a) + safe(a) + '</span>').join('') + '</div>' +
+        (r.agents || []).filter(a => a !== 'any').map(a => agentLink(a, agentIcon(a) + safe(a))).join('') + '</div>' +
       '<div class="ext-body"><dl class="ext-kv">' + kv + used + docs + '</dl>' +
         (r.status !== 'approved' ? '<button class="ext-approve" onclick="extApprove(\'' + safeJsArg(r.id) + '\')">Mark reviewed</button><span class="ext-review-note">Flagged again if its files change.</span>' : '') +
       '</div></div>';
-  }).join('') + (rows.length > 300 ? '<div class="empty">Showing 300 of ' + rows.length + '. Narrow with a filter.</div>' : '')
+  }).join('') + pg.html
     : '<div class="empty">Nothing here. ' + (_extFilter === 'review' ? 'Every extension on this machine has been seen before.' : '') + '</div>';
+  pg.wire();
   renderExtEvents(d);
 }
 function renderExtEvents(d) {
@@ -4863,16 +4890,18 @@ function renderExtKindList() {
   const kind = _extTab, q = _extQuery.toLowerCase();
   const items = extItems(kind).filter(it => !q || it.name.toLowerCase().includes(q));
   const hdr = '<div class="ext-item hdr"><span>Name</span><span>Activity</span><span class="num">Sessions</span><span class="num">Calls</span><span>Agents</span><span>Last used</span><span class="num">' + (EXT_TOGGLE_KINDS.includes(kind) ? 'On' : '') + '</span></div>';
-  document.getElementById('extList').innerHTML = items.length ? hdr + items.slice(0, 300).map(it =>
+  const pg = clientPage('extKindPager', items, 50, renderExtKindList, [kind, q, items.length].join('|'));
+  document.getElementById('extList').innerHTML = items.length ? hdr + pg.rows.map(it =>
     '<div class="ext-row ext-item' + (it.review || it.warn ? ' review' : '') + (extIsOff(it.ledger) ? ' ext-off' : '') + '" onclick="openExtension(\'' + safeJsArg(it.id) + '\')">' +
       '<span class="ext-name">' + (it.review ? '<span class="ext-badge new">unreviewed</span> ' : '') + (it.warn ? '<span class="ext-cap remote_instructions">not in vault</span> ' : '') +
         safe(it.name) + (kind === 'package' && it.deps[0] ? ' <span class="ext-quiet">' + safe(it.deps[0].target) + '</span>' : '') + '</span>' +
       (it.deps.length ? extBars(extActivity(it.deps, 15)) : '<span class="ext-quiet">-</span>') +
       '<span class="num">' + (it.sessions || '<span class="ext-never">never</span>') + '</span><span class="num">' + (it.calls || '-') + '</span>' +
-      '<span class="ext-item-agents">' + it.agents.slice(0, 4).map(a => '<span class="ext-agent" title="' + safeAttr(a) + '">' + (agentIcon(a, '', true) || safe(a)) + '</span>').join('') + '</span>' +
+      '<span class="ext-item-agents">' + it.agents.slice(0, 4).map(a => agentLink(a, agentIcon(a, '', true) || safe(a))).join('') + '</span>' +
       '<span class="ext-quiet">' + (it.last ? safe(extWhen(it.last)) : '') + '</span>' + extToggleHtml(it.ledger) + '</div>').join('') +
-    (items.length > 300 ? '<div class="empty">Showing 300 of ' + items.length + '. Filter by name.</div>' : '')
+    pg.html
     : '<div class="empty">' + (q ? 'No ' + safe(extKindNoun(kind)) + ' match.' : 'Nothing recorded in this window. Prismor fills this in as your agents use them.') + '</div>';
+  pg.wire();
 }
 function extTally(rows, key) {
   const m = new Map();
@@ -4900,6 +4929,7 @@ function renderExtensionUsage(it) {
   const kpis = [['Sessions', sess.length], ['Calls', it.calls], ['Calls / session', (it.calls / sess.length).toFixed(1)],
     ['Agents', new Set(deps.map(r => r.agent)).size], ['Projects', new Set(deps.map(r => r.workspace)).size],
     ['First used', first ? extWhen(first) : '-'], ['Last used', last ? extWhen(last) : '-']];
+  const pg = clientPage('extdUsagePager', sess, 20, () => renderExtensionUsage(it), it.id + ':' + sess.length);
   const target = {mcp: ['Tools called', r => r.target], package: ['Versions and verdicts', r => [r.target, r.note].filter(Boolean).join(' ')]}[it.kind];
   el.innerHTML = '<div class="extd-kpis">' + kpis.map(([l, v]) => '<div><b>' + safe(String(v)) + '</b>' + l + '</div>').join('') + '</div>' +
     extBars(extActivity(deps, 30), 'big') + '<div class="ext-quiet" style="font-size: 12px">calls over the window, by the day each session last used it</div>' +
@@ -4907,11 +4937,12 @@ function renderExtensionUsage(it) {
       '<div><h4>By agent</h4>' + extTally(deps, r => r.agent) + '</div>' +
       '<div><h4>By project</h4>' + extTally(deps, r => r.workspace.split('/').pop() || r.workspace) + '</div></div>' +
     '<h4 class="ext-quiet" style="font-size: 11px;text-transform:uppercase;letter-spacing:.06em;margin:4px 0 6px">Sessions</h4>' +
-    sess.slice(0, 200).map(s => '<div class="ext-row"><div class="ext-use" onclick="navigateToSession(\'' + safeJsArg(s.session) + '\', \'' + safeJsArg(s.workspace) + '\')">' +
-      '<span class="ext-agent">' + agentIcon(s.agent) + safe(extAgentName(s.agent)) + '</span><span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
+    pg.rows.map(s => '<div class="ext-row"><div class="ext-use" onclick="navigateToSession(\'' + safeJsArg(s.session) + '\', \'' + safeJsArg(s.workspace) + '\')">' +
+      agentLink(s.agent) + '<span class="ext-use-id">' + safe(String(s.session).slice(0, 8)) + '</span>' +
       '<span class="ext-quiet">' + s.calls + ' call' + (s.calls === 1 ? '' : 's') + '</span><span class="ext-origin">' + safe(s.workspace) + '</span>' +
       '<span class="ext-use-meta">' + safe(extWhen(s.last)) + '</span></div></div>').join('') +
-    (sess.length > 200 ? '<div class="ext-quiet">Showing 200 of ' + sess.length + '.</div>' : '');
+    pg.html;
+  pg.wire();
 }
 
 async function loadMcpServers() {
@@ -4948,8 +4979,10 @@ function renderMcpServers() {
   const order = { mirror: 0, gateway: 1, remote: 2, seen: 3, direct: 4 };
   // Mirror first, then whatever the agents actually use; idle servers sink.
   const nCalls = s => (s.usage || {}).calls || 0;
-  el.innerHTML = servers.slice().sort((a, b) => (order[a.kind] === 0) !== (order[b.kind] === 0) ? (order[a.kind] - order[b.kind]) : (nCalls(b) - nCalls(a)) || (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name))
-    .map(s => s.kind === 'mirror' ? renderMirrorCard(s) : renderRemoteCard(s)).join('');
+  const pg = clientPage('mcpPager', servers.slice().sort((a, b) => (order[a.kind] === 0) !== (order[b.kind] === 0) ? (order[a.kind] - order[b.kind]) : (nCalls(b) - nCalls(a)) || (order[a.kind] - order[b.kind]) || a.name.localeCompare(b.name)),
+    25, renderMcpServers, servers.length);
+  el.innerHTML = pg.rows.map(s => s.kind === 'mirror' ? renderMirrorCard(s) : renderRemoteCard(s)).join('') + pg.html;
+  pg.wire();
 }
 
 // Shared card chrome: kind chip, risk chip, where it is declared, week's usage.
@@ -4990,11 +5023,37 @@ function mcpFindingsMarkup(s) {
   if (!f.length) return '';
   return '<ul class="mcp-findings">' + f.map(x => '<li>' + safe(x) + '</li>').join('') + '</ul>';
 }
-function mcpCardHead(s, extra) {
-  return '<div class="card-title mcp-head">' +
-    '<span class="mcp-avatar">' + safe((s.name || '?')[0].toUpperCase()) + '</span>' +
-    '<span class="mcp-name">' + safe(s.name) + '</span>' + mcpKindChip(s) + mcpRiskChip(s) +
-    '<span class="mcp-head-right">' + (extra || '') + '</span></div>';
+// Each server is one collapsed line (name, kind, tools on, week's calls);
+// opening it shows where it is declared, usage and the per-tool switches.
+// Open state survives re-renders (a toggle re-renders the whole list).
+let _mcpOpen = {};
+function mcpCard(s, cls, extra, body) {
+  const u = s.usage || {}, tools = s.tools || [];
+  const on = tools.filter(t => s.kind === 'mirror' ? t.enabled !== false : t.state !== 'deny').length;
+  const brief = [tools.length ? on + '/' + tools.length + ' tools on' : 'no tools yet',
+    fmtNum(u.calls || 0) + ' calls', u.blocked ? fmtNum(u.blocked) + ' blocked' : '', u.last || '']
+    .filter(Boolean).map(x => '<span>' + safe(x) + '</span>').join('');
+  return '<details class="card mcp-card' + (cls || '') + '"' + (_mcpOpen[s.name] ? ' open' : '') +
+      ' ontoggle="_mcpOpen[\'' + safeJsArg(s.name) + '\']=this.open">' +
+    '<summary class="card-title mcp-head">' +
+      '<span class="mcp-avatar">' + safe((s.name || '?')[0].toUpperCase()) + '</span>' +
+      '<span class="mcp-name">' + safe(s.name) + '</span>' + mcpKindChip(s) + mcpRiskChip(s) +
+      '<span class="mcp-brief">' + brief + '</span>' +
+      '<span class="mcp-head-right">' + (u.sessions ? '<button class="inline-link-btn" title="Sessions that called this server" ' +
+        'onclick="event.preventDefault();mcpOpenSessions(\'' + safeJsArg(s.name) + '\')">' + fmtNum(u.sessions) + ' session' + (u.sessions === 1 ? '' : 's') + ' \u2192</button>' : '') +
+        (extra || '') + '</span></summary>' +
+    '<div class="mcp-body">' + body + '</div></details>';
+}
+// The extension page already lists an MCP server's sessions; open it there.
+async function mcpOpenSessions(name) {
+  await Promise.all([_extCache ? 0 : apiFetch('/api/extensions' + (_serverWorkspace ? '?workspace=' + encodeURIComponent(_serverWorkspace) : ''), {timeoutMs: 20000}).then(x => { _extCache = x; }).catch(() => {}),
+    _depCache ? 0 : loadDependencies()]);
+  const it = extItems('mcp').find(x => x.name.toLowerCase() === name.toLowerCase());
+  openExtension(it ? it.id : 'dep:mcp:' + name);
+}
+function mcpExpandAll(open) {
+  _mcpServersCache.forEach(s => { _mcpOpen[s.name] = open !== false; });
+  renderMcpServers();
 }
 
 // The mirror: front-of-house controls. A Governing / Pass-through switch (screen
@@ -5011,7 +5070,7 @@ function renderMirrorCard(s) {
   const governing = override && !paused;
   const ovBtn = '<button class="en-toggle ' + (override ? 'on' : 'off') + '" ' +
     (paused ? 'disabled title="Prismor is paused: run prismor resume first" ' : '') +
-    'onclick="mcpOverrideSet(\'' + safeAttr(s.name) + '\',' + (override ? 'true' : 'false') + ')">' +
+    'onclick="event.preventDefault();mcpOverrideSet(\'' + safeAttr(s.name) + '\',' + (override ? 'true' : 'false') + ')">' +
     (paused ? 'Paused' : (override ? 'Governing' : 'Pass-through')) + '</button>';
   const rows = (s.tools || []).map(t => {
     const on = t.enabled !== false;
@@ -5034,10 +5093,10 @@ function renderMirrorCard(s) {
     hint = 'Pass-through: the mirror still serves the tools below but runs them exactly as the natives would ' +
       '(logged, not blocked or redacted). Flip back to Governing here, or <code>prismor mirror passthrough off</code>.';
   }
-  return '<div class="card mcp-card">' + mcpCardHead(s, ovBtn) +
+  return mcpCard(s, '', ovBtn,
     mcpDeclaredMarkup(s) + mcpUsageMarkup(s) + mcpFindingsMarkup(s) +
     '<div class="mcp-hint">' + hint + '</div>' +
-    '<div class="tp-grid" style="margin-top:10px">' + rows + '</div></div>';
+    '<div class="tp-grid" style="margin-top:10px">' + rows + '</div>');
 }
 
 function mcpToolStats(t) {
@@ -5051,14 +5110,13 @@ function mcpToolStats(t) {
 function renderRemoteCard(s) {
   const direct = s.kind === 'direct';
   const rows = (s.tools || []).length ? (s.tools || []).map(t => {
-    const st = t.state || 'allow';
-    const btn = (val, label, title) =>
-      '<button class="tp-btn tp-' + val + (st === val ? ' on' : '') + '" title="' + title + '" ' +
-        'onclick="mcpToolSet(\'' + safeAttr(t.tag) + '\',\'' + val + '\')">' + label + '</button>';
-    return '<div class="tp-row"><span class="tp-tool">' + safe(t.name) + '</span>' + mcpToolStats(t) +
-      '<span class="tp-btns">' + btn('allow','Allow','Runs without prompting') +
-        btn('ask','Ask','Requires human approval (step-up)') +
-        btn('deny','Deny','Blocked in real time') + '</span></div>';
+    const st = t.state || 'allow', on = st !== 'deny', tag = safeAttr(t.tag);
+    const ask = on ? '<button class="tp-btn tp-ask' + (st === 'ask' ? ' on' : '') + '" title="Require human approval (step-up) before each call" ' +
+        'onclick="mcpToolSet(\'' + tag + '\',\'' + (st === 'ask' ? 'allow' : 'ask') + '\')">Ask</button>' : '';
+    const toggle = '<button class="tp-toggle ' + (on ? 'on' : 'off') + '" title="' + (on ? 'On: click to turn off (blocked whenever called)' : 'Off: blocked in real time. Click to turn on') + '" ' +
+        'onclick="mcpToolSet(\'' + tag + '\',\'' + (on ? 'deny' : 'allow') + '\')"><span class="tp-knob"></span></button>';
+    return '<div class="tp-row' + (on ? '' : ' tp-row-off') + '"><span class="tp-tool">' + safe(t.name) + '</span>' + mcpToolStats(t) +
+      '<span class="tp-btns">' + ask + toggle + '</span></div>';
   }).join('') : '<div class="tp-row mcp-muted" style="font-size:13px">' +
       (direct ? 'Prismor never sees this server\'s calls, so there is nothing to govern here yet.'
               : 'No tools seen or governed yet. They appear here the first time the agent calls one, or when you set a policy.') + '</div>';
@@ -5067,9 +5125,9 @@ function renderRemoteCard(s) {
         '<strong>Calls bypass policy</strong>The agent talks to this server straight from its own config. Front it so every call is screened first:' +
         '<pre class="doc-cmd">prismor mcp-gateway install --all</pre></div></div>'
     : '';
-  return '<div class="card mcp-card' + (direct ? ' mcp-card-direct' : '') + '">' + mcpCardHead(s) +
+  return mcpCard(s, direct ? ' mcp-card-direct' : '', '',
     mcpDeclaredMarkup(s) + mcpUsageMarkup(s) + mcpFindingsMarkup(s) + fix +
-    '<div class="tp-grid">' + rows + '</div></div>';
+    '<div class="tp-grid">' + rows + '</div>');
 }
 
 // Nothing is wired up yet. Say how to wire it, rather than showing an
@@ -5229,6 +5287,17 @@ let _drawerAbort = null;
 
 function navigateToSession(sessionId, workspace) {
   openSessionView(sessionId, workspace || _serverWorkspace || '');
+}
+// Agent chips and session ids link to their pages wherever they appear. Both
+// stop the click there, since most sit inside a row that has its own click.
+function agentLink(a, inner) {
+  inner = inner == null ? agentIcon(a) + safe(extAgentName(a)) : inner;
+  if (!a || a === 'any' || a === 'unknown') return '<span class="ext-agent">' + inner + '</span>';
+  return '<span class="ext-agent link" title="Open agent ' + safeAttr(a) + '" onclick="event.stopPropagation();openAgentView(\'' + safeJsArg(a) + '\')">' + inner + '</span>';
+}
+function sessLink(id, text, ws) {
+  if (!id) return '';
+  return '<a class="sess-link" title="Open session ' + safeAttr(id) + '" onclick="event.stopPropagation();navigateToSession(\'' + safeJsArg(id) + '\',\'' + safeJsArg(ws || '') + '\')">' + safe(text || String(id).slice(0, 8)) + '</a>';
 }
 
 function openSessDrawer(sessionId, workspace, selectedEvent) {
@@ -5817,6 +5886,20 @@ function fmtMtime(mt) {
 }
 
 // ── Pager ─────────────────────────────────────────────────────────────────
+// Client-side paging for lists already in memory: returns this page's rows
+// and the pager markup; call .wire() once that markup is in the DOM. The page
+// resets to 1 when `sig` changes (a new item, filter or search).
+const _clientPages = {};
+function clientPage(id, list, size, rerender, sig) {
+  const st = _clientPages[id] || (_clientPages[id] = {page: 1});
+  if (st.sig !== sig) { st.sig = sig; st.page = 1; }
+  st.limit = size; st.total = list.length; st.pages = Math.max(1, Math.ceil(list.length / size));
+  st.page = Math.min(st.page, st.pages);
+  return {rows: list.slice((st.page - 1) * size, st.page * size),
+    html: st.pages > 1 ? '<div class="pager" id="' + id + '"></div>' : '',
+    wire: () => { if (st.pages > 1) buildPager(id, st, rerender); }};
+}
+
 function buildPager(containerId, state, loadFn) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -5916,7 +5999,13 @@ function applyViewState(st){
 }
 window.addEventListener('popstate', (e)=> applyViewState(e.state || parseHash() || {view:'tab', tab:'sessions'}));
 
-function goBack(){ const fn=_backStack.pop(); if (fn) fn(); else document.querySelector('.tab-btn[data-tab="sessions"]')?.click(); }
+function goBack(){
+  const fn=_backStack.pop(); if (fn) return fn();
+  // Nothing to return to (reloaded, or opened from a link): go to the page's parent list.
+  const id=(document.querySelector('.page.active')||{}).id;
+  const parent={'page-extension':'extensions','page-agent':'agents'}[id]||'sessions';
+  document.querySelector('.tab-btn[data-tab="'+parent+'"]')?.click();
+}
 function showSubPage(id){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -6884,7 +6973,7 @@ function renderFindings(rows){
       :'';
     return '<tr class="finding-row" onclick="toggleEvidence(\''+eid+'\')">'+
       '<td>'+safe(f.title)+'</td>'+
-      '<td><span class="agent-pill">'+safe(f.agent)+'</span></td>'+
+      '<td><span class="agent-pill link" onclick="event.stopPropagation();openAgentView(\''+safeJsArg(f.agent)+'\')">'+safe(f.agent)+'</span></td>'+
       '<td style="color:var(--gray-500)">'+safe(catLabel(f.category))+'</td>'+
       '<td><span class="sev-badge '+sevClass(f.severity)+'">'+safe(f.severity)+'</span></td>'+
       '<td>'+tsCell(f.ts,f.tsAbs)+'</td>'+
@@ -6894,7 +6983,7 @@ function renderFindings(rows){
       '<td class="finding-ev-cell" colspan="6">'+
         '<div>'+safe(f.evidence||'No evidence recorded.')+'</div>'+
         triggerBlock+
-        '<div style="margin-top:8px;font-size: 11px;color:var(--gray-400)">session: <span title="'+safeAttr(f.sessionId)+'">'+safe(shortId(f.sessionId,32))+'</span></div>'+
+        '<div style="margin-top:8px;font-size: 11px;color:var(--gray-400)">session: '+sessLink(f.sessionId, shortId(f.sessionId,32))+'</div>'+
       '</td>'+
     '</tr>';
   }).join('');
@@ -7030,7 +7119,7 @@ function renderEvents(rows){
       '<div style="flex:1;min-width:0">'+
         '<div class="event-meta">'+
           (ev.tsAbs?'<span class="ts-hover" title="'+safeAttr(ev.tsAbs)+'">'+safe(ev.ts)+'</span>':safe(ev.ts))+
-          ' &middot; <strong style="color:var(--gray-600)">'+safe(ev.agent)+'</strong>'+
+          ' &middot; <strong style="color:var(--gray-600)">'+agentLink(ev.agent, safe(ev.agent))+'</strong>'+
           (sid ? ' &middot; <span class="event-sess-id" title="'+safeAttr(sid)+'">'+safe(shortId(sid,18))+'</span>' : '')+
           hookMeta(ev.agentEvent, ev.hookMs)+
         '</div>'+
@@ -7169,7 +7258,7 @@ async function loadStats(){
         '<span class="user-rank">'+(i+1)+'</span>'+
         '<div class="user-info">'+
           '<div class="user-top">'+
-            '<span class="user-id" title="'+safeAttr(u.sessionId)+'">'+safe(shortId(u.sessionId,22))+'<span class="src-pill '+srcCls+'">'+safe(u.agent)+' · '+safe(srcLabel)+'</span></span>'+
+            '<span class="user-id">'+sessLink(u.sessionId, shortId(u.sessionId,22))+'<span class="src-pill '+srcCls+'">'+agentLink(u.agent, safe(u.agent))+' · '+safe(srcLabel)+'</span></span>'+
             '<span class="user-count">'+u.blocked+'</span>'+
           '</div>'+
           '<div class="user-bar"><div class="user-bar-fill" style="width:'+(u.blocked/maxBlocked*100)+'%"></div></div>'+
@@ -7235,7 +7324,7 @@ function renderNetworkCalls(){
       '<td class="right">'+(h.blocked?'<b style="color:var(--bad)">'+fmtNum(h.blocked)+'</b>':'–')+'</td>'+
       '<td class="right">'+(h.warned?'<b style="color:#b45309">'+fmtNum(h.warned)+'</b>':'–')+'</td>'+
       '<td class="right">'+fmtNum(h.sessions)+'</td>'+
-      '<td>'+(h.agents||[]).map(a=>'<span class="ext-agent">'+agentIcon(a)+safe(a)+'</span>').join(' ')+'</td>'+
+      '<td>'+(h.agents||[]).map(a=>agentLink(a, agentIcon(a)+safe(a))).join(' ')+'</td>'+
       '<td>'+safe(h.last||'')+'</td></tr>').join('')+moreRow(rows.length,listed.length,7,'_netAll=!_netAll;renderNetworkCalls()',_netAll)
     : '<tr><td colspan="7" class="empty">No network calls recorded in this window.</td></tr>';
 }
@@ -7282,7 +7371,7 @@ async function loadSupplyChain(){
     if(!sessions.length){sbody.innerHTML='<tr><td colspan="7" class="empty">No installs in this window. Widen the time window at the top to look further back.</td></tr>';}
     else{sbody.innerHTML=sessions.map(s=>
       '<tr>'+
-        '<td class="mono" title="'+safeAttr(s.sessionId)+'">'+safe(shortId(s.sessionId,20))+'</td>'+
+        '<td class="mono">'+sessLink(s.sessionId, shortId(s.sessionId,20))+'</td>'+
         '<td style="color:var(--gray-500)">'+safe(s.ecosystem)+'</td>'+
         '<td style="color:var(--gray-600);max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+safeAttr(s.installCmd)+'">'+safe(s.installCmd)+'</td>'+
         '<td class="right" style="color:var(--green-500);font-weight:500">'+(s.allowed||0)+'</td>'+
@@ -7381,6 +7470,9 @@ function renderAgents(data) {
     + (idle ? ' · <a href="#" onclick="_showIdleAgents=!_showIdleAgents;renderAgents(_agentsCache);return false">'
       + (_showIdleAgents ? 'hide' : 'show') + ' ' + idle + ' idle</a>' : '');
   const tbody = document.getElementById('agentsBody');
+  const pg = clientPage('agentsPager', agents, 25, () => renderAgents(_agentsCache), String(_showIdleAgents));
+  document.getElementById('agentsPagerWrap').innerHTML = pg.html;
+  pg.wire();
   if (!agents.length) {
     tbody.innerHTML = idle
       ? '<tr><td colspan="7" class="empty">No agent ran in this window. Widen it in the top bar, or show the ' + idle + ' idle agents.</td></tr>'
@@ -7388,7 +7480,7 @@ function renderAgents(data) {
         'then start Claude Code, Codex, or Cursor.</td></tr>';
     return;
   }
-  tbody.innerHTML = agents.map(a => {
+  tbody.innerHTML = pg.rows.map(a => {
     // "Active" only when the agent actually ran lately; enabled-but-quiet is "Idle".
     const quietDays = a.last_seen ? (Date.now() - Date.parse(a.last_seen)) / 864e5 : Infinity;
     const status = !a.enabled
@@ -7751,7 +7843,7 @@ function renderApprovals() {
     const held = r.waiting_until && r.waiting_until * 1000 > Date.now();
     return '<div class="appr-row">'
       + '<div class="appr-main"><div class="appr-what">' + safe(r.summary || r.title) + '</div>'
-      + '<div class="appr-meta">' + safe(r.agent || 'agent') + ' · ' + safe(r.rule) + ' · ' + safe(extWhen(new Date(r.created * 1000).toISOString()))
+      + '<div class="appr-meta"><span onclick="document.getElementById(\'apprOverlay\').classList.remove(\'open\')">' + (r.agent ? agentLink(r.agent, safe(r.agent)) : 'agent') + '</span> · ' + safe(r.rule) + ' · ' + safe(extWhen(new Date(r.created * 1000).toISOString()))
       + (held ? ' · <b>the agent is waiting</b>' : '') + '</div></div>'
       + '<button class="btn-ghost" onclick="decideApproval(\'' + safeJsArg(r.id) + '\', false)">Deny</button>'
       + '<button class="btn-primary" onclick="decideApproval(\'' + safeJsArg(r.id) + '\', true)">Approve once</button></div>';
@@ -8123,7 +8215,8 @@ function renderRules() {
     + (lockedCount ? ' · ' + lockedCount + ' pinned' : '')
     + (_rulesDirty() ? ' <span class="rules-dirty">• unsaved</span>' : '');
   if (!vis.length) { list.innerHTML = '<div class="empty">No rules match.</div>'; return; }
-  list.innerHTML = vis.map(r => {
+  const pg = clientPage('rulesPager', vis, 50, renderRules, q + '|' + _rulesFilter);
+  list.innerHTML = pg.rows.map(r => {
     const on = _rulesState[r.id];
     const locked = !!r.locked;
     const lockBadge = locked
@@ -8150,7 +8243,8 @@ function renderRules() {
       + (floorSwitch ? ' data-floor="1"' : '') + (on ? ' checked' : '') + (fixed ? ' disabled' : '') + '><span class="rule-track"></span></label>'
       + '</div>'
       + (_floorAsk === r.id ? floorOffForm(r) : '');
-  }).join('');
+  }).join('') + pg.html;
+  pg.wire();
   list.querySelectorAll('input[data-rid]').forEach(cb => {
     cb.addEventListener('change', () => {
       if (cb.dataset.floor) {
