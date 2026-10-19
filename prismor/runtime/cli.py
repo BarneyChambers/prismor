@@ -5863,18 +5863,24 @@ def _run_doctor(workspace: Path, as_json: bool = False, self_test: bool = False)
                     "nothing this agent does will reach the console")
         try:
             from prismor.runtime.enterprise import remote_policy as _remote
+            import contextlib
+            import io
             cached = _remote.cached_policy_path()
+            fetch_err = io.StringIO()  # fetch() reports why on stderr; show it here
             if not cached.exists():
                 # Enrolled with no policy means no telemetry sink and no org
                 # controls, so pull now instead of reporting it as healthy.
                 try:
-                    _remote.fetch(force=True)
-                except Exception:
-                    pass
+                    with contextlib.redirect_stderr(fetch_err):
+                        _remote.fetch(force=True)
+                except Exception as exc:
+                    fetch_err.write(str(exc))
             if not cached.exists():
+                reason = " ".join(fetch_err.getvalue().replace("[prismor] ", "").split())
                 add("fail", "remote policy",
                     "enrolled but no org policy could be pulled — telemetry and console "
-                    "controls stay off until it is (check network access to the control plane)")
+                    "controls stay off until it is ("
+                    + (reason or "check network access to the control plane") + ")")
             else:
                 sig_path = _remote._cached_sig_path()
                 sig = sig_path.read_text(encoding="utf-8").strip() if sig_path.exists() else ""

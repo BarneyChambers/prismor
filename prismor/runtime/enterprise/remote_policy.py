@@ -27,11 +27,9 @@ from __future__ import annotations
 
 from prismor.runtime.http_ua import user_agent as _http_user_agent
 
-import base64
 import copy
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -627,45 +625,22 @@ def _meta_path() -> Path:
 
 
 def _verify_signature(payload: bytes, sig_b64: str) -> bool:
-    """Verify a detached Ed25519 signature over ``payload`` using openssl and the
-    bundled public key. Returns False on any error (fail-closed)."""
+    """Verify a detached Ed25519 signature over ``payload`` with the bundled
+    public key. Shares the advisory feed's verifier (``cryptography``, then the
+    openssl CLI), so macOS's LibreSSL is not a dead end. False on any error
+    (fail-closed)."""
+    from prismor.runtime.feed_signature import verify_bytes
     pub_key = _public_key_path()
-    if not pub_key.exists() or not sig_b64:
+    if not sig_b64:
         return False
     try:
-        sig_raw = base64.b64decode(sig_b64)
-    except Exception:
+        pub_pem = pub_key.read_bytes()
+    except OSError:
         return False
-
-    import tempfile
-    payload_f = sig_f = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False) as pf:
-            pf.write(payload)
-            payload_f = pf.name
-        with tempfile.NamedTemporaryFile(delete=False) as sf:
-            sf.write(sig_raw)
-            sig_f = sf.name
-        result = subprocess.run(
-            [
-                "openssl", "pkeyutl", "-verify", "-pubin",
-                "-inkey", str(pub_key),
-                "-rawin", "-in", payload_f,
-                "-sigfile", sig_f,
-            ],
-            capture_output=True,
-            timeout=10,
-        )
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
-    finally:
-        for f in (payload_f, sig_f):
-            if f:
-                try:
-                    os.unlink(f)
-                except OSError:
-                    pass
+    result = verify_bytes(payload, sig_b64.encode("ascii", "replace"), pub_pem)
+    if not result.ok and result.status != "mismatch":
+        sys.stderr.write(f"[prismor] could not verify remote policy signature: {result.detail}\n")
+    return result.ok
 
 
 def verify_and_load() -> Optional[Dict[str, Any]]:
