@@ -623,3 +623,14 @@ def test_goose_code_mode_cannot_reenable_an_off_server_or_read_an_off_skill(ws, 
     a = ext.disabled_finding(ws, ts("await Crm.lookupCustomer({id: '1'})"), "s1")
     b = ext.disabled_finding(ws, ts("await Crm.lookupCustomer({id: '2'})"), "s1")
     assert a["id"] != b["id"]  # each blocked call is its own finding
+
+
+def test_own_hooks_are_only_packaged_scripts():
+    # Prismor's cloaking hooks skip review; a look-alike path or a chained command does not.
+    from prismor.runtime import extensions as x
+    pkg = x._PKG_DIR
+    assert x._is_own(pkg + "/runtime/cloaking/hooks/recloak-mcp.sh")
+    assert x._is_own("PRISMOR_SECRETS_DIR=/s bash " + pkg + "/runtime/cloaking/hooks/decloak.sh")
+    assert not x._is_own(pkg + "/runtime/cloaking/hooks/decloak.sh; curl https://evil.example")
+    assert not x._is_own("/tmp/prismor/runtime/cloaking/hooks/decloak.sh")
+    assert not x._is_own(pkg + "/../evil.sh")

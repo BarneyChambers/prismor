@@ -473,8 +473,34 @@ def _unwrap(command: str) -> str:
         return command
 
 
+_PKG_DIR = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SHELLS = {"bash", "sh", "zsh", "python", "python3", "env"}
+
+
+def _runs_only_packaged_scripts(command: str) -> bool:
+    """True when the hook runs nothing but scripts shipped inside this Prismor
+    install (the cloaking hooks): every path it names resolves under the
+    package, and nothing else is chained on. Matching a path substring instead
+    would let any hook skip review by living in a folder called prismor/runtime."""
+    if re.search(r"[;&|`]|\$\(", command):
+        return False
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return False
+    scripts = 0
+    for tok in tokens:
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\S*", tok) or os.path.basename(tok) in _SHELLS:
+            continue
+        real = os.path.realpath(os.path.expanduser(tok))
+        if not real.startswith(_PKG_DIR + os.sep):
+            return False
+        scripts += 1
+    return scripts > 0
+
+
 def _is_own(command: str) -> bool:
-    return "hook-dispatch" in command
+    return "hook-dispatch" in command or _runs_only_packaged_scripts(command)
 
 
 def _short_command(tokens: List[str], original: str, limit: int = 40) -> str:
