@@ -31,14 +31,16 @@ classifiers = [
 ]
 dependencies = [
     "pyyaml>=6.0",
+    # Ed25519 checks on the signed org policy and advisory feed. The openssl CLI
+    # fallback can't do them on macOS (LibreSSL) or Windows (no openssl).
+    "cryptography>=41",
     "tomli>=1.1.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
 dev = ["build", "pytest", "cryptography>=41", "PyJWT[crypto]>=2.8"]
-# Ed25519 receipt signing for enrolled devices (tamper-evident + non-repudiable
-# telemetry receipts). Optional: without it, telemetry falls back to the keyless
-# hash chain. `pip install "prismor[signing]"`.
+# Kept so existing `pip install "prismor[signing]"` commands still resolve;
+# cryptography is now a core dependency.
 signing = ["cryptography>=41"]
 # Verified end-user identity (settings.identity): JWT + JWKS verification.
 # `pip install "prismor[identity]"`. docs/identity-verification.md
