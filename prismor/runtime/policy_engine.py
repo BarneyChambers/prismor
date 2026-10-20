@@ -3933,7 +3933,32 @@ def _normalize_command(cmd: str) -> str:
         i += 1
     if buf:
         out.append(" ".join(" ".join(buf).split()))
-    return "\n".join(line for line in out if line)
+    return _basename_command_words("\n".join(line for line in out if line))
+
+
+# A path-qualified executable (`/bin/rm`, `"/usr/bin/curl"`) is the same command
+# as its basename. Only the word in command position is rewritten, so an
+# argument path (`rm /etc/passwd`) stays intact for the path rules.
+_LEAD_WRAPPER = (
+    r"(?:sudo|doas|env|command|busybox|exec|nohup|time|nice)(?:\s+-\S+)*\s+"
+)
+_ABS_COMMAND = re.compile(
+    r"(^|[\n;&|(`])(\s*(?:" + _LEAD_WRAPPER + r")*)['\"]?(/[^\s;&|<>'\"`]+)['\"]?"
+)
+
+
+def _basename_command_words(cmd: str) -> str:
+    def sub(match: "re.Match[str]") -> str:
+        base = match.group(3).rsplit("/", 1)[-1]
+        if not base or base in {".", ".."}:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}{base}"
+
+    prev = None
+    while prev != cmd:
+        prev = cmd
+        cmd = _ABS_COMMAND.sub(sub, cmd)
+    return cmd
 
 
 # ── Script-content inspection (#27) ──────────────────────────────────────────
