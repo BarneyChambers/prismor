@@ -373,9 +373,13 @@ def evaluate_tool_call(
                 _agent_name, framework=agent, workspace=workspace,
                 tools=_capabilities, session_id=session_id,
             )
-        # Per-agent mode override: takes precedence over the caller's mode.
-        if _control.mode:
-            mode = _control.mode
+        # Org mode wins over the hook flag. A local agents.yaml observe does
+        # not: that file is what an agent writes to turn enforce into a dry run.
+        # A local enforce still tightens an observe hook.
+        if _control.org_mode:
+            mode = _control.org_mode
+        elif _control.mode == "enforce":
+            mode = "enforce"
     except Exception as _exc:
         sys.stderr.write(f"[prismor] agent control error: {_exc}\n")
 
@@ -754,7 +758,9 @@ def evaluate_tool_call(
     if (blocking is not None and mode == "observe"
             and blocking.get("category") != "agent-control"
             and not blocking.get("authoritative")):
-        _org_chose_observe = bool(_control is not None and getattr(_control, "mode", None) == "observe")
+        _org_chose_observe = bool(
+            _control is not None and getattr(_control, "org_mode", None) == "observe"
+        )
         _enrolled = False
         try:
             from prismor.runtime.enterprise import identity as _identity
