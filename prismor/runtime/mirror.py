@@ -377,6 +377,7 @@ _TOOL_ALIASES = {
 }
 _SHELLISH_NAME = re.compile(r"shell|exec|command|terminal|bash|cmd")
 _COMMAND_KEYS = ("command", "cmd", "script")
+_EXTRA_COMMAND_KEYS = ("commands", "input", "code")
 _PATCH_TARGET = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.M)
 
 
@@ -406,18 +407,38 @@ def native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
     if not isinstance(arguments, dict):
         return tool, arguments
     args = dict(arguments)
-    if tool == "Bash":
+    shellish = _SHELLISH_NAME.search(str(tool_name or "").lower())
+    if tool == "Bash" or (
+        shellish and any(args.get(key) for key in _EXTRA_COMMAND_KEYS)
+    ):
+        tool = "Bash"
         cmd = next((args[k] for k in _COMMAND_KEYS if args.get(k) is not None), None)
+        if cmd is None:
+            for key in _EXTRA_COMMAND_KEYS:
+                val = args.get(key)
+                if isinstance(val, list) and val:
+                    cmd = val
+                    break
+                if isinstance(val, str) and val.strip():
+                    cmd = val
+                    break
         if isinstance(cmd, list):
             import shlex
             cmd = shlex.join(str(c) for c in cmd)
+        if cmd is None:
+            texts = [str(v) for v in args.values() if isinstance(v, str) and v.strip()]
+            cmd = "\n".join(texts) if texts else None
         args["command"] = "" if cmd is None else str(cmd)
     elif tool in ("Read", "Write", "Edit"):
         patch = args.get("input") or args.get("patch")
         patch = patch if isinstance(patch, str) else ""
         target = _PATCH_TARGET.search(patch) if patch else None
-        args.setdefault("file_path", args.get("path") or args.get("filename") or args.get("file")
-                        or (target.group(1).strip() if target else ""))
+        args.setdefault(
+            "file_path",
+            args.get("path") or args.get("filename") or args.get("file")
+            or args.get("filePath") or args.get("file_path")
+            or (target.group(1).strip() if target else ""),
+        )
         if tool == "Write":
             args.setdefault("content", args.get("text") or args.get("contents") or patch)
         if tool == "Edit" and "new_string" not in args and isinstance(args.get("edits"), list):
@@ -426,6 +447,13 @@ def native_call(tool_name: str, arguments: Any) -> Tuple[str, Any]:
                                            for e in args["edits"] if isinstance(e, dict))
     elif tool == "WebFetch":
         args.setdefault("url", args.get("uri") or args.get("href") or "")
+    code = args.get("code")
+    if (
+        tool not in ("Bash", "Read", "Write", "Edit", "WebFetch", "Glob", "Grep")
+        and isinstance(code, str)
+        and code.strip()
+    ):
+        return "Bash", {**args, "command": code}
     return tool, args
 
 
