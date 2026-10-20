@@ -3598,6 +3598,11 @@ class PolicyEngine:
         for entry in self.allowlists:
             if entry.type != "allow" or not entry.applies_to(rule_id):
                 continue
+            # A `rule_ids: ["*"]` or substring entry blanks every floor and
+            # self-protection finding. Those rules stay pinned; an exact allow
+            # of one command for one named rule still applies.
+            if _floor_allowlist_rejected(rule_id, entry, rule):
+                continue
             if rule is None or not shell:
                 if entry.patterns.search(evidence):
                     return entry
@@ -3880,6 +3885,16 @@ def _dequote_shell(cmd: str) -> Optional[str]:
 
 
 _HEREDOC_START_RE = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?")
+
+
+def _floor_allowlist_rejected(rule_id: str, entry: "AllowlistEntry", rule: Optional["CompiledRule"]) -> bool:
+    """True when this allowlist entry must not suppress a floor finding."""
+    protected = rule_id in _NON_OVERRIDABLE_RULE_IDS
+    if rule is not None and getattr(rule, "category", None) in _CORE_BLOCK_CATEGORIES:
+        protected = True
+    if not protected:
+        return False
+    return "*" in entry.rule_ids or entry.match != "exact"
 
 
 def _normalize_command(cmd: str) -> str:
