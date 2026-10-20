@@ -849,10 +849,7 @@ def should_block(
             # paths/tools an identity may read, and an operator's own switch
             # (agent-control: a denied tool, a skill turned off), whose intent
             # must be honored.
-            if (
-                event.get("type") == "file_read"
-                and finding.get("category") not in _READ_BLOCK_CATEGORIES
-            ):
+            if event.get("type") == "file_read" and not _read_may_block(finding):
                 continue
             eligible.append(finding)
     return strongest(eligible)
@@ -860,6 +857,17 @@ def should_block(
 
 # Finding categories that may block a plain read (see should_block).
 _READ_BLOCK_CATEGORIES = ("secret_access", "iam", "agent-control")
+# Self-edit matches unlock.json and identity.json on file_read. The category
+# carve-out above would drop those, which is the read the grant MAC assumes
+# cannot happen.
+_READ_BLOCK_RULES = frozenset({"prismor-self-edit"})
+
+
+def _read_may_block(finding: Dict[str, Any]) -> bool:
+    return (
+        finding.get("category") in _READ_BLOCK_CATEGORIES
+        or finding.get("ruleId") in _READ_BLOCK_RULES
+    )
 
 
 def legacy_should_block(
@@ -891,10 +899,7 @@ def legacy_should_block(
         if str(finding.get("action") or BLOCK).lower() not in VERDICTS:
             continue
         if finding.get("category") in block_categories:
-            if (
-                event.get("type") == "file_read"
-                and finding.get("category") not in _READ_BLOCK_CATEGORIES
-            ):
+            if event.get("type") == "file_read" and not _read_may_block(finding):
                 continue
             return finding
     return None
