@@ -176,10 +176,9 @@ def prismor_guard_tool(
             setattr(tool, attr, guarded)
             wrapped_any = True
         except Exception:
+            # shortcut: a slots tool cannot take the wrapper. Leave it unmarked
+            # so a caller does not treat the original method as guarded.
             continue
-        # `func` is the canonical impl for structured tools; once wrapped, stop.
-        if attr == "func":
-            break
 
     if wrapped_any:
         tool.__prismor_guarded__ = True

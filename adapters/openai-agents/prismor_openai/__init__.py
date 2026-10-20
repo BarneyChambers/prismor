@@ -228,7 +228,7 @@ def _payload_from_tool_input(raw: Any) -> str:
     else:
         parsed = raw
     if isinstance(parsed, dict):
-        return " ".join(str(v) for v in parsed.values()).strip()
+        return " ".join(f"{k} {v}" for k, v in parsed.items()).strip()
     if isinstance(parsed, (list, tuple)):
         return " ".join(str(v) for v in parsed).strip()
     return str(parsed)
