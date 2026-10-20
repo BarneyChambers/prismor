@@ -505,6 +505,7 @@ def check_against_feed(
     """
     from supplychain.version_range import (
         is_floating, parse_npm_range, parse_version, ranges_overlap, version_in_range,
+        version_satisfies,
     )
 
     dep_advisories = [a for a in feed.get("advisories", []) if a.get("type") == "dependency_vulnerability"]
@@ -533,7 +534,10 @@ def check_against_feed(
                     if pv is None:
                         matched_deps.append(dep)
                         continue
-                    if version_in_range(pv, *adv_range):
+                    affected_spec = affected_str.split(adv_name, 1)[-1] if adv_name else ""
+                    if "||" in affected_str and version_satisfies(pv, affected_spec.strip()):
+                        matched_deps.append(dep)
+                    elif version_in_range(pv, *adv_range):
                         matched_deps.append(dep)
                 else:
                     # Unpinned floating range — overlap with the advisory's

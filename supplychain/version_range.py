@@ -20,8 +20,14 @@ def parse_version(spec: str) -> Optional[Version]:
     """Extract (major, minor, patch) from a version string. Returns None if unparseable."""
     if not spec:
         return None
-    match = _VERSION_RE.match(spec.strip())
+    text = spec.strip()
+    match = _VERSION_RE.match(text)
     if not match:
+        return None
+    # `1.2.x` is a wildcard, not the pin 1.2.0. A prefix match used to stop
+    # before the x and invent a patch of 0.
+    rest = text[match.end():]
+    if rest.startswith(".") and rest[1:2] in ("x", "X", "*"):
         return None
     return (
         int(match.group(1)),
@@ -59,20 +65,30 @@ def parse_npm_range(spec: str) -> Range:
         # Inclusive lower-bound is fine for risk-purposes — slight over-match acceptable.
         return (v, None) if v else (None, None)
     if s.startswith("<="):
-        v = parse_version(s[2:])
+        v = parse_version(s[2:].split("||")[0])
         if v is None:
-            return (None, None)
+            return ((0, 0, 0), (0, 0, 0))  # unparseable: match nothing
         return (None, (v[0], v[1], v[2] + 1))
     if s.startswith("<"):
-        v = parse_version(s[1:])
-        return (None, v) if v else (None, None)
+        v = parse_version(s[1:].split("||")[0])
+        return (None, v) if v else ((0, 0, 0), (0, 0, 0))
     if s.startswith("="):
         v = parse_version(s[1:])
         return (v, (v[0], v[1], v[2] + 1)) if v else (None, None)
+    wild = re.fullmatch(r"v?(\d+)\.(\d+)\.[xX*]", s)
+    if wild:
+        major, minor = int(wild.group(1)), int(wild.group(2))
+        return ((major, minor, 0), (major, minor + 1, 0))
     v = parse_version(s)
     if v is None:
-        return (None, None)
+        return ((0, 0, 0), (0, 0, 0))
     return (v, (v[0], v[1], v[2] + 1))
+
+
+def version_satisfies(version: Version, spec: str) -> bool:
+    """True if ``version`` matches any ``||`` branch of an npm range."""
+    branches = [part.strip() for part in (spec or "").split("||")]
+    return any(version_in_range(version, *parse_npm_range(part)) for part in branches if part)
 
 
 def version_in_range(version: Version, lo: Bound, hi: Bound) -> bool:
