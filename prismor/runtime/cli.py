@@ -3443,6 +3443,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             if sub == "apply":
                 mode = get_mode(args.mode_id)
                 observe = getattr(args, "observe", False)
+                if observe and not sys.stdin.isatty():
+                    sys.stderr.write(
+                        "prismor mode apply --observe needs a terminal. "
+                        "Run it yourself, not through an agent.\n"
+                    )
+                    raise SystemExit(2)
                 if getattr(args, "dry_run", False):
                     sys.stdout.write(compile_mode(mode, observe=observe))
                     return
