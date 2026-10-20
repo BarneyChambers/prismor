@@ -119,6 +119,9 @@ class AgentControl:
     framework: str = ""
     enabled: bool = True      # False = kill switch (hard block all calls)
     mode: Optional[str] = None   # None = inherit global mode; "observe"/"enforce"
+    # Set only when the signed org policy names a mode. A local agents.yaml
+    # observe must not be treated as the org choosing observe.
+    org_mode: Optional[str] = None
     iam_profile: Optional[str] = None  # IAM profile name to enforce for this agent
     deny_tools: tuple = ()  # tool tags blocked for this agent (per-agent + global union)
     ask_tools: tuple = ()   # tool tags requiring human approval (step_up) for this agent
@@ -184,6 +187,7 @@ def resolve_agent_control(
         framework=entry.get("framework", ""),
         enabled=local_enabled and remote_enabled,
         mode=remote_mode or entry.get("mode") or None,
+        org_mode=remote_mode,
         iam_profile=remote.get("iam_profile") or entry.get("iam_profile") or None,
         deny_tools=_merged_deny,
         # ask = union of all ask lists MINUS anything denied (deny wins).
