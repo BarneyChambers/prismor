@@ -1079,7 +1079,7 @@ def _strip_powershell_wrapper(command: str) -> str:
 # `Skill` is how Claude loads a skill. Without it a skill invocation never
 # reaches the hook: per-skill denies cannot fire, and nothing records which
 # third-party instructions a session was running under.
-_CLAUDE_TOOL_MATCHER = "Task|Agent|Skill|Bash|Read|Edit|MultiEdit|Write|WebFetch|WebSearch|mcp__.*"
+_CLAUDE_TOOL_MATCHER = "Task|Agent|Skill|Bash|Read|Grep|Glob|Edit|MultiEdit|Write|WebFetch|WebSearch|mcp__.*"
 
 
 def _merge_claude(config: Dict[str, Any], command: str, workspace: Path, pin_workspace: bool = True) -> Dict[str, Any]:
@@ -2398,25 +2398,39 @@ def _normalize_kiro(payload: Dict[str, Any], session_id: str, workspace: Path) -
     if tool_name in {"shell", "execute_bash", "execute_cmd"}:
         return {**base, "type": "shell", "command": tool_input.get("command", "")}
     if tool_name in {"read", "fs_read", "fsRead"}:
-        return {**base, "type": "file_read", "path": tool_input.get("path", "")}
+        return {**base, "type": "file_read", "path": _kiro_paths(tool_input)}
     if tool_name in {"write", "fs_write", "fsWrite"}:
         # fs_write's documented shape is {"operations": [{"mode": ..., "path": ...}]}
-        # rather than a flat {path, content} -- the exact per-mode content field
-        # is not documented, so this is a best-effort extraction from the first
-        # operation with several fallback field names.
+        # rather than a flat {path, content}. Every operation path is kept, and
+        # file_text / new_str are the content fields the schema actually uses.
         ops = tool_input.get("operations") or []
         first_op = ops[0] if ops and isinstance(ops[0], dict) else {}
-        path = tool_input.get("path") or first_op.get("path", "")
+        path = _kiro_paths(tool_input)
         content = (
             tool_input.get("content")
+            or tool_input.get("file_text")
+            or tool_input.get("new_str")
             or first_op.get("content")
             or first_op.get("text")
+            or first_op.get("file_text")
+            or first_op.get("new_str")
             or first_op.get("newText", "")
         )
         return {**base, "type": "file_write", "path": path, "content": content}
     if tool_name in {"web_fetch", "web_search"}:
         return {**base, "type": "network", "url": tool_input.get("url", ""), "query": tool_input.get("query", "")}
     return _unmapped_tool_event(base, payload)
+
+
+def _kiro_paths(tool_input: Dict[str, Any]) -> str:
+    """Every path on a Kiro fs_read / fs_write, including operations[]."""
+    paths = []
+    if tool_input.get("path"):
+        paths.append(str(tool_input["path"]))
+    for op in tool_input.get("operations") or []:
+        if isinstance(op, dict) and op.get("path") and str(op["path"]) not in paths:
+            paths.append(str(op["path"]))
+    return "\n".join(paths)
 
 
 def _normalize_crush(payload: Dict[str, Any], session_id: str) -> Dict[str, Any]:
@@ -3192,6 +3206,8 @@ def _normalize_claude(payload: Dict[str, Any], session_id: str, workspace: Path)
         return {**base, "type": "shell", "command": tool_input.get("command", ""), "description": tool_input.get("description", ""), "stdout": payload.get("stdout", ""), "stderr": payload.get("stderr", "")}
     if tool_name == "Read":
         return {**base, "type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
+    if tool_name in {"Grep", "Glob"}:
+        return {**base, "type": "file_read", "path": tool_input.get("path") or tool_input.get("file_path") or ""}
     if tool_name in {"Edit", "MultiEdit", "Write"}:
         return {
             **base,
@@ -3378,7 +3394,10 @@ _PLUGIN_EVENT_NAMES = {
 _PLUGIN_SHELL_TOOLS = {"terminal", "exec", "bash", "shell"}
 _PLUGIN_READ_TOOLS = {"read", "read_file", "fileread"}
 _PLUGIN_WRITE_TOOLS = {"write", "write_file", "edit", "patch", "apply_patch", "filewrite", "fileedit", "multiedit"}
-_PLUGIN_NETWORK_TOOLS = {"web_fetch", "webfetch", "web_extract", "web_search", "websearch", "browser", "browser_navigate"}
+_PLUGIN_NETWORK_TOOLS = {
+    "web_fetch", "webfetch", "web_extract", "web_search", "websearch",
+    "browser", "browser_navigate", "tavily_extract",
+}
 
 
 def _normalize_plugin_agent(agent: str, payload: Dict[str, Any], session_id: str,
@@ -3424,8 +3443,12 @@ def _normalize_plugin_agent(agent: str, payload: Dict[str, Any], session_id: str
         return {**base, "type": "file_write", "path": path, "content": content}
     if name in _PLUGIN_NETWORK_TOOLS:
         urls = tool_input.get("urls")
-        url = tool_input.get("url") or (urls[0] if isinstance(urls, list) and urls else "")
-        return {**base, "type": "network", "url": str(url)}
+        parts = []
+        if tool_input.get("url"):
+            parts.append(str(tool_input["url"]))
+        if isinstance(urls, list):
+            parts.extend(str(item) for item in urls if item and str(item) not in parts)
+        return {**base, "type": "network", "url": "\n".join(parts)}
     return _unmapped_tool_event(base, payload)
 
 
