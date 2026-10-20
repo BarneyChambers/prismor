@@ -1356,16 +1356,16 @@ import { spawn } from "node:child_process";
 const PRISMOR_COMMAND = __PRISMOR_COMMAND_JSON__;
 
 // Async, so a slow policy check does not freeze OpenCode's event loop (and
-// every other tool call in flight). Resolves null when the hook could not run:
-// the call is then allowed, as with every agent whose hook crashes.
+// every other tool call in flight). A missing hook, a crash, a timeout, or
+// any status other than 0 is a deny. Exit 0 is the only allow.
 function dispatch(payload) {
   return new Promise((resolve) => {
     let child;
     try {
       child = spawn(PRISMOR_COMMAND, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
     } catch (err) {
-      console.warn(`[prismor] hook could not start, call allowed: ${err}`);
-      return resolve(null);
+      console.warn(`[prismor] hook could not start, call denied: ${err}`);
+      return resolve({ status: 1, stderr: String(err) });
     }
     let stdout = "";
     let stderr = "";
@@ -1375,8 +1375,8 @@ function dispatch(payload) {
     child.stdin.on("error", () => {});
     child.on("error", (err) => {
       clearTimeout(timer);
-      console.warn(`[prismor] hook failed, call allowed: ${err}`);
-      resolve(null);
+      console.warn(`[prismor] hook failed, call denied: ${err}`);
+      resolve({ status: 1, stdout: "", stderr: String(err) });
     });
     child.on("close", (status) => {
       clearTimeout(timer);
@@ -1429,7 +1429,7 @@ export const PrismorPlugin = async ({ directory, worktree } = {}) => {
     // Throwing here is how OpenCode refuses a call; the tool never runs.
     "tool.execute.before": async (input, output) => {
       const r = await dispatch({ ...base(input), hookEvent: "PreToolUse", toolInput: (output && output.args) || {} });
-      if (r && r.status === 2) throw new Error(r.stderr || "Blocked by Prismor");
+      if (!r || r.status !== 0) throw new Error((r && r.stderr) || "Blocked by Prismor");
     },
     // The call already ran, so never throw: findings about its output (an
     // injected instruction, a leaked secret) go next to that output instead.
@@ -1474,9 +1474,8 @@ def _write_opencode_plugin(path: Path, command: str) -> None:
 # callback returning {"action": "block", "message": ...} vetoes the call.
 #
 # Both send Claude's event names (PreToolUse / PostToolUse / UserPromptSubmit)
-# to hook-dispatch, and exit 2 means block, as for every other agent. A hook
-# that crashes or times out lets the call run (both agents fail open on plugin
-# errors) and logs a warning.
+# to hook-dispatch. Exit 0 is the only allow. A crash, a timeout, or any
+# other status denies the tool call.
 
 _PLUGIN_DIR_NAME = "prismor"
 
@@ -1494,8 +1493,8 @@ function dispatch(payload) {
     try {
       child = spawn(PRISMOR_COMMAND, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
     } catch (err) {
-      console.warn(`[prismor] hook could not start, call allowed: ${err}`);
-      return resolve(null);
+      console.warn(`[prismor] hook could not start, call denied: ${err}`);
+      return resolve({ status: 1, stderr: String(err) });
     }
     let stderr = "";
     const timer = setTimeout(() => child.kill(), 60000);
@@ -1504,8 +1503,8 @@ function dispatch(payload) {
     child.stdin.on("error", () => {});
     child.on("error", (err) => {
       clearTimeout(timer);
-      console.warn(`[prismor] hook failed, call allowed: ${err}`);
-      resolve(null);
+      console.warn(`[prismor] hook failed, call denied: ${err}`);
+      resolve({ status: 1, stderr: String(err) });
     });
     child.on("close", (status) => {
       clearTimeout(timer);
@@ -1531,9 +1530,9 @@ module.exports = {
         toolInput: event.params || {},
         sessionId: sessionOf(ctx),
       });
-      if (r && r.status === 2) {
+      if (!r || r.status !== 0) {
         if (event.toolCallId) blocked.add(event.toolCallId);
-        return { block: true, blockReason: r.stderr || "Blocked by Prismor" };
+        return { block: true, blockReason: (r && r.stderr) || "Blocked by Prismor" };
       }
     });
     api.on("after_tool_call", async (event, ctx) => {
@@ -1599,15 +1598,18 @@ def _dispatch(payload):
         return subprocess.run(PRISMOR_COMMAND, shell=True, input=json.dumps(payload, default=str),
                               capture_output=True, text=True, timeout=60)
     except Exception as exc:
-        _log.warning("prismor hook failed, call allowed: %s", exc)
+        _log.warning("prismor hook failed, call denied: %s", exc)
         return None
 
 
 def _pre_tool_call(tool_name="", args=None, session_id="", **_):
     r = _dispatch({"hookEvent": "PreToolUse", "toolName": tool_name,
                    "toolInput": args or {}, "sessionId": session_id})
-    if r is not None and r.returncode == 2:
-        return {"action": "block", "message": r.stderr.strip() or "Blocked by Prismor"}
+    if r is None or r.returncode != 0:
+        message = "Blocked by Prismor"
+        if r is not None and r.stderr:
+            message = r.stderr.strip() or message
+        return {"action": "block", "message": message}
     return None
 
 
