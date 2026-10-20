@@ -3898,6 +3898,18 @@ def _normalize_command(cmd: str) -> str:
     ``$(rm) -rf /`` both expose ``rm`` as a plain word that existing
     patterns can match — the two forms are shell-equivalent.
     """
+    # $(echo prismor) is prismor. Collapse that before the generic unwrap,
+    # which would turn it into the words "echo prismor" and miss the anchor.
+    cmd = re.sub(
+        r'\$\(\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*\)',
+        r'\1',
+        cmd,
+    )
+    cmd = re.sub(
+        r'`\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*`',
+        r'\1',
+        cmd,
+    )
     # $(...) → space-separated inner content
     cmd = re.sub(r'\$\(([^)]*)\)', r' \1 ', cmd)
     # `...` → space-separated inner content
