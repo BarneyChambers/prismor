@@ -79,17 +79,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 PROXY_AGENT = "prismor-proxy"
 SURFACE_ID = "llm-proxy"
 
 #: Path → provider. The client points its SDK at us with no other change, so
 #: the route has to be inferred from the request the SDK would have sent
-#: anyway. Unknown paths are forwarded to the default upstream unscreened but
-#: logged (auth handshakes, /v1/models, health checks).
+#: anyway. A generation path that is not in this list is refused in enforce
+#: mode. Health, model listing, and embeddings stay on the passthrough list.
 PROVIDER_ROUTES: Tuple[Tuple[str, str], ...] = (
     ("/v1/messages", "anthropic"),
+    ("/v1/completions", "openai"),
     ("/v1/complete", "anthropic"),
     ("/v1/chat/completions", "openai"),
     ("/v1/responses", "openai"),
@@ -99,18 +100,55 @@ PROVIDER_ROUTES: Tuple[Tuple[str, str], ...] = (
     # /publishers/google/models/... form with one entry each.
     (":generateContent", "google"),
     (":streamGenerateContent", "google"),
+    (":batchGenerateContent", "google"),
     # Bedrock InvokeModel carries the Anthropic messages shape in its body
     # (system + messages, content blocks out), so the anthropic normalizer and
     # every anthropic rule already fit it -- only the path needed naming.
-    # invoke-with-response-stream is deliberately absent: its response is AWS
-    # event-stream framing, not SSE, so it cannot be reframed and is forwarded
-    # (signed) but unscreened.
+    # The response is AWS event-stream framing, not SSE. The request is still
+    # screened; a tool call in it must not be forwarded unscreened.
+    ("/invoke-with-response-stream", "anthropic"),
     ("/invoke", "anthropic"),
     # Azure OpenAI puts the deployment in the path:
     # /openai/deployments/<d>/chat/completions?api-version=... -- so the
     # "/v1/chat/completions" suffix above never matches it.
     ("/chat/completions", "openai"),
 )
+
+# Not generation. Enforce mode forwards these and refuses every other
+# unlisted path, so a new completions URL cannot skip the screen.
+_PASSTHROUGH_PATHS = (
+    "/v1/models",
+    "/models",
+    "/health",
+    "/healthz",
+    "/readyz",
+    "/livez",
+    "/v1/embeddings",
+    "/embeddings",
+    "/v1/moderations",
+    "/countTokens",
+    ":countTokens",
+    "/tokenize",
+)
+
+
+def normalized_path(path: str) -> str:
+    """Path only, percent-decoded, no trailing slash."""
+    return unquote(urlsplit(path).path).rstrip("/") or "/"
+
+
+def generation_route(path: str):
+    """(suffix, provider) for a generation path, longest suffix first."""
+    norm = normalized_path(path)
+    hits = [item for item in PROVIDER_ROUTES if norm.endswith(item[0]) or norm == item[0]]
+    if not hits:
+        return None
+    return max(hits, key=lambda item: len(item[0]))
+
+
+def is_passthrough(path: str) -> bool:
+    norm = normalized_path(path)
+    return any(norm.endswith(suffix) or norm == suffix for suffix in _PASSTHROUGH_PATHS)
 
 #: Substring → provider, for paths that are *routed* but not screened: token
 #: counting, model listing, embeddings, file uploads. The credential sniff in
@@ -1690,10 +1728,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _provider(self) -> str:
-        path = urlsplit(self.path).path
-        for prefix, provider in PROVIDER_ROUTES:
-            if path.endswith(prefix) or path == prefix:
-                return provider
+        routed = generation_route(self.path)
+        if routed is not None:
+            return routed[1]
+        path = normalized_path(self.path)
         for fragment, provider in PROVIDER_PREFIXES:
             if fragment in path:
                 return provider
@@ -1752,10 +1790,35 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self._spoken:
             self._spoken = spoken_text(self.headers.get("x-prismor-refusal-text") or "") or True
 
+        routed = None if a2a else generation_route(path)
+        if (
+            self.screen is not None
+            and self.screen.mode == "enforce"
+            and not a2a
+            and routed is None
+            and not is_passthrough(path)
+        ):
+            self._refuse(
+                provider,
+                "Blocked by Prismor: this path is not a screened generation "
+                "route (fail-closed)",
+            )
+            return
+        if (
+            self.screen is not None
+            and self.screen.mode == "enforce"
+            and routed is not None
+            and body is None
+        ):
+            self._refuse(
+                provider,
+                "Blocked by Prismor: generation body is not a JSON object "
+                "(fail-closed)",
+            )
+            return
         screened = body is not None and (
             (a2a and a2a_method(body) in A2A_SCREENED_METHODS)
-            or (not a2a and any(
-                path.endswith(p) or path == p for p, _ in PROVIDER_ROUTES)))
+            or routed is not None)
         model = model_of(provider, path, body)
         streaming = is_streaming(provider, path, body)
 
