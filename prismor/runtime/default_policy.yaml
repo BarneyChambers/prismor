@@ -1253,6 +1253,8 @@ rules:
       # The local dashboard's write API (loopback, unauthenticated by design
       # — it assumes only the human reaches it).
       - '(curl|wget|http|nc)[^\n]*(127\.0\.0\.1|localhost)[^\n]*/api/(policy|tool-policy|agents|sessions|pause|update|approvals)'
+      # The same URL built by joining the path in the interpreter.
+      - '/api/["'']\s*\+\s*["''](?:policy|tool-policy|agents|sessions|pause|update|approvals)'
       # Wrappers whose only purpose here is to disguise one of the above — a
       # pty allocated around the CLI, so it must still name a real subcommand.
       - '\b(script|unbuffer|expect)\b[^\n]*[ \t](\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|policy|egress|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'

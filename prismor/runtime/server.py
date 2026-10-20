@@ -568,6 +568,26 @@ def _changelog_since(current: str) -> List[Dict[str, str]]:
     return out
 
 
+def project_policy_disables_floor(content: str) -> bool:
+    """True when this YAML opts the project out of the safety floor.
+
+    The dashboard writes the file directly. floor-off already asks for the
+    unlock password; this route did not, so selection: explicit landed with
+    no check.
+    """
+    try:
+        import yaml
+        data = yaml.safe_load(content) or {}
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    settings = data.get("settings") or {}
+    if not isinstance(settings, dict):
+        return False
+    return str(settings.get("selection", "")).lower() == "explicit"
+
+
 class PrismorRequestHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler for the prismor dashboard API."""
 
@@ -1328,6 +1348,12 @@ class PrismorRequestHandler(BaseHTTPRequestHandler):
             try:
                 body = self._read_json_body()
                 content = body.get("yaml", "")
+                if project_policy_disables_floor(content):
+                    from prismor.runtime import unlock
+                    ok, msg = unlock.verify(str(body.get("password") or ""))
+                    if not ok:
+                        self._send_json({"error": msg}, status=401)
+                        return
                 ws_str = body.get("workspace")
                 workspace = Path(ws_str) if ws_str else _SERVER_WORKSPACE
                 if not workspace:
