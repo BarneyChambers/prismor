@@ -143,7 +143,12 @@ DEFAULT_UPSTREAMS: Dict[str, Dict[str, str]] = {
 
 #: Credentials we swap out in virtual-key mode. Every provider's key lands in
 #: exactly one of these, so stripping the set is what makes the swap total.
-_AUTH_HEADERS = frozenset({"authorization", "x-api-key", "x-goog-api-key"})
+_AUTH_HEADERS = frozenset({"authorization", "x-api-key", "x-goog-api-key", "api-key"})
+
+
+def without_client_auth(headers: Dict[str, str]) -> Dict[str, str]:
+    """Drop credential headers. Names are compared case-insensitively."""
+    return {k: v for k, v in headers.items() if k.lower() not in _AUTH_HEADERS}
 
 #: Headers we must not relay: hop-by-hop, or ones the upstream will recompute.
 _STRIP_REQUEST_HEADERS = frozenset({
@@ -2050,8 +2055,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             # metadata server) rather than a key the agent could hold, so it is
             # applied whenever the upstream asks for it -- virtual-key mode is
             # about swapping a key the client sent, and here there is none.
-            headers = {k: v for k, v in headers.items()
-                       if k.lower() not in _AUTH_HEADERS}
+            headers = without_client_auth(headers)
             if auth_mode == "gcp-oauth":
                 headers["authorization"] = f"Bearer {gcp_access_token()}"
             else:
@@ -2079,8 +2083,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             # this upstream wants goes back -- a surviving header from another
             # provider's SDK would defeat the swap.
             header = str(spec.get("auth_header") or "authorization").lower()
-            headers = {k: v for k, v in headers.items()
-                       if k.lower() not in _AUTH_HEADERS}
+            headers = without_client_auth(headers)
             headers[header] = (f"Bearer {real_key}" if header == "authorization"
                                else real_key)
         headers["Content-Length"] = str(len(raw_body))
