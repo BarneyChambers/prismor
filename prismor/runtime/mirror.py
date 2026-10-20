@@ -981,7 +981,12 @@ def already_screened(tool_name: str, workspace: Path, cwd: str = "") -> bool:
     name = str(tool_name or "")
     if not name.startswith("mcp__"):
         return False           # native tools: the hook layer owns them
-    bare = name.rsplit("__", 1)[-1]
+    segments = name.split("__")
+    # mcp__<server>__<tool>. A live mirror listing Bash must not exempt
+    # mcp__other__Bash. Only this install's mirror server counts.
+    if len(segments) < 3 or MIRROR_SERVER_NAME not in segments[1:-1]:
+        return False
+    bare = segments[-1]
     if bare not in _MIRRORABLE:
         return False           # cheap reject before touching the filesystem
     for probe in (cwd, str(workspace)):
