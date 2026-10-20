@@ -1599,6 +1599,11 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # ── uninstall-hooks ────────────────────────────────────────────────
     if args.command == "uninstall-hooks":
+        if not sys.stdin.isatty():
+            sys.stderr.write(
+                "prismor uninstall-hooks needs a terminal. Run it yourself, not through an agent.\n"
+            )
+            raise SystemExit(2)
         results = uninstall_hooks(
             repo_root=repo_root,
             workspace=workspace,
