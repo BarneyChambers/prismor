@@ -467,6 +467,7 @@ rules:
       # modes are intentionally not flagged (chmod g+w, 644, 755, +x, 600, …).
       - 'chmod\s+(?:-[A-Za-z]+\s+)*[0-7]?[0-7][0-7][2367]\b'
       - 'chmod\s+(?:-[A-Za-z]+\s+)*[ugoa,+=rwxXst-]*[oa][+=][a-zX]*w'
+      - 'chmod\s+[ugoa]*\+[rwxXst]*s'
       - 'chown\s+-R\s+[^\n]*\s(/|\$\{?HOME\}?|~)(\s|$|/)'
       # Command-position anchored: match these as an actual command — at the
       # start of the line, after a shell separator (; && || |), or invoked via
@@ -512,6 +513,8 @@ rules:
       - '\b(cat|sed|grep|awk|head|tail|base64|xxd|gzip)\b[^\n;&]*(?<![\w$])(\.env\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.pypirc\b|\.aws\b|\.ssh\b)[^\n;&]*\|[^\n;&]*\b(curl|wget|nc|ncat|socat|scp|ftp)\b'
       # scp/rsync/sftp UPLOAD of a secret file to a remote host (secret then user@host:)
       - '\b(scp|rsync|sftp)\b[^\n]*(\.env|id_rsa|id_ed25519|\.npmrc|\.pypirc|credentials|secrets?)\b[^\n]*@'
+      - '\bcurl\b[^\n]*(?:-T|--upload-file|--data-binary)\b[^\n]*(\.env\b|id_rsa\b|id_ed25519\b)'
+      - '\b(scp|rsync|sftp)\b[^\n]*(\.env|id_rsa|id_ed25519)\b[^\n]*:'
     action: block
 
   # ── CRITICAL: DoS / resource exhaustion ───────────────────────────────
@@ -576,10 +579,12 @@ rules:
     fields: [command]
     patterns:
       - 'chmod\s+[ugo+]*s\s'
+      - 'chmod\s+[ugoa]*\+[rwxXst]*s'
       - 'chmod\s+[0-7]*[4-7][0-7]{2}[0-7]\s'
       - '\bsetcap\b'
       - '\bvisudo\b|/etc/sudoers'
       - 'usermod\s+.*-[a-zA-Z]*G\s+.*sudo'
+      - 'usermod\b[^\n]*--groups\b[^\n]*\bsudo\b'
       - '\b(useradd|adduser)\b'
       - '\bnsenter\b'
       - '\bpkexec\b'
@@ -664,6 +669,7 @@ rules:
       - '\b(bash|sh|zsh|dash|ksh)\b[^\n]*<\(\s*(curl|wget)\b'
       # eval of remotely-fetched content: eval "$(curl ...)"
       - '\beval\b[^\n]*\b(curl|wget)\b'
+      - '\b(?:bash|sh|zsh|dash|ksh)\b[^\n]*\s-c\b[^\n]*\b(curl|wget)\b'
       # PowerShell: iwr ... | iex, and iex (irm ...) / iex (New-Object Net.WebClient).DownloadString(...).
       # curl and wget are aliases of Invoke-WebRequest there.
       - '\b(?:iwr|irm|curl|wget|Invoke-WebRequest|Invoke-RestMethod)\b[^|;\n]*\|\s*(?:iex|Invoke-Expression)\b'
