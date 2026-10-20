@@ -477,6 +477,9 @@ def response_tool_calls(provider: str, body: Dict[str, Any]) -> List[Tuple[str, 
         for call in message.get("tool_calls") or []:
             fn = (call or {}).get("function") or {}
             calls.append((str(fn.get("name") or ""), _loads(fn.get("arguments"))))
+        legacy = message.get("function_call")
+        if isinstance(legacy, dict) and legacy.get("name"):
+            calls.append((str(legacy.get("name") or ""), _loads(legacy.get("arguments"))))
     # Responses API
     for item in body.get("output") or []:
         call = _response_item_call(item)
@@ -1196,10 +1199,22 @@ class StreamScreen:
 
     def feed(self, chunk: bytes) -> bytes:
         """One SSE frame in, zero-or-more frames out."""
+        frames = _sse_data_frames(chunk)
+        if len(frames) > 1:
+            return b"".join(self._feed_one(part) for part in frames)
+        return self._feed_one(chunk)
+
+    def _feed_one(self, chunk: bytes) -> bytes:
         try:
             return self._feed(chunk)
-        except Exception as exc:  # never break the stream over a parse failure
+        except Exception as exc:
+            # A chunk we cannot parse is not evidence the call is safe.
             sys.stderr.write(f"[prismor-proxy] stream screen error: {exc}\n")
+            if self.screen.mode == "enforce":
+                self.blocked.append(
+                    "Blocked by Prismor: stream chunk could not be screened"
+                )
+                return b""
             return chunk
 
     def flush(self) -> bytes:
@@ -1356,6 +1371,16 @@ class StreamScreen:
         delta = (choices[0] if choices else {}).get("delta") or {}
         finish = (choices[0] if choices else {}).get("finish_reason")
 
+        legacy = delta.get("function_call")
+        if isinstance(legacy, dict) and (legacy.get("name") or legacy.get("arguments")):
+            self._holding = True
+            self._pending.append(chunk)
+            slot = self._calls.setdefault(0, {"id": "", "name": "", "args": []})
+            if legacy.get("name"):
+                slot["name"] = str(legacy["name"])
+            if legacy.get("arguments"):
+                slot["args"].append(str(legacy["arguments"]))
+            return b""
         if delta.get("tool_calls"):
             self._holding = True
             self._pending.append(chunk)
@@ -1415,7 +1440,12 @@ class StreamScreen:
                     arguments = _loads("".join(self._tool_json) or "{}")
                 else:
                     # custom_tool_call / local_shell_call: the done item is whole.
+                    # An empty done.input still has the patch in the held deltas.
                     arguments = call[1]
+                    if arguments in ({"input": ""}, {}, None, ""):
+                        arguments = {
+                            "input": b"".join(self._pending).decode("utf-8", "replace")
+                        }
                 reason = self._verdict(self._tool_name, arguments)
                 held, self._pending = b"".join(self._pending), []
                 self._holding = False
@@ -1494,6 +1524,24 @@ class StreamScreen:
             return held
         self.blocked.append(reason)
         return _sse_text_frames(self.provider, reason, self._tool_index)
+
+
+def _sse_data_frames(chunk: bytes) -> List[bytes]:
+    """One frame per ``data:`` line when a chunk carries more than one.
+
+    A normal SSE frame is ``event:`` then a single ``data:``. Splitting those
+    apart drops the event name. Only a second ``data:`` line is a second object.
+    """
+    lines = chunk.split(b"\n")
+    indexes = [i for i, line in enumerate(lines) if line.startswith(b"data:")]
+    if len(indexes) <= 1:
+        return [chunk]
+    frames: List[bytes] = []
+    for n, idx in enumerate(indexes):
+        end = indexes[n + 1] if n + 1 < len(indexes) else len(lines)
+        start = 0 if n == 0 else idx
+        frames.append(b"\n".join(lines[start:end]))
+    return frames
 
 
 def _sse_payload(chunk: bytes) -> Optional[Dict[str, Any]]:
