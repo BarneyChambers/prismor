@@ -529,13 +529,13 @@ def check_against_feed(
                     # or the advisory has no version constraint.
                     matched_deps.append(dep)
                     continue
+                affected_spec = affected_str.split(adv_name, 1)[-1].strip() if adv_name else ""
                 if dep.get("pinned_via_lock") or not is_floating(dep_version_str):
                     pv = parse_version(dep_version_str)
                     if pv is None:
                         matched_deps.append(dep)
                         continue
-                    affected_spec = affected_str.split(adv_name, 1)[-1] if adv_name else ""
-                    if "||" in affected_str and version_satisfies(pv, affected_spec.strip()):
+                    if "||" in affected_str and version_satisfies(pv, affected_spec):
                         matched_deps.append(dep)
                     elif version_in_range(pv, *adv_range):
                         matched_deps.append(dep)
@@ -543,7 +543,15 @@ def check_against_feed(
                     # Unpinned floating range — overlap with the advisory's
                     # vulnerable range means a resolve *could* land vulnerable.
                     dep_range = parse_npm_range(dep_version_str)
-                    if ranges_overlap(dep_range, adv_range):
+                    if "||" in affected_str:
+                        overlapped = any(
+                            ranges_overlap(dep_range, parse_npm_range(part.strip()))
+                            for part in affected_spec.split("||")
+                            if part.strip()
+                        )
+                    else:
+                        overlapped = ranges_overlap(dep_range, adv_range)
+                    if overlapped:
                         matched_deps.append(dep)
             if matched_deps:
                 matches.append({

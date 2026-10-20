@@ -18,4 +18,30 @@ class TestVersionOr(unittest.TestCase):
         self.assertFalse(version_in_range((1, 3, 0), *parse_npm_range("1.2.x")))
 
     def test_unparseable_bound_matches_nothing(self):
-        self.assertFalse(version_in_range((1, 2, 3), *parse_npm_range("<=not-a-version")))
+        for spec in ("<=not-a-version", ">=not-a-version", "^not-a-version", ">not-a-version"):
+            self.assertFalse(version_in_range((1, 2, 3), *parse_npm_range(spec)), spec)
+        self.assertFalse(version_satisfies((5, 0, 0), ">=not-a-version || >=9.0.0"))
+
+    def test_feed_or_matches_pinned_and_floating(self):
+        from prismor.runtime.deps import check_against_feed
+
+        feed = {
+            "advisories": [{
+                "type": "dependency_vulnerability",
+                "id": "X",
+                "affected": ["lodash<=1.0.0 || >=9.0.0"],
+                "severity": "high",
+                "title": "t",
+                "action": "",
+            }]
+        }
+        high = check_against_feed(
+            [{"name": "lodash", "version": "9.9.9", "pinned_via_lock": True}], feed
+        )
+        mid = check_against_feed(
+            [{"name": "lodash", "version": "5.0.0", "pinned_via_lock": True}], feed
+        )
+        floating = check_against_feed([{"name": "lodash", "version": "^9.0.0"}], feed)
+        self.assertEqual(len(high), 1)
+        self.assertEqual(mid, [])
+        self.assertEqual(len(floating), 1)
