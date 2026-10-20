@@ -184,7 +184,8 @@ def _annotate_rules(rules: List[dict], block_categories: Optional[set] = None) -
     ``self_protect``    — Prismor guarding itself; always on, never a choice here.
     ``floor``           — the safety floor (core rule id / core block category).
     ``default_blocked`` — a category the shipped policy blocks in enforce mode.
-    ``recommended``     — what we actually advise turning on: the floor.
+    ``recommended``     — what we actually advise turning on: the floor, plus the
+                          few overridable rules in ``_RECOMMENDED_RULE_IDS``.
 
     Recommending the floor and nothing more is deliberate. Badging the whole
     default block set would mark ~60 of 77 rules "recommended", which is not a
@@ -197,8 +198,16 @@ def _annotate_rules(rules: List[dict], block_categories: Optional[set] = None) -
         r["self_protect"] = rid in self_ids
         r["floor"] = (rid in non_over or cat in core_cats) and not r["self_protect"]
         r["default_blocked"] = bool(cat) and cat in cats and not r["floor"] and not r["self_protect"]
-        r["recommended"] = r["floor"]
+        r["recommended"] = r["floor"] or (rid in _recommended_ids() and not r["self_protect"])
     return rules
+
+
+def _recommended_ids() -> set:
+    try:
+        from prismor.runtime.policy_engine import _RECOMMENDED_RULE_IDS
+        return set(_RECOMMENDED_RULE_IDS)
+    except Exception:
+        return set()
 
 
 def _load_rules() -> List[dict]:
@@ -1391,6 +1400,23 @@ def refresh_guidance() -> List[str]:
     return done
 
 
+def _write_selection_policy(target: Path, selected: List[str], scope: str) -> None:
+    """Write the enforce selection to ``target``, and for a global install also
+    to the user layer (~/.prismor/policy.yaml). A global hook evaluates each
+    repo under that repo's own policy (see PolicyEngine._load), so with the
+    selection only in ``target`` every other repo fell back to the defaults,
+    which warn where the selection blocks."""
+    text = _render_selection_policy(selected)
+    d = target / ".prismor"
+    d.mkdir(exist_ok=True)
+    (d / "policy.yaml").write_text(text, encoding="utf-8")
+    if scope == "global":
+        from prismor.runtime.store import prismor_home
+        user_policy = prismor_home() / "policy.yaml"
+        user_policy.parent.mkdir(parents=True, exist_ok=True)
+        user_policy.write_text(text, encoding="utf-8")
+
+
 def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], cloak: bool = False, scope: str = "project", mirror_agents: Optional[List[str]] = None, gov_mode: Optional[str] = None, judge: tuple = ("", "")) -> None:
     _STEP_FAILURES.clear()
     if not _PLAIN:
@@ -1480,10 +1506,9 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
         _spinner_run(f"Compiling governance mode '{gov_mode}'", _write_policy)
     elif mode == "enforce":
         def _write_policy():
-            d = target / ".prismor"
-            d.mkdir(exist_ok=True)
-            (d / "policy.yaml").write_text(_render_selection_policy(selected), encoding="utf-8")
-            return True, f"{len(selected)} rule(s) enforcing"
+            _write_selection_policy(target, selected, scope)
+            where = " in every workspace" if scope == "global" else ""
+            return True, f"{len(selected)} rule(s) enforcing{where}"
         _spinner_run("Writing policy selection", _write_policy)
     elif disabled:
         def _write_policy():
@@ -1568,7 +1593,9 @@ def _do_install(target: Path, mode: str, rules: List[dict], agents: List[str], c
     if cloak and "claude" in agents:
         def _install_cloak():
             if not shutil.which("jq"):
-                return False, "jq not found (brew install jq)"
+                hint = {"win32": "winget install jqlang.jq", "darwin": "brew install jq"}.get(
+                    sys.platform, "apt install jq, or your package manager")
+                return False, f"jq not found ({hint})"
             # Route through prismor/runtime/cli.py directly with the current interpreter.
             # Don't shell out to a `prismor` binary on PATH — that entry point is
             # a deprecation shim and prints a "'prismor' is deprecated" warning.

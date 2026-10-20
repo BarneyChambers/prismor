@@ -348,7 +348,7 @@ def test_installed_command_is_executable_as_written(agent, tmp_path, fake_home):
             cmds = [c for _, _, c in _commands(json.loads(text)) if "hook-dispatch" in c]
         assert cmds, f"{agent}/{scope}: no hook-dispatch command in {result['configPath']}"
         for cmd in cmds:
-            argv = shlex.split(cmd, posix=not WINDOWS)
+            argv = shlex.split(hooks._strip_powershell_wrapper(cmd), posix=not WINDOWS)
             argv = [a.strip('"') for a in argv]
             assert os.access(argv[0], os.X_OK), f"{agent}/{scope}: interpreter missing: {argv[0]}"
             assert Path(argv[1]).is_file(), f"{agent}/{scope}: shim missing: {argv[1]}"
@@ -361,9 +361,49 @@ def test_installed_command_runs_under_the_platform_shell(agent, tmp_path, fake_h
     # pointed at an --agent value hook-dispatch's argparse rejected, which exits
     # 2 -- a block on every tool call for those agents.
     cmd = hooks._dispatcher_command(repo_root=ROOT, workspace=tmp_path, agent=agent, mode="observe")
-    proc = subprocess.run(cmd, shell=True, input="{}", capture_output=True, encoding="utf-8", errors="replace",
+    # Run it the way the agent does: Codex, Gemini and Copilot use PowerShell on
+    # Windows, the rest cmd.exe (or sh).
+    if WINDOWS and agent in hooks._POWERSHELL_HOOK_AGENTS:
+        run = dict(args=["powershell", "-NoProfile", "-Command", cmd])
+    else:
+        run = dict(args=cmd, shell=True)
+    proc = subprocess.run(**run, input="{}", capture_output=True, encoding="utf-8", errors="replace",
                           env=dict(os.environ, PRISMOR_NO_UPDATE_CHECK="1"), timeout=120)
     assert proc.returncode == 0, proc.stderr[-2000:]
+
+
+# Each agent's own shell-tool payload, and how it reads a deny: Gemini by exit
+# code 2, Copilot by a JSON permissionDecision on stdout, Codex by a
+# hookSpecificOutput deny on stdout with exit 0 (honored even when the shell
+# mangles exit codes).
+_PS_DENY_CASES = {
+    "codex": ({"hook_event_name": "PreToolUse", "tool_name": "Bash"}, "hso"),
+    "gemini": ({"hook_event_name": "BeforeTool", "tool_name": "run_shell_command"}, "exit"),
+    "copilot": ({"hook_event_name": "PreToolUse", "tool_name": "bash"}, "json"),
+}
+
+
+@pytest.mark.skipif(not WINDOWS, reason="PowerShell exit-code handling is Windows-only")
+@pytest.mark.parametrize("agent", sorted(hooks._POWERSHELL_HOOK_AGENTS))
+def test_powershell_hook_delivers_a_deny(agent, tmp_path, fake_home):
+    # `powershell -Command` turns a native exit 2 into 1, which Codex and
+    # Gemini read as a broken hook and then run the tool. The wrapper must hand
+    # the 2 back.
+    cmd = hooks._dispatcher_command(repo_root=ROOT, workspace=tmp_path, agent=agent, mode="enforce")
+    shape, how = _PS_DENY_CASES[agent]
+    payload = json.dumps({**shape, "tool_input": {"command": "chmod -R 777 /"},
+                          "cwd": str(tmp_path), "session_id": "ps-deny"})
+    proc = subprocess.run(["powershell", "-NoProfile", "-Command", cmd], input=payload,
+                          capture_output=True, encoding="utf-8", errors="replace",
+                          env=dict(os.environ, PRISMOR_NO_UPDATE_CHECK="1"), timeout=120)
+    detail = (proc.returncode, proc.stdout[-800:], proc.stderr[-800:])
+    if how == "exit":
+        assert proc.returncode == 2, detail
+    elif how == "hso":
+        assert proc.returncode == 0, detail
+        assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny", detail
+    else:
+        assert json.loads(proc.stdout)["permissionDecision"] == "deny", detail
 
 
 if __name__ == "__main__" and "--write" in sys.argv:
