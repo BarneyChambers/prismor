@@ -458,9 +458,16 @@ def _is_remote_argument(words: List[str]) -> bool:
 
 # A bind of this machine's home, policy dir, or root, or chroot of `/`,
 # still reaches THIS install. The payload is not someone else's Prismor.
+# `:/` on its own matches every absolute destination (`-v /tmp:/tmp`).
+# Only a source of `/`, a destination of `/`, or a home / policy mount
+# reaches this install.
 _HOST_POLICY_MOUNT = re.compile(
-    r"\b(?:docker|podman|nerdctl)\b[^\n]*(?:-v|--volume)(?:=|\s+)\S*"
-    r"(?:\$\{?HOME\}?|~(?:/|\s|$)|/\.prismor|:/)"
+    r"\b(?:docker|podman|nerdctl)\b[^\n]*"
+    r"(?:"
+    r"(?:-v|--volume)(?:=|\s+)\S*(?:\$\{?HOME\}?|~(?::|/|\s|$)|/\.prismor)"
+    r"|(?:-v|--volume)(?:=|\s+)/(?::|\s|$)"
+    r"|(?:-v|--volume)(?:=|\s+)\S*:/(?:\s|$)"
+    r")"
 )
 _CHROOT_HOST_ROOT = re.compile(r"\bchroot\s+/(?:\s|$)")
 

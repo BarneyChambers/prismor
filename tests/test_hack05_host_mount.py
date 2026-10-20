@@ -32,3 +32,4 @@ class TestHostMount(unittest.TestCase):
         command = 'ssh host "export A=1; prismor unlock --set-password"'
         self.assertFalse(_blocks(command))
         self.assertFalse(_blocks('docker run img sh -c "prismor pause"'))
+        self.assertFalse(_blocks('docker run -v /tmp:/tmp alpine sh -c "prismor pause"'))
