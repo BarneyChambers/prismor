@@ -241,6 +241,25 @@ def _codex_secret_read_reason(event: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _resolved_command_block(argv: List[str]) -> Optional[str]:
+    """Screen the command after placeholders are filled in.
+
+    The hook only sees the placeholder text. The resolved argv is what
+    actually runs, so it has to meet the same policy.
+    """
+    from prismor.runtime.hooks import should_block
+    from prismor.runtime.policy_engine import PolicyEngine
+
+    command = shlex.join(argv)
+    findings = PolicyEngine(workspace=Path.cwd()).evaluate(
+        {"type": "shell", "command": command}, index=0
+    )
+    hit = should_block(findings, {"type": "shell", "agent_event": "PreToolUse"})
+    if hit is None:
+        return None
+    return str(hit.get("ruleId") or "blocked")
+
+
 def run_decloaked_command(argv: Iterable[str]) -> int:
     """Run a command with placeholders resolved locally and output scrubbed."""
     args = list(argv)
@@ -268,6 +287,10 @@ def run_decloaked_command(argv: Iterable[str]) -> int:
 
     env = os.environ.copy()
     env.update(resolved_env)
+    blocked = _resolved_command_block(resolved)
+    if blocked is not None:
+        sys.stderr.write(f"error: prismor cloak run refused: {blocked}\n")
+        return 2
     proc = subprocess.run(
         resolved,
         capture_output=True,
