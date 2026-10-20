@@ -456,6 +456,22 @@ def _is_remote_argument(words: List[str]) -> bool:
     return not (prev.startswith("-") and prev != "--" and not _PAYLOAD_FLAG.match(prev))
 
 
+# A bind of this machine's home, policy dir, or root, or chroot of `/`,
+# still reaches THIS install. The payload is not someone else's Prismor.
+_HOST_POLICY_MOUNT = re.compile(
+    r"\b(?:docker|podman|nerdctl)\b[^\n]*(?:-v|--volume)(?:=|\s+)\S*"
+    r"(?:\$\{?HOME\}?|~(?:/|\s|$)|/\.prismor|:/)"
+)
+_CHROOT_HOST_ROOT = re.compile(r"\bchroot\s+/(?:\s|$)")
+
+
+def _reaches_host_policy(command: str) -> bool:
+    return (
+        _HOST_POLICY_MOUNT.search(command) is not None
+        or _CHROOT_HOST_ROOT.search(command) is not None
+    )
+
+
 def is_remote_payload(command: str, match_start: int, match_end: int) -> bool:
     """True when the match lies inside the payload of a context-switching command.
 
@@ -481,6 +497,8 @@ def is_remote_payload(command: str, match_start: int, match_end: int) -> bool:
         local too (issue #607).
     """
     if match_start < 0 or match_end > len(command):
+        return False
+    if _reaches_host_policy(command):
         return False
     spans = quoted_spans(command)
     if not spans:

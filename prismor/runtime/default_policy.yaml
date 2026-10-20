@@ -2027,6 +2027,7 @@ rules:
     patterns:
       - '\b(docker|podman|nerdctl)\s+(run|create)\b[^\n]*--privileged\b'
       - '\b(docker|podman|nerdctl)\s+(run|create)\b[^\n]*(-v|--volume|--mount)\b[^\n]*\s/:/'
+      - '\b(docker|podman|nerdctl)\s+(run|create)\b[^\n]*(-v|--volume|--mount)\b[^\n]*(\$\{?HOME\}?|~(?:/|\s|$)|\.prismor)'
       - '\b(docker|podman|nerdctl)\s+(run|create)\b[^\n]*--pid\s*=?\s*host\b'
       - '\b(docker|podman|nerdctl)\s+(run|create)\b[^\n]*--cap-add[= ]\s*(SYS_ADMIN|ALL)\b'
     action: block
