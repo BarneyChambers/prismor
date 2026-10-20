@@ -174,7 +174,7 @@ def _retype_adapter_file_call(event: Dict[str, Any]) -> None:
     meta = event.get("metadata") or {}
     if event.get("type") != "shell" or not meta.get("framework"):
         return
-    kwargs = meta.get("kwargs") or {}
+    kwargs = meta.get("kwargs") or meta.get("args") or {}
     if set(kwargs) == {"input"} and isinstance(kwargs["input"], str):
         try:  # OpenAI Agents SDK FunctionTools hand over one JSON string
             kwargs = json.loads(kwargs["input"])
