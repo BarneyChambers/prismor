@@ -3898,8 +3898,8 @@ def _expand_braces(cmd: str) -> str:
 def _equate_shell(cmd: str) -> str:
     """Rewrite shell forms that are the same action as a pattern the floor already has.
 
-    Glued `$(echo m)`, brace lists, `|&`, `tee` in the middle of a pipe, `dd`
-    operand order, and a path on the executable. Argument paths are left alone.
+    Glued `$(echo m)`, brace lists, `|&`, `tee` in the middle of a pipe, and
+    `dd` operand order. Argument paths are left alone.
     """
     cmd = re.sub(
         r"\$\(\s*(?:echo|printf(?:\s+%s)?)\s+([A-Za-z0-9_./+-]+)\s*\)",
@@ -3919,7 +3919,13 @@ def _equate_shell(cmd: str) -> str:
     cmd = re.sub(r"(^|[\n;&|(`])\s*(?:command|exec)\s+", r"\1 ", cmd)
     cmd = re.sub(r"\bsystemctl\s+poweroff\b", "shutdown", cmd)
     cmd = re.sub(r"\bsource\s+<\(", "bash <(", cmd)
-    cmd = re.sub(r"\|\s*(?:python3?|perl|ruby|node)\b", "| bash", cmd)
+    cmd = re.sub(r"\|\s*(?:python3?|perl|ruby|node)(?:\s+-)?\s*(?=$|[\n;&|)])", "| bash", cmd)
+    # sh -c "$(curl ...)" runs what curl prints. A plain `sh -c 'curl ...'` does not.
+    cmd = re.sub(
+        r"\b(?:bash|sh|zsh|dash|ksh)\s+-c\s+[\"']?\s*\$\(\s*((?:curl|wget)\b[^)]*)\)[\"']?",
+        r"\1 | bash",
+        cmd,
+    )
     cmd = _expand_braces(cmd)
     cmd = cmd.replace("./*", "*")
     of_disk = re.search(
@@ -3928,12 +3934,6 @@ def _equate_shell(cmd: str) -> str:
     )
     if of_disk and re.search(r"\bdd\b", cmd) and not re.search(r"\bdd\s+if=", cmd):
         cmd = "dd if=x of=" + of_disk.group(1) + " " + cmd
-    cmd = re.sub(
-        r"(^|[\n;&|(`])(\s*(?:(?:sudo|doas|env|busybox|nohup|time|nice)(?:\s+-\S+)*\s+)*)"
-        r"['\"]?(/[^\s;&|<>'\"`]+)['\"]?",
-        lambda m: f"{m.group(1)}{m.group(2)}{m.group(3).rsplit('/', 1)[-1]}",
-        cmd,
-    )
     return cmd
 
 
@@ -3953,7 +3953,23 @@ def _normalize_command(cmd: str) -> str:
     ``$(rm) -rf /`` both expose ``rm`` as a plain word that existing
     patterns can match — the two forms are shell-equivalent.
     """
-    cmd = _equate_shell(cmd)
+    # $(echo prismor) is prismor. Collapse that before the generic unwrap,
+    # which would turn it into the words "echo prismor" and miss the anchor.
+    cmd = re.sub(
+        r'\$\(\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*\)',
+        r'\1',
+        cmd,
+    )
+    cmd = re.sub(
+        r'`\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*`',
+        r'\1',
+        cmd,
+    )
+    # Rewritten shell forms are matched next to the original, so a rewrite
+    # can add a match but never hide one.
+    equated = _equate_shell(cmd)
+    if equated != cmd:
+        cmd = cmd + "\n" + equated
     # $(...) → space-separated inner content
     cmd = re.sub(r'\$\(([^)]*)\)', r' \1 ', cmd)
     # `...` → space-separated inner content
@@ -3989,7 +4005,36 @@ def _normalize_command(cmd: str) -> str:
         i += 1
     if buf:
         out.append(" ".join(" ".join(buf).split()))
-    return "\n".join(line for line in out if line)
+    joined = "\n".join(line for line in out if line)
+    # Match both spellings. Rewriting in place hid a redirect target from the
+    # reverse-shell rule and the `/tmp/b` fetch-then-execute ties to its download.
+    based = _basename_command_words(joined)
+    return joined if based == joined else joined + "\n" + based
+
+
+# A path-qualified executable (`/bin/rm`, `"/usr/bin/curl"`) is the same command
+# as its basename. Only the word in command position is rewritten, so an
+# argument path (`rm /etc/passwd`) stays intact for the path rules.
+_LEAD_WRAPPER = (
+    r"(?:sudo|doas|env|command|busybox|exec|nohup|time|nice)(?:\s+-\S+)*\s+"
+)
+_ABS_COMMAND = re.compile(
+    r"(^|[\n;|(`]|(?<![<>])&)(\s*(?:" + _LEAD_WRAPPER + r")*)['\"]?(/[^\s;&|<>'\"`]+)['\"]?"
+)
+
+
+def _basename_command_words(cmd: str) -> str:
+    def sub(match: "re.Match[str]") -> str:
+        base = match.group(3).rsplit("/", 1)[-1]
+        if not base or base in {".", ".."}:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}{base}"
+
+    prev = None
+    while prev != cmd:
+        prev = cmd
+        cmd = _ABS_COMMAND.sub(sub, cmd)
+    return cmd
 
 
 # ── Script-content inspection (#27) ──────────────────────────────────────────

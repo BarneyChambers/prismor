@@ -242,8 +242,12 @@ def _parse_verdict(stdout: str, t0: int) -> Optional[SemanticRisk]:
         nested = [v for v in data.values() if isinstance(v, dict)]
         if len(nested) == 1 and "risk_score" in nested[0]:
             data = nested[0]
+    # A JSON object with no score is a failed judge. Defaulting it to 0
+    # replaced a heuristic block with an allow.
+    if not isinstance(data, dict) or "risk_score" not in data:
+        return None
     return SemanticRisk(
-        risk_score=float(data.get("risk_score", 0.0)),
+        risk_score=float(data["risk_score"]),
         category=str(data.get("category", "unknown")),
         reason=str(data.get("reason", "")),
         recommended_action=str(data.get("recommended_action", "allow")),

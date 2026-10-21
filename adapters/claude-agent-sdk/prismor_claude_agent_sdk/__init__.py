@@ -73,12 +73,23 @@ def _normalize(tool_name: str, tool_input: dict) -> dict:
     if tool_name == "Read":
         return {"type": "file_read", "path": tool_input.get("file_path") or tool_input.get("path", "")}
     if tool_name in {"Edit", "MultiEdit", "Write"}:
+        content = tool_input.get("content", "") or tool_input.get("new_string", "")
+        edits = tool_input.get("edits")
+        if isinstance(edits, list):
+            extra = "\n".join(
+                str(item.get("new_string") or "")
+                for item in edits
+                if isinstance(item, dict)
+            )
+            content = (str(content) + "\n" + extra).strip()
         return {
             "type": "file_write",
             "path": tool_input.get("file_path") or tool_input.get("path", ""),
-            "content": tool_input.get("content", "") or tool_input.get("new_string", ""),
+            "content": content,
         }
-    if tool_name in {"WebFetch", "WebSearch"}:
+    if tool_name == "WebSearch":
+        return {"type": "network", "url": tool_input.get("query") or tool_input.get("url", "")}
+    if tool_name == "WebFetch":
         return {"type": "network", "url": tool_input.get("url", "")}
     # Custom SDK tools (registered via create_sdk_mcp_server / @tool) arrive
     # as "mcp__<server>__<tool>" — Claude's own built-in tool names never
