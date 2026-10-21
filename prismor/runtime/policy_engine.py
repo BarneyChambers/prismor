@@ -3882,6 +3882,61 @@ def _dequote_shell(cmd: str) -> Optional[str]:
 _HEREDOC_START_RE = re.compile(r"<<-?[ \t]*['\"]?(\w+)['\"]?")
 
 
+def _expand_braces(cmd: str) -> str:
+    """One level of `{a,b}` so `/ {bin,etc}` is the same path list the rules see."""
+    def repl(match: "re.Match[str]") -> str:
+        parts = match.group(2).split(",")
+        return " ".join(match.group(1) + part + match.group(3) for part in parts)
+
+    return re.sub(
+        r"(\S*)\{([A-Za-z0-9_./+-]+(?:,[A-Za-z0-9_./+-]+)+)\}(\S*)",
+        repl,
+        cmd,
+    )
+
+
+def _equate_shell(cmd: str) -> str:
+    """Rewrite shell forms that are the same action as a pattern the floor already has.
+
+    Glued `$(echo m)`, brace lists, `|&`, `tee` in the middle of a pipe, and
+    `dd` operand order. Argument paths are left alone.
+    """
+    cmd = re.sub(
+        r"\$\(\s*(?:echo|printf(?:\s+%s)?)\s+([A-Za-z0-9_./+-]+)\s*\)",
+        r"\1",
+        cmd,
+    )
+    cmd = re.sub(
+        r"`\s*(?:echo|printf(?:\s+%s)?)\s+([A-Za-z0-9_./+-]+)\s*`",
+        r"\1",
+        cmd,
+    )
+    cmd = cmd.replace("|&", "|")
+    cmd = re.sub(r"\|\s*tee\s+\S+\s*\|", "|", cmd)
+    cmd = re.sub(r"\bchown\s+--recursive\b", "chown -R", cmd)
+    cmd = re.sub(r"\bchmod\s+--mode[= ]+", "chmod ", cmd)
+    cmd = re.sub(r"(\bchmod\s+)0+([0-7]{3,4}\b)", r"\1\2", cmd)
+    cmd = re.sub(r"(^|[\n;&|(`])\s*(?:command|exec)\s+", r"\1 ", cmd)
+    cmd = re.sub(r"\bsystemctl\s+poweroff\b", "shutdown", cmd)
+    cmd = re.sub(r"\bsource\s+<\(", "bash <(", cmd)
+    cmd = re.sub(r"\|\s*(?:python3?|perl|ruby|node)(?:\s+-)?\s*(?=$|[\n;&|)])", "| bash", cmd)
+    # sh -c "$(curl ...)" runs what curl prints. A plain `sh -c 'curl ...'` does not.
+    cmd = re.sub(
+        r"\b(?:bash|sh|zsh|dash|ksh)\s+-c\s+[\"']?\s*\$\(\s*((?:curl|wget)\b[^)]*)\)[\"']?",
+        r"\1 | bash",
+        cmd,
+    )
+    cmd = _expand_braces(cmd)
+    cmd = cmd.replace("./*", "*")
+    of_disk = re.search(
+        r"\bof=(/dev/(?!null\b|zero\b|stdout\b|stderr\b|tty\b|fd/)[^\s;&|]+)",
+        cmd,
+    )
+    if of_disk and re.search(r"\bdd\b", cmd) and not re.search(r"\bdd\s+if=", cmd):
+        cmd = "dd if=x of=" + of_disk.group(1) + " " + cmd
+    return cmd
+
+
 def _normalize_command(cmd: str) -> str:
     """Normalize a shell command for consistent pattern matching.
 
@@ -3910,6 +3965,11 @@ def _normalize_command(cmd: str) -> str:
         r'\1',
         cmd,
     )
+    # Rewritten shell forms are matched next to the original, so a rewrite
+    # can add a match but never hide one.
+    equated = _equate_shell(cmd)
+    if equated != cmd:
+        cmd = cmd + "\n" + equated
     # $(...) → space-separated inner content
     cmd = re.sub(r'\$\(([^)]*)\)', r' \1 ', cmd)
     # `...` → space-separated inner content
