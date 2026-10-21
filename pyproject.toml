@@ -209,6 +209,7 @@ packages = [
 "docs/subagents.md" = "prismor/runtime/data/docs/subagents.md"
 "docs/supply-chain.md" = "prismor/runtime/data/docs/supply-chain.md"
 "docs/sweep-and-cloak.md" = "prismor/runtime/data/docs/sweep-and-cloak.md"
+"docs/system-install.md" = "prismor/runtime/data/docs/system-install.md"
 "docs/telemetry-receipts.md" = "prismor/runtime/data/docs/telemetry-receipts.md"
 "docs/telemetry-sinks.md" = "prismor/runtime/data/docs/telemetry-sinks.md"
 "docs/tool-access-precedence.md" = "prismor/runtime/data/docs/tool-access-precedence.md"

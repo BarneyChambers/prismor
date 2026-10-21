@@ -1,4 +1,4 @@
-# System install (Linux and Windows fleets)
+# System install (Linux, macOS and Windows fleets)
 
 `prismor setup --scope global` hooks the agents of the user who runs it. An
 MDM or config-management tool runs as root (or SYSTEM), so that covers the

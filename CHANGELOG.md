@@ -1,4 +1,4 @@
-## [Unreleased]
+## [1.64.0] — 2026-10-21
 
 ### Added
 - **System install on Windows and macOS** (`prismor setup --system`, elevated / as SYSTEM, or `sudo`). Windows: hooks in `C:\Program Files\ClaudeCode\managed-settings.d\`, `C:\ProgramData\OpenAI\Codex\requirements.toml`, `C:\ProgramData\Cursor\hooks.json` and `C:\ProgramData\gemini-cli\settings.json`; policy state in `C:\ProgramData\Prismor`, which gets an explicit ACL (SYSTEM and Administrators full, Users read) because ProgramData lets any user create files in its subfolders, which here would mean writing your own `pause.json`. Paths come from the known-folder API, so repointing `%ProgramData%` changes nothing. macOS: `/Library/Application Support/{ClaudeCode,Cursor,GeminiCli,Prismor}` and `/etc/codex`. Verified on Windows Server 2025 with Claude Code 2.1.306 and codex-cli 0.163.0 as a standard user: blocked with no per-user setup, and still blocked after `disableAllHooks`, `[features] hooks = false`, a weak repo policy or a redirected `%ProgramData%`; Linux and macOS run the same check in CI (`system-install-e2e`).
