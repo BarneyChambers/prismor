@@ -3933,7 +3933,11 @@ def _normalize_command(cmd: str) -> str:
         i += 1
     if buf:
         out.append(" ".join(" ".join(buf).split()))
-    return _basename_command_words("\n".join(line for line in out if line))
+    joined = "\n".join(line for line in out if line)
+    # Match both spellings. Rewriting in place hid a redirect target from the
+    # reverse-shell rule and the `/tmp/b` fetch-then-execute ties to its download.
+    based = _basename_command_words(joined)
+    return joined if based == joined else joined + "\n" + based
 
 
 # A path-qualified executable (`/bin/rm`, `"/usr/bin/curl"`) is the same command
@@ -3943,7 +3947,7 @@ _LEAD_WRAPPER = (
     r"(?:sudo|doas|env|command|busybox|exec|nohup|time|nice)(?:\s+-\S+)*\s+"
 )
 _ABS_COMMAND = re.compile(
-    r"(^|[\n;&|(`])(\s*(?:" + _LEAD_WRAPPER + r")*)['\"]?(/[^\s;&|<>'\"`]+)['\"]?"
+    r"(^|[\n;|(`]|(?<![<>])&)(\s*(?:" + _LEAD_WRAPPER + r")*)['\"]?(/[^\s;&|<>'\"`]+)['\"]?"
 )
 
 
