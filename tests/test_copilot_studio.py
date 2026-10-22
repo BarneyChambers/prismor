@@ -1,6 +1,7 @@
 """Copilot Studio external threat detection on the eval-server, over real HTTP."""
 
 import copy
+import base64
 import json
 import os
 import secrets
@@ -312,6 +313,11 @@ def _fresh_caches(monkeypatch):
     cs._org_cache.clear()
     cs._turns.clear()
     monkeypatch.setattr(cs, "_keepwarm_thread", None)
+    # warm() turns on background uploads process-wide; keep it to this test.
+    import threading
+    from prismor.runtime import sinks
+    monkeypatch.setattr(sinks, "_bg_thread", None)
+    monkeypatch.setattr(sinks, "_bg_kick", threading.Event())
     yield
     cs._org_cache.clear()
     cs._turns.clear()
@@ -527,6 +533,48 @@ def test_console_kill_switch_stops_a_copilot_studio_agent(tmp_path, monkeypatch)
     assert cs.analyze(cs.sample_request("clean"), tmp_path)["blockAction"]
 
 
+def _org_controls(monkeypatch, controls):
+    from prismor.runtime.enterprise import remote_policy, workspace_scope
+    monkeypatch.setattr(workspace_scope, "is_managed", lambda ws: True)
+    monkeypatch.setattr(remote_policy, "verify_and_load",
+                        lambda: {"settings": {"agent_controls": {"Sales assistant": controls}}})
+
+
+def _recorded(monkeypatch):
+    sent = []
+    from prismor.runtime import runtime
+    monkeypatch.setattr(runtime, "_dispatch_telemetry", lambda **kw: sent.append(kw))
+    monkeypatch.setenv("PRISMOR_COPILOT_STUDIO_ALLOWED_EMAIL_DOMAINS", "contoso.com")
+    return sent
+
+
+def test_a_blocked_call_is_recorded_once_as_blocked(tmp_path, monkeypatch):
+    # Not also as the policy's "allowed": the console showed both for one call.
+    _clean_env(monkeypatch, tmp_path)
+    sent = _recorded(monkeypatch)
+    assert cs.analyze(cs.sample_request("external"), tmp_path)["blockAction"]
+    calls = [kw for kw in sent if kw["event"]["metadata"].get("source") != "user_message"]
+    assert len(calls) == 1
+    assert calls[0]["findings"][0]["ruleId"] == "copilot-studio-recipient-outside-domains"
+
+
+def test_console_observe_lets_the_call_through_and_records_would_block(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    _org_controls(monkeypatch, {"mode": "observe"})
+    sent = _recorded(monkeypatch)
+    assert cs.analyze(cs.sample_request("external"), tmp_path) == {"blockAction": False}
+    hit = [kw for kw in sent if kw["findings"] and kw["findings"][0]["ruleId"].startswith("copilot-studio-")]
+    assert len(hit) == 1 and hit[0]["mode"] == "observe"
+
+
+def test_turned_off_agent_answers_with_the_kill_switch(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    _org_controls(monkeypatch, {"enabled": False})
+    _recorded(monkeypatch)
+    out = cs.analyze(cs.sample_request("external"), tmp_path)
+    assert out["blockAction"] and "outside your allowed" not in out["reason"]
+
+
 def test_background_refresh_keeps_keys_and_settings_off_the_request_path(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     refreshed = []
@@ -550,3 +598,72 @@ def test_warm_up_records_nothing_and_starts_no_thread_when_asked(tmp_path, monke
     _clean_env(monkeypatch, tmp_path)
     cs.warm(tmp_path, keepwarm=False)
     assert not cs._keepwarm_alive()
+
+
+# ── corner cases found driving real connector shapes ────────────────────────
+
+
+def _connector_call(inputs, tool="send_email_v2"):
+    b = cs.sample_request("clean")
+    b["toolDefinition"]["name"] = tool
+    b["inputValues"] = inputs
+    return b
+
+
+@pytest.mark.parametrize("inputs,tool", [
+    ({"message": {"toRecipients": [{"emailAddress": {"address": "x@evil.com"}}]}}, "send_mail"),
+    ({"message": {"toRecipients": [], "ccRecipients": [{"emailAddress": {"address": "x@evil.com"}}]}}, "send_mail"),
+    ({"messageId": "m1", "ForwardTo": "x@evil.com"}, "forward_email_v2"),
+    ({"a": {"b": {"to": "x@evil.com"}}}, "send_email_v2"),
+    (json.dumps({"emailMessage": {"send_email_v2_to": "x@evil.com"}}), "send_email_v2"),
+])
+def test_recipients_are_found_in_any_connector_shape(tmp_path, monkeypatch, inputs, tool):
+    _clean_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PRISMOR_COPILOT_STUDIO_ALLOWED_EMAIL_DOMAINS", "contoso.com")
+    out = cs.analyze(_connector_call(inputs, tool), tmp_path)
+    assert out["blockAction"] and "outside your allowed" in out["reason"]
+
+
+def test_lookalike_domains_are_outside(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("PRISMOR_COPILOT_STUDIO_ALLOWED_EMAIL_DOMAINS", "contoso.com")
+    for to, blocked in [("a@eu.contoso.com", False), ("a@CONTOSO.COM", False),
+                        ("a@contoso.com.evil.com", True), ("a@evilcontoso.com", True)]:
+        out = cs.analyze(_connector_call({"emailMessage": {"send_email_v2_to": to}}), tmp_path)
+        assert out["blockAction"] is blocked, to
+
+
+@pytest.mark.parametrize("secret", [
+    "-----BEGIN " + "RSA PRIVATE KEY-----\nMIIEow" + "Ab9" * 30 + "\n-----END RSA PRIVATE KEY-----",
+    "DefaultEndpointsProtocol=https;AccountName=a;AccountKey=" + "aB3dE6gH9" * 8 + "==;",
+    "Server=tcp:db;User ID=sa;Password=" + "k3Jq9xLm2Pz" + ";",
+])
+def test_key_material_and_connection_strings_block(tmp_path, monkeypatch, secret):
+    _clean_env(monkeypatch, tmp_path)
+    out = cs.analyze(_connector_call({"emailMessage": {"send_email_v2_body": f"here: {secret}"}}), tmp_path)
+    assert out["blockAction"] and out["reason"].startswith("Credential in tool arguments")
+
+
+def test_a_password_placeholder_is_not_a_credential(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    body = {"emailMessage": {"send_email_v2_body": "Set password = <your password> on first login."}}
+    assert cs.analyze(_connector_call(body), tmp_path) == {"blockAction": False}
+
+
+def test_oversized_arguments_fail_closed_fast_but_attachments_do_not_count(tmp_path, monkeypatch):
+    # ~4ms/KB to screen: 2 MB of text cannot finish in 1s and would hold the
+    # GIL against every other request. An attachment's bytes are not text.
+    _clean_env(monkeypatch, tmp_path)
+    big = cs.analyze(_connector_call({"emailMessage": {"send_email_v2_body": "lorem ipsum " * 20000}}), tmp_path)
+    assert big["blockAction"] and "too large to screen" in big["reason"]
+    blob = base64.b64encode(os.urandom(400_000)).decode()
+    att = {"emailMessage": {"send_email_v2_body": "deck attached",
+                            "attachments": [{"name": "deck.pdf", "contentBytes": blob}]}}
+    assert cs.analyze(_connector_call(att), tmp_path) == {"blockAction": False}
+
+
+def test_a_long_document_read_earlier_does_not_block_the_next_call(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    b = _connector_call({"emailMessage": {"send_email_v2_to": "a@contoso.com", "send_email_v2_body": "summary"}})
+    b["plannerContext"]["previousToolsOutputs"] = [{"toolName": "get_file", "outputs": {"text": "lorem " * 60000}}]
+    assert cs.analyze(b, tmp_path) == {"blockAction": False}
