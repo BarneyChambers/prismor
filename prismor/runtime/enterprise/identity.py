@@ -38,6 +38,10 @@ def prismor_home() -> Path:
 
 
 def identity_path() -> Path:
+    # A system install enrolls the machine once, as root, for every user.
+    from prismor.runtime import system_install
+    if system_install.is_system_managed():
+        return system_install.system_dir() / "identity.json"
     return prismor_home() / "identity.json"
 
 
@@ -94,31 +98,63 @@ def load_identity() -> Optional[Dict[str, Any]]:
     return data
 
 
+def _public_identity_path() -> Path:
+    from prismor.runtime import system_install
+    return system_install.system_dir() / "identity-public.json"
+
+
+def keyless_identity() -> Optional[Dict[str, Any]]:
+    """A system install's identity as a non-admin user's process sees it:
+    org/device/label, no key. Enough to know the machine is enrolled and apply
+    the org policy an admin-run ``prismor system-sync`` pulled; never enough to
+    call the control plane, which is what keeps the key off users' hands."""
+    from prismor.runtime import system_install
+    if not system_install.is_system_managed():
+        return None
+    try:
+        data = json.loads(_public_identity_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and data.get("device_id") else None
+
+
 def is_enrolled() -> bool:
-    return load_identity() is not None and revoked_info() is None
+    return (load_identity() or keyless_identity()) is not None and revoked_info() is None
 
 
 def save_identity(identity: Dict[str, Any]) -> Path:
-    """Persist the device identity with 0600 perms. Returns the path written."""
-    home = prismor_home()
-    home.mkdir(parents=True, exist_ok=True)
-    try:
-        home.chmod(0o700)
-    except (PermissionError, OSError):
-        pass
-    record = {"schema": _SCHEMA, **identity}
+    """Persist the device identity with 0600 perms (0644 on a system install,
+    where every user's hook reads it). Returns the path written."""
+    from prismor.runtime import system_install
     path = identity_path()
-    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    try:
-        path.chmod(0o600)
-    except (PermissionError, OSError):
-        pass
+    home = path.parent
+    home.mkdir(parents=True, exist_ok=True)
+    if not system_install.is_system_managed():
+        try:
+            home.chmod(0o700)
+        except (PermissionError, OSError):
+            pass
+    record = {"schema": _SCHEMA, **identity}
+    if system_install.is_system_managed():
+        # The key stays admin-only; users' hooks get the public half and leave
+        # every control-plane call to `prismor system-sync`.
+        system_install.write_private(path, json.dumps(record, indent=2))
+        public = {k: v for k, v in record.items() if k != "device_key"}
+        system_install.write_shared(_public_identity_path(), json.dumps(public, indent=2))
+    else:
+        system_install.write_shared(path, json.dumps(record, indent=2))
     return path
 
 
 def clear_identity() -> bool:
     """Remove the device identity (un-enroll). Returns True if one existed."""
     path = identity_path()
+    from prismor.runtime import system_install
+    if system_install.is_system_managed():
+        try:
+            _public_identity_path().unlink()
+        except OSError:
+            pass
     if path.exists():
         path.unlink()
         return True
