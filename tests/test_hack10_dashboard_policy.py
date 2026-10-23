@@ -29,3 +29,15 @@ class TestDashboardPolicy(unittest.TestCase):
         self.assertIsNotNone(
             should_block(findings, {"type": "shell", "agent_event": "PreToolUse"})
         )
+
+    def test_split_path_of_an_app_api_is_not_a_self_edit(self):
+        command = (
+            "python3 -c \"import requests; print(requests.get("
+            "'http://localhost:3000' + '/api/' + 'sessions').status_code)\""
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            eng = PolicyEngine(workspace=Path(tmp))
+            findings = eng.evaluate({"type": "shell", "command": command}, index=0)
+        self.assertIsNone(
+            should_block(findings, {"type": "shell", "agent_event": "PreToolUse"})
+        )
