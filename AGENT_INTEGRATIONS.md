@@ -2,7 +2,7 @@
 
 How Prismor integrates with each major AI coding agent — what ships today, what's planned, and what mechanism each agent exposes for runtime security monitoring.
 
-_Last updated: 2026-07-30._
+_Last updated: 2026-10-22._
 
 ---
 
@@ -63,6 +63,10 @@ _Generated from `prismor/runtime/integrations/registry.yaml` — do not edit by 
 | Agno | framework | sdk | ✅ | `throw` |
 | Semantic Kernel (Microsoft) | framework | sdk | ✅ | `throw` |
 | Google Agent Development Kit (ADK) | framework | sdk | ✅ | `throw` |
+| Microsoft Agent Framework | framework | sdk | ✅ | `throw` |
+| LlamaIndex | framework | sdk | ✅ | `return-block` |
+| Hugging Face smolagents | framework | sdk | ✅ | `return-block` |
+| AG2 | framework | sdk | ✅ | `return-block` |
 | Mastra (TypeScript) | framework | sdk | ✅ | `throw` |
 | BeeAI Framework (IBM Research / Linux Foundation) | framework | sdk | ✅ | `throw` |
 | Claude Code Agent SDK | framework | sdk | ✅ | `json-permission` |
@@ -426,7 +430,7 @@ telemetry scope to the end-user.
 ### Mastra (TypeScript)
 
 - **Surface:** in-process tool wrapper, via the Prismor eval-server sidecar (`surface: sdk`).
-- **Package:** [`adapters/mastra/`](adapters/mastra/) → `prismor-mastra` (npm).
+- **Package:** [`adapters/mastra/`](adapters/mastra/) → `@prismor/mastra` (npm).
   `prismorTool("run_shell", runShell, { mode: "enforce", subject: "user:alice" })`.
 - **Hook:** wraps a tool's `execute` function directly — the same pattern
   the CrewAI/LangChain adapters use — calling the Prismor eval-server

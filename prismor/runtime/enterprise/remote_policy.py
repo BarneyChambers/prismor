@@ -44,6 +44,13 @@ from prismor.runtime.enterprise import identity as _identity
 _VERIFIED: Dict[tuple, Dict[str, Any]] = {}
 
 
+def _policy_home() -> Path:
+    """The org policy cache sits with the rest of the policy: /etc/prismor on
+    a system install (pulled by the admin's sync, read by every user)."""
+    from prismor.runtime import system_install
+    return system_install.policy_home()
+
+
 def clear_policy_cache() -> None:
     _VERIFIED.clear()
 
@@ -77,7 +84,7 @@ def _refresh_interval() -> float:
 
 
 def _check_marker_path() -> Path:
-    return _identity.prismor_home() / "remote-policy.check"
+    return _policy_home() / "remote-policy.check"
 
 
 def current_version() -> Optional[int]:
@@ -173,7 +180,10 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
     )
     req.add_header("User-Agent", _http_user_agent())
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:  # fixed or operator-configured URL  # nosec B310
+        # On the hot path (no explicit interval) a slow control plane must not
+        # hold the tool call: 8s showed up as 15s PostToolUse stalls (#716).
+        # The next debounce window retries.
+        with urllib.request.urlopen(req, timeout=8 if interval is not None else 3) as resp:  # fixed or operator-configured URL  # nosec B310
             body = json.loads(resp.read().decode("utf-8"))
         _identity.clear_revoked()
         _spool.clear_backoff()
@@ -316,11 +326,19 @@ def check_and_refresh(interval: Optional[float] = None) -> bool:
         latest_identity_sig is not None
         and str(latest_identity_sig) != str(_current_identity_sig())
     )
+    # Copilot Studio's tenant + app allowlist (settings.copilot_studio), also
+    # served without a version bump: registering a tenant in the console must
+    # reach the eval-server before its first /validate times out.
+    latest_cs_sig = body.get("copilotStudioSig")
+    copilot_studio_changed = (
+        latest_cs_sig is not None
+        and str(latest_cs_sig) != str(_settings_block_sig("copilot_studio"))
+    )
     if (version_changed or profile_changed or capture_changed or guardrails_changed
             or repos_changed or controls_changed or rule_ex_changed
             or egress_changed or tool_denies_changed or subject_controls_changed
             or device_mode_changed or tool_tags_changed or pause_changed
-            or self_edit_changed or identity_changed):
+            or self_edit_changed or identity_changed or copilot_studio_changed):
         return fetch(force=True)
     return False
 
@@ -573,6 +591,21 @@ def _current_prompt_guardrails_sig() -> str:
         return ""
 
 
+def _settings_block_sig(key: str) -> str:
+    """Canonical JSON of settings.<key> → sha256 → 16 hex (empty when unset),
+    matching the server's blockSig for that block."""
+    try:
+        pol = verify_and_load()
+        block = ((pol or {}).get("settings") or {}).get(key)
+        if not isinstance(block, dict) or not block:
+            return ""
+        import hashlib
+        blob = json.dumps(block, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    except Exception:
+        return ""
+
+
 def _current_identity_sig() -> str:
     """Canonical JSON of settings.identity → sha256 → 16 hex (empty when unset),
     matching the server's ``identitySig``."""
@@ -613,15 +646,15 @@ def _current_tool_tags_sig() -> str:
 
 
 def cached_policy_path() -> Path:
-    return _identity.prismor_home() / "remote-policy.yaml"
+    return _policy_home() / "remote-policy.yaml"
 
 
 def _cached_sig_path() -> Path:
-    return _identity.prismor_home() / "remote-policy.yaml.sig"
+    return _policy_home() / "remote-policy.yaml.sig"
 
 
 def _meta_path() -> Path:
-    return _identity.prismor_home() / "remote-policy.meta.json"
+    return _policy_home() / "remote-policy.meta.json"
 
 
 def _verify_signature(payload: bytes, sig_b64: str) -> bool:
@@ -777,10 +810,11 @@ def fetch(ttl: float = DEFAULT_TTL_SECONDS, force: bool = False) -> bool:
                 "(metadata + hashes; no content leaves this machine).\n"
             )
 
-    home = _identity.prismor_home()
-    home.mkdir(parents=True, exist_ok=True)
-    cached_policy_path().write_text(policy_yaml, encoding="utf-8")
-    _cached_sig_path().write_text(signature, encoding="utf-8")
+    from prismor.runtime import system_install as _si
+    # write_shared: on a system install every user's hook reads this cache,
+    # whatever umask the admin's sync ran under.
+    _si.write_shared(cached_policy_path(), policy_yaml)
+    _si.write_shared(_cached_sig_path(), signature)
     # The cloak hooks are bash and read pattern files, not this YAML: project
     # the org's secret patterns to a file they load. Verified policy only -
     # this runs after the signature check above. Best-effort, never fatal.
@@ -789,13 +823,13 @@ def fetch(ttl: float = DEFAULT_TTL_SECONDS, force: bool = False) -> bool:
         write_org_patterns(_extract_cloak_patterns(policy_yaml))
     except Exception as exc:
         sys.stderr.write(f"[prismor] could not apply org cloak patterns: {exc}\n")
-    _meta_path().write_text(json.dumps({
+    _si.write_shared(_meta_path(), json.dumps({
         "fetched_at": time.time(),
         "version": body.get("version"),
         "profile_id": body.get("profile_id"),
         "scope": body.get("scope"),
         "full_capture": full_capture,
-    }), encoding="utf-8")
+    }))
     return True
 
 

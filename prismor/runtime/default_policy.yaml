@@ -467,6 +467,7 @@ rules:
       # modes are intentionally not flagged (chmod g+w, 644, 755, +x, 600, …).
       - 'chmod\s+(?:-[A-Za-z]+\s+)*[0-7]?[0-7][0-7][2367]\b'
       - 'chmod\s+(?:-[A-Za-z]+\s+)*[ugoa,+=rwxXst-]*[oa][+=][a-zX]*w'
+      - 'chmod\s+[ugoa]*\+[rwxXst]*s'
       - 'chown\s+-R\s+[^\n]*\s(/|\$\{?HOME\}?|~)(\s|$|/)'
       # Command-position anchored: match these as an actual command — at the
       # start of the line, after a shell separator (; && || |), or invoked via
@@ -494,11 +495,16 @@ rules:
   - id: recursive-delete-home
     severity: HIGH
     category: destructive_command
-    title: Flags rm -rf of a directory under the home directory
+    title: Flags rm -rf (or Remove-Item -Recurse, rmdir /s) of a directory under the home directory
     event_types: [shell]
     fields: [command]
     patterns:
       - '(?:^|\s|;|&|\||\(|["''])rm\b(?=[^\n;&|]*(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF]|-[a-zA-Z]*[fF][a-zA-Z]*[rR]|\s-[rR](?=\s|$)[^\n;&|]*\s-[fF]\b|\s-[fF](?=\s|$)[^\n;&|]*\s-[rR]\b|--recursive\b[^\n;&|]*--force\b|--force\b[^\n;&|]*--recursive\b))[^\n;&|]*\s+["'']?(?:~|\$\{?HOME\}?|/(?:home|Users)/[^/\s"'']+)/(?!(?:\.cache|Library/Caches|\.npm/_cacache|\.npm/_npx|\.yarn/cache|\.gradle/caches)(?:/(?:(?!\.\.)[^\s"'';&|])*)?(?:["'']|\s|$|;|&|\|))(?![^\s"'';&|]*?(?:^|/)?(?:node_modules|dist|build|\.next|__pycache__|\.cache|target|coverage|out|\.venv|venv|\.pytest_cache|\.turbo)/?(?:["'']|\s|$|;|&|\|))[^\s"'';&|]+'
+      # PowerShell and cmd.exe forms (Windows): Remove-Item/ri/rm/rd -Recurse,
+      # and rmdir/rd/del /s, on a folder under the user's profile. Build and
+      # cache folders and AppData\Local\Temp are skipped, as for rm -rf.
+      - '(?:^|[\s;&|("''])(?:remove-item|ri|rm|rmdir|rd|del|erase)\b(?=[^\n;|]*\s-r[a-z]*\b)[^\n;|]*?\s["'']?(?:~|\$home|\$env:userprofile|[a-z]:\\users\\[^\\\s"'';|&]+)\\(?![^\s"'';|&]*\\(?:node_modules|dist|build|\.next|__pycache__|\.cache|target|coverage|out|\.venv|venv|\.pytest_cache|\.turbo)(?:\\|["''\s;|&]|$))(?!appdata\\local\\temp\b)[^\s"'';|&]+'
+      - '(?:^|[\s;&|("''])(?:rmdir|rd|del|erase)\s+(?=(?:[^\n&|]*\s)?/s\b)[^\n&|]*?["'']?(?:%userprofile%|[a-z]:\\users\\[^\\\s"''&|]+)\\(?![^\s"'';|&]*\\(?:node_modules|dist|build|\.next|__pycache__|\.cache|target|coverage|out|\.venv|venv|\.pytest_cache|\.turbo)(?:\\|["''\s;|&]|$))(?!appdata\\local\\temp\b)[^\s"''&|]+'
     action: warn
 
   # ── CRITICAL: Secret exfiltration ─────────────────────────────────────
@@ -512,6 +518,8 @@ rules:
       - '\b(cat|sed|grep|awk|head|tail|base64|xxd|gzip)\b[^\n;&]*(?<![\w$])(\.env\b|id_rsa\b|id_ed25519\b|\.npmrc\b|\.pypirc\b|\.aws\b|\.ssh\b)[^\n;&]*\|[^\n;&]*\b(curl|wget|nc|ncat|socat|scp|ftp)\b'
       # scp/rsync/sftp UPLOAD of a secret file to a remote host (secret then user@host:)
       - '\b(scp|rsync|sftp)\b[^\n]*(\.env|id_rsa|id_ed25519|\.npmrc|\.pypirc|credentials|secrets?)\b[^\n]*@'
+      - '\bcurl\b[^\n]*(?:-T|--upload-file|--data-binary)\b[^\n]*(\.env|id_rsa|id_ed25519)(?![\w.])'
+      - '\b(scp|rsync|sftp)\b[^\n]*(\.env|id_rsa|id_ed25519)(?![\w.])[^\n]*:'
     action: block
 
   # ── CRITICAL: DoS / resource exhaustion ───────────────────────────────
@@ -576,10 +584,12 @@ rules:
     fields: [command]
     patterns:
       - 'chmod\s+[ugo+]*s\s'
+      - 'chmod\s+[ugoa]*\+[rwxXst]*s'
       - 'chmod\s+[0-7]*[4-7][0-7]{2}[0-7]\s'
       - '\bsetcap\b'
       - '\bvisudo\b|/etc/sudoers'
       - 'usermod\s+.*-[a-zA-Z]*G\s+.*sudo'
+      - 'usermod\b[^\n]*--groups\b[^\n]*\bsudo\b'
       - '\b(useradd|adduser)\b'
       - '\bnsenter\b'
       - '\bpkexec\b'
@@ -595,7 +605,18 @@ rules:
     fields: [combined_text]
     patterns:
       # Instruction override — direct phrase attacks
-      - '(ignore\s+(all\s+)?(any\s+)?((your|the|my)\s+)?((previous|prior|above)\s+)?instructions|reveal\s+(your|the)\s+system\s+prompt|developer\s+instructions|exfiltrat(e|ion)|(?<!not\s)(?<!n''t\s)(?<!never\s)print\s+.*(secret|token|key|credential|password)|(?<!not\s)(?<!n''t\s)(?<!never\s)show\s+.*(token|secret|key|credential|password)|bypass(es|ed|ing)?\s+(safety\s+)?(restrictions?|guardrails?|safeguards?|controls?)|jailbreak)'
+      - '(ignore\s+(all\s+)?(any\s+)?((your|the|my)\s+)?((previous|prior|above)\s+)?instructions|reveal\s+(your|the)\s+system\s+prompt|developer\s+instructions|bypass(es|ed|ing)?\s+(safety\s+)?(restrictions?|guardrails?|safeguards?|controls?))'
+      # Directives need an object; bare "exfiltration" / "jailbreak" occur in security docs.
+      - '(?<!not\s)(?<!n''t\s)(?<!never\s)\bexfiltrat(?:e|es|ing)\s+\S+'
+      - '\b(?:perform|begin|start|carry\s+out|execute)\s+(?:(?:the|an?)\s+)?exfiltration\b'
+      - '\b(?:enter|enable|activate|switch\s+to|now\s+in)\s+(?:\w+\s+){0,2}jailbreak\b'
+      - '(?<!not\s)(?<!n''t\s)(?<!never\s)\bjailbreak\s+(?:yourself|(?:(?:the|this|that|your|our|a|an)\s+)?(?:models?|assistants?|system|chatbot|llm))\b'
+      # Keep print/show within a clause, allowing soft wraps and dotted identifiers.
+      # A request ending at secret names/IDs/counts does not request their values.
+      # Matching starts at a clause boundary; the prefix skips a negated verb list
+      # ("never read out, export or print") so only an un-negated print/show matches; the
+      # span must end at the list's last print/show so backtracking cannot shorten it.
+      - '(?:^|(?<=[.!?;\n]))(?:(?:\bnever|\bnot|n''t|\bcannot|\bavoid)\s+(?:ever\s+)?(?:(?!mind\b)[a-z]+(?:\s+out)?(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+))*(?:print|show)\b(?!(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+)(?:[a-z]+(?:\s+out)?(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+))*(?:print|show)\b)|(?!(?:\bnever|\bnot|n''t|\bcannot|\bavoid)\s+(?:ever\s+)?(?:(?!mind\b)[a-z]+(?:\s+out)?(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+))*(?:print|show)\b(?!(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+)(?:[a-z]+(?:\s+out)?(?:\s*,\s*(?:(?:or|and)\s+)?|\s+(?:or|and)\s+))*(?:print|show)\b))[^\n.!?;])*?\b(?:print|show)\s+(?:[^\n.!?;]|\.(?=\w)|\n(?![ \t\r]*\n))*(?:secret|token|key|credential|password)(?!s?[ \t]+(?:names|ids|counts?)\b[ \t]*(?:[.!?;]|$))'
       # System-prompt / instruction extraction via non-trigger verbs (repeat, translate, summarize, print, extract, inspect…)
       - '(provide|share|reveal|disclose|show|give|repeat|translate|summari[sz]e|print|extract|inspect|dump|display|output)\s+.{0,60}((system|developer|initiali[sz]ation|internal)[\s-]*prompt|(your|hidden)\s+(instructions?|guidelines?|rules?|config\w*)|instructions?\s+you\s+(received|were\s+given)|internal\s+config\w*|conversation\s+history|hidden\s+context)'
       # Memory / persistence poisoning — durable state injection to subvert future sessions
@@ -1179,6 +1200,10 @@ rules:
     patterns:
       - '(^|/)\.claude/settings(\.local)?\.json$'
       - '(^|/)\.prismor(-warden)?/policy\.yaml$'
+      # A system install keeps the machine's selection in /etc/prismor.
+      - '(^|/)etc/prismor/policy\.yaml$'
+      - '(^|[/\\])programdata[/\\]prismor[/\\]policy\.yaml$'
+      - '(^|/)library/application support/prismor/policy\.yaml$'
     action: block
 
   # ── CRITICAL: Prismor self-edit ────────────────────────────────────
@@ -1195,7 +1220,7 @@ rules:
   - id: prismor-self-edit
     severity: CRITICAL
     category: security_bypass
-    title: Blocks an agent editing Prismor's own policy or unlock credential
+    title: Blocks an agent editing Prismor's own policy or unlock credential, or making a session public
     event_types: [shell, file_write, file_read]
     fields: [command, path]
     patterns:
@@ -1209,12 +1234,16 @@ rules:
       # `$PRISMOR_HOME`, any path under a directory called Prismor, and any
       # `git checkout -b feat/...-setup` run from one. Replaying 30 days of
       # real transcripts turned up 1057 such matches against ~30 genuine ones.
-      - '(^|[;&|`]|\$\()[ \t]*(sudo[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|pause-hard|resume|uninstall|uninstall-hooks|setup|install-hooks|workspace|logout|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
+      - '(^|[;&|{`]|\$\()[ \t]*(sudo[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|pause-hard|resume|uninstall|uninstall-hooks|setup|install-hooks|workspace|logout|agents[ \t]+set|mode[ \t]+apply|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
+      # eval and ssh ProxyCommand run prismor without it sitting at a
+      # statement boundary the anchor above can see.
+      - '\beval\s+[''"]?\s*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|pause-hard|resume|uninstall|uninstall-hooks|setup|install-hooks|workspace|logout)\b'
+      - '\bProxyCommand\b[^\n]*\b(prismor|immunity)(@\S+)?[ \t]+(allow|pause|pause-hard|resume|uninstall|uninstall-hooks|unlock|lock)\b'
       - '(^|[;&|`]|\$\()[ \t]*(sudo[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+policy[ \t]+(edit|set|write|init)\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
       - '(^|[;&|`]|\$\()[ \t]*(sudo[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+egress[ \t]+(allow|deny|rm|mode|default|enable|disable)\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
       # The same CLI reached as a module or a script path.
-      - '\bpython[0-9.]*[ \t]+(-\S+[ \t]+)*-m[ \t]+prismor\.\S+[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
-      - '\bpython[0-9.]*[ \t]+\S*prismor/runtime/\S+\.py[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
+      - '\bpython[0-9.]*[ \t]+(-\S+[ \t]+)*-m[ \t]+prismor\.\S+[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|agents[ \t]+set|mode[ \t]+apply|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
+      - '\bpython[0-9.]*[ \t]+\S*prismor/runtime/\S+\.py[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|agents[ \t]+set|mode[ \t]+apply|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
       # ...or wrapped in a shell, which is how the anchors above would
       # otherwise be stepped around: `bash -c "prismor allow ..."`.
       - '\b(ba|z|k|da)?sh[ \t]+(-\S+[ \t]+)*-c[ \t]+[''"]?[ \t]*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|policy|egress|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
@@ -1224,6 +1253,13 @@ rules:
       # child agent's hooks resolve the workspace as personal and drop the org
       # policy and telemetry. `=managed` stays allowed — it only opts IN.
       - '\bPRISMOR_WORKSPACE_SCOPE=[''"]?(personal|local)\b'
+      # Making a session public is the human's call: an agent may share its
+      # session with the org (`prismor session share`), never with the world.
+      # The CLI also demands a terminal and the unlock password; this stops the
+      # attempt before it runs at all.
+      - '(^|[;&|`]|\$\()[ \t]*(sudo[ \t]+)?([A-Za-z_][A-Za-z0-9_]*=\S*[ \t]+)*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+session[ \t]+share\b[^;&|\n]*[ \t]--public\b'
+      - '\bpython[0-9.]*[ \t]+(-\S+[ \t]+)*-m[ \t]+prismor\.\S+[ \t]+session[ \t]+share\b[^;&|\n]*[ \t]--public\b'
+      - '\b(ba|z|k|da)?sh[ \t]+(-\S+[ \t]+)*-c[ \t]+[''"]?[ \t]*(\S*/)?(prismor|immunity)(@\S+)?[ \t]+session[ \t]+share\b[^;&|\n]*[ \t]--public\b'
       # The unlock credential and grant. Reads matter as much as writes: the
       # credential file is what an offline guess would need, and the grant file
       # is what a forged window would be written to.
@@ -1247,6 +1283,11 @@ rules:
       # Other Prismor state an agent has no legitimate reason to rewrite.
       - '(?:>{1,2}\|?[ \t]*["\'']?[^\s;&|<>"\'']*|\b(?:rm|mv|cp|truncate|tee|shred)\b[^\n;&|<>]*?)\.prismor/(?:pause|identity|workspace-scopes|mirror|mirror-install)\.json'
       - '(^|/)\.prismor/(pause|identity|workspace-scopes|mirror|mirror-install)\.json$'
+      # System install: world-readable so every user's hook can load it, which
+      # makes the device key one `Read` away from any agent on the box.
+      - '(^|/)etc/prismor/(pause|identity)\.json$'
+      - '(^|[/\\])programdata[/\\]prismor[/\\](pause|identity)\.json$'
+      - '(^|/)library/application support/prismor/(pause|identity)\.json$'
       # The session store. Reads are fine (`prismor query`, sqlite3 SELECT);
       # SQL writes are caught by db-modification, this catches the file.
       - '(?:>{1,2}\|?[ \t]*["\'']?[^\s;&|<>"\'']*|\b(?:rm|mv|cp|truncate|tee|shred|dd)\b[^\n;&|<>]*?)\bprismor\.db(?:-wal|-shm|-journal)?\b'
@@ -1256,6 +1297,8 @@ rules:
       # Wrappers whose only purpose here is to disguise one of the above — a
       # pty allocated around the CLI, so it must still name a real subcommand.
       - '\b(script|unbuffer|expect)\b[^\n]*[ \t](\S*/)?(prismor|immunity)(@\S+)?[ \t]+(allow|approvals[ \t]+(?:approve|deny)|unlock|lock|pause|resume|uninstall|setup|install-hooks|workspace|logout|policy|egress|mirror[ \t]+(?:on|off|passthrough))\b(?![^;&|\n]*\s(?:-h|--help)(?:\s|$))'
+      # A pty wrapper is exactly how the CLI's "needs a terminal" check would be faked.
+      - '\b(script|unbuffer|expect)\b[^\n]*[ \t](\S*/)?(prismor|immunity)(@\S+)?[ \t]+session[ \t]+share\b[^;&|\n]*[ \t]--public\b'
     action: block
 
   # ── HIGH: Driving a running browser over remote debugging ──────────

@@ -187,8 +187,7 @@ prismor install-hooks --agent all --mode enforce
 
 An enrolled device can use Prismor's hosted judge: no CLI and no key, about two
 seconds a verdict. The server judges with `gpt-5.6-luna`, which scored 83/83
-injections with one false block in 74 benign texts on the evaluation set in
-`research/semantic-judge-coverage/`; the model is chosen server-side, so a
+injections with one false block in 74 benign texts on our internal evaluation set; the model is chosen server-side, so a
 device never configures one. The judged text (at most 3000 characters) and the heuristic score
 go to the control plane under the device key; the text is not stored. Verdicts count
 against the org's monthly judge quota and are cached like CLI verdicts. Not enrolled,
@@ -236,6 +235,12 @@ settings:
 Without a policy setting, `prismor proxy --judge typesafe --judge-budget-ms 1500` sets
 the same thing for that one proxy process (`PRISMOR_SEMANTIC_PROVIDER` /
 `PRISMOR_SEMANTIC_BUDGET_MS`). An explicit policy value wins.
+
+On a tool's **result** (PostToolUse) the judge's verdict reports and taints the
+session but cannot block, because the tool already ran. There it gets
+`post_tool_budget_ms` (default `1500`, or `PRISMOR_SEMANTIC_POST_TOOL_BUDGET_MS`)
+even when `budget_ms` is unset, and falls back to the heuristic when it runs
+over. While enforcement is paused, tool results get the heuristic only.
 
 ### Judging every ingested text
 
