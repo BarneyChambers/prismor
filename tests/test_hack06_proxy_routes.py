@@ -23,3 +23,15 @@ def test_health_and_embeddings_stay_passthrough():
         assert generation_route(path) is None
     assert not is_passthrough("/v1/not-a-real-route")
     assert generation_route("/v1/not-a-real-route") is None
+
+
+def test_token_counts_and_model_lookups_pass_through():
+    for path in (
+        "/v1/messages/count_tokens?beta=true",
+        "/v1/models/claude-sonnet-4-5",
+        "/v1beta/models/gemini-2.5-pro",
+    ):
+        assert is_passthrough(path), path
+        assert generation_route(path) is None
+    # A generation call on a model path is still screened, not passed through.
+    assert generation_route("/v1beta/models/gemini-2.5-pro:generateContent") is not None

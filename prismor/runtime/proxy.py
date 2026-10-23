@@ -128,8 +128,12 @@ _PASSTHROUGH_PATHS = (
     "/v1/moderations",
     "/countTokens",
     ":countTokens",
+    "/count_tokens",
     "/tokenize",
 )
+
+# GET /v1/models/<id> and Gemini /v1beta/models/<model>: a lookup, not a call.
+_MODEL_LOOKUP = re.compile(r"/models/[^/:]+$")
 
 
 def normalized_path(path: str) -> str:
@@ -148,6 +152,8 @@ def generation_route(path: str):
 
 def is_passthrough(path: str) -> bool:
     norm = normalized_path(path)
+    if _MODEL_LOOKUP.search(norm):
+        return True
     return any(norm.endswith(suffix) or norm == suffix for suffix in _PASSTHROUGH_PATHS)
 
 #: Substring → provider, for paths that are *routed* but not screened: token
