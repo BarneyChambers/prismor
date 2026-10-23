@@ -254,6 +254,10 @@ def _resolved_command_block(argv: List[str]) -> Optional[str]:
     findings = PolicyEngine(workspace=Path.cwd()).evaluate(
         {"type": "shell", "command": command}, index=0
     )
+    # The secrets are meant to be in the resolved argv, so a secret rule fires
+    # on every `cloak run curl -H "Authorization: ..."`. The hook already ran
+    # those rules on the placeholder text; here only the action matters.
+    findings = [f for f in findings if f.get("category") != "secret_exfiltration"]
     hit = should_block(findings, {"type": "shell", "agent_event": "PreToolUse"})
     if hit is None:
         return None
