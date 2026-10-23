@@ -304,7 +304,9 @@ def _workspace_state_dir(workspace: Path) -> Path:
 
 
 def _copy_path_once(src: Path, dst: Path) -> None:
-    if not src.exists() or dst.exists():
+    # copy2 follows symlinks, so a sessions/leak -> id_rsa landed in
+    # PRISMOR_HOME as a regular file the secret rule does not know.
+    if src.is_symlink() or not src.exists() or dst.exists():
         return
     try:
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -322,6 +324,8 @@ def _copy_tree_contents_once(src: Path, dst: Path) -> None:
     for item in src.rglob("*"):
         rel = item.relative_to(src)
         target = dst / rel
+        if item.is_symlink():
+            continue
         if item.is_dir():
             target.mkdir(parents=True, exist_ok=True)
         else:
@@ -372,10 +376,16 @@ def _merge_sqlite_db_once(src_db: Path, dst_db: Path) -> None:
                     continue
                 quoted = ", ".join(_quote_ident(c) for c in cols)
                 source = ", ".join(f"s.{_quote_ident(c)}" for c in cols)
-                if table in {"sessions", "findings"}:
+                key = {"sessions": "session_id", "findings": "finding_id"}.get(table)
+                if key and key in cols:
+                    # A workspace row must not overwrite the home row for the
+                    # same id. A planted observe/warn finding was replacing
+                    # the enforce/block one.
                     dst.execute(
-                        f"INSERT OR REPLACE INTO {_quote_ident(table)} ({quoted}) "  # nosec B608
-                        f"SELECT {source} FROM src.{_quote_ident(table)} AS s"
+                        f"INSERT INTO {_quote_ident(table)} ({quoted}) "  # nosec B608
+                        f"SELECT {source} FROM src.{_quote_ident(table)} AS s "
+                        f"WHERE NOT EXISTS (SELECT 1 FROM main.{_quote_ident(table)} AS d "
+                        f"WHERE d.{_quote_ident(key)} = s.{_quote_ident(key)})"
                     )
                 else:
                     dst.execute(_insert_missing_rows_sql(table, cols))
@@ -3625,7 +3635,8 @@ def get_agents_overview(days: int = 0) -> List[Dict[str, Any]]:
 # ── Policy management helpers ─────────────────────────────────────────────────
 
 def _global_policy_path() -> Path:
-    return prismor_home() / "policy.yaml"
+    from prismor.runtime import system_install
+    return system_install.policy_home() / "policy.yaml"
 
 
 def _project_policy_path(workspace: Path) -> Path:

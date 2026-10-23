@@ -42,11 +42,12 @@ def prismor_home() -> Path:
 
 
 def pause_path() -> Path:
-    return prismor_home() / "pause.json"
+    from prismor.runtime import system_install
+    return system_install.policy_home() / "pause.json"
 
 
 def _key_path() -> Path:
-    return prismor_home() / "pause.key"
+    return pause_path().parent / "pause.key"
 
 
 _MAC_FIELDS = ("schema", "paused", "hard", "at", "until", "reason", "by")
@@ -66,12 +67,21 @@ def _ensure_key() -> bytes:
     key = _existing_key()
     if key is not None:
         return key
+    from prismor.runtime import system_install
     path = _key_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    # A system install writes the marker as root and the user's hook reads it,
+    # so the key takes the shared file mode there. The user still cannot write
+    # that directory, which is what keeps a marker from being forged.
+    if system_install.is_system_managed():
+        system_install.mkdir_public(path.parent)
+        mode = system_install.shared_file_mode()
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mode = 0o600
     fresh = secrets.token_bytes(32)
     # O_EXCL so two writers don't each sign with a key the other just replaced.
     try:
-        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
     except FileExistsError:
         key = _existing_key()
         if key is None:
@@ -79,6 +89,8 @@ def _ensure_key() -> bytes:
         return key
     try:
         os.write(fd, fresh)
+        if hasattr(os, "fchmod"):  # the umask can strip bits from the open() mode
+            os.fchmod(fd, mode)
     finally:
         os.close(fd)
     return fresh
@@ -134,15 +146,9 @@ def set_paused(duration_seconds: Optional[int] = None, reason: str = "", by: str
         "by": (by or "")[:120],
         "last_beat": 0.0,
     }
-    home = prismor_home()
-    home.mkdir(parents=True, exist_ok=True)
     record["mac"] = _mac(record, _ensure_key())
-    path = pause_path()
-    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    from prismor.runtime import system_install
+    system_install.write_shared(pause_path(), json.dumps(record, indent=2))
     return record
 
 
@@ -373,9 +379,8 @@ def beat(agent: Optional[str] = None, state: Optional[Dict[str, Any]] = None) ->
     # failure just means we heartbeat again sooner, which is harmless.
     try:
         rec["last_beat"] = now
-        path = pause_path()
-        path.write_text(json.dumps(rec, indent=2), encoding="utf-8")
-        path.chmod(0o600)
+        from prismor.runtime import system_install
+        system_install.write_shared(pause_path(), json.dumps(rec, indent=2))
     except OSError:
         pass
     return True

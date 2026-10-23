@@ -242,8 +242,12 @@ def _parse_verdict(stdout: str, t0: int) -> Optional[SemanticRisk]:
         nested = [v for v in data.values() if isinstance(v, dict)]
         if len(nested) == 1 and "risk_score" in nested[0]:
             data = nested[0]
+    # A JSON object with no score is a failed judge. Defaulting it to 0
+    # replaced a heuristic block with an allow.
+    if not isinstance(data, dict) or "risk_score" not in data:
+        return None
     return SemanticRisk(
-        risk_score=float(data.get("risk_score", 0.0)),
+        risk_score=float(data["risk_score"]),
         category=str(data.get("category", "unknown")),
         reason=str(data.get("reason", "")),
         recommended_action=str(data.get("recommended_action", "allow")),
@@ -459,8 +463,10 @@ def _typesafe_analyze(windows: List[str], model: str, t0: int) -> List[SemanticR
         questions[f"w{i}_exfil"] = _ts_question(_TS_EXFIL, f"w{i}")
     body = json.dumps({"model": model or "jev-latest", "state": state,
                        "questions": questions}).encode("utf-8")
+    from prismor.runtime.http_ua import user_agent
     req = urllib.request.Request(TYPESAFE_URL, data=body, method="POST", headers={
-        "Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+        "User-Agent": user_agent()})
     try:
         with urllib.request.urlopen(req, timeout=TYPESAFE_TIMEOUT) as resp:  # fixed URL  # nosec B310
             answers = json.load(resp)["answers"]

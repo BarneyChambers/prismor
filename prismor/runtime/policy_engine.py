@@ -39,6 +39,10 @@ except ImportError:
 
 _DEFAULT_POLICY_PATH = Path(__file__).parent / "default_policy.yaml"
 
+# Internal layer names (rule ``_layer``) -> what telemetry and the console call them.
+_LAYER_NAMES = {"default": "builtin", "user": "local", "project": "project",
+                "remote": "org", "exemption": "repo_exemption"}
+
 # Rules that cannot be disabled or weakened by project-level policy overrides.
 # These protect against the most dangerous attack patterns (destructive commands,
 # credential exfiltration, reverse shells) and against disabling Prismor itself.
@@ -181,7 +185,13 @@ _TEXT_CONTENT_TYPES = frozenset({"prompt", "tool_result"})
 # loaded at session start) is folded in here so no rule can silently exempt the
 # project-memory source from block-category evaluation (issue #155).
 _UNTRUSTED_CONTENT_ALIASES: Dict[str, set[str]] = {
-    "tool_result": {"memory", "subagent_spawn"},
+    # file_read/network carry the tool's output as `response` after the call
+    # (hooks._attach_tool_result) and nothing before it, so a Read or WebFetch
+    # result is screened like any other tool output.
+    # ponytail: shell output is left out — replaying st3ve's store, 1.6% of it
+    # (mostly grep/sed of code) tripped prompt-injection vs ~0.3% of reads.
+    # Add "shell" once the rule can tell an agent's own code search from a file.
+    "tool_result": {"memory", "subagent_spawn", "file_read", "network"},
 }
 
 # Human-readable provenance tag attached to each finding, so telemetry and the
@@ -791,11 +801,11 @@ class CompiledRule:
     """A single policy rule with compiled regex patterns."""
 
     __slots__ = (
-        "id", "severity", "category", "title", "event_types",
-        "fields", "patterns", "raw_patterns", "action", "enabled", "mode",
+        "id", "severity", "category", "title", "event_types", "declared_types",
+        "fields", "patterns", "raw_patterns", "action", "enabled", "mode", "warn_only", "when_invalid",
         "transform",
         "severity_on_write", "severity_on_manifest",
-        "pattern_groups", "condition", "layer", "when", "match_all", "flags",
+        "pattern_groups", "condition", "layer", "mode_layer", "when", "match_all", "flags",
     )
 
     def __init__(self, raw: Dict[str, Any], named: Optional[Dict[str, AttrCondition]] = None) -> None:
@@ -804,6 +814,14 @@ class CompiledRule:
         # remote (signed org) or exemption. Answers "why is this rule
         # here, and who set it to that?" without reading four files.
         self.layer: str = str(raw.get("_layer") or "default")
+        # Which layer set this rule's ``mode`` (None: inherits default_mode).
+        # Differs from ``layer`` when a later layer merged other fields on top.
+        self.mode_layer: str = str(raw.get("_mode_layer") or self.layer)
+        # An admin wrote `action: warn` on their own rule: report, never block,
+        # unless the rule itself also sets mode: enforce. Rules shipped in
+        # default_policy.yaml (overlays keep `_builtin`) carry warn as legacy
+        # metadata and keep following default_mode.
+        self.warn_only: bool = raw.get("action") == "warn" and not raw.get("_builtin")
         self.severity: str = raw["severity"]
         self.category: str = raw["category"]
         self.title: str = raw["title"]
@@ -814,6 +832,7 @@ class CompiledRule:
         # this at load time — rather than per-rule in YAML — makes it a
         # structural invariant: no current or future block-category rule can
         # silently exempt the project-memory source.
+        self.declared_types: frozenset[str] = frozenset(self.event_types)
         for base_type, aliases in _UNTRUSTED_CONTENT_ALIASES.items():
             if base_type in self.event_types:
                 self.event_types |= aliases
@@ -852,6 +871,7 @@ class CompiledRule:
         # AttrCondition. Core rules refuse it for the same reason they refuse
         # ``condition:``: it can only narrow, and narrowing is disabling.
         self.when: Optional[AttrCondition] = None
+        self.when_invalid: bool = False
         raw_when = raw.get("when")
         if raw_when:
             if raw["id"] in _NON_OVERRIDABLE_RULE_IDS or raw["category"] in _CORE_BLOCK_CATEGORIES:
@@ -862,7 +882,13 @@ class CompiledRule:
                 try:
                     self.when = AttrCondition(str(raw_when), named)
                 except ConditionError as exc:
-                    sys.stderr.write(f"[prismor] rule '{raw['id']}': {exc} — when ignored\n")
+                    # Fail toward detection, not toward blocking: without its
+                    # ``when`` the rule matches everything its patterns do (a
+                    # rule scoped to one tool would block them all), so it
+                    # reports but never blocks until the expression is fixed.
+                    sys.stderr.write(f"[prismor] rule '{raw['id']}': {exc} — when ignored; "
+                                     "the rule reports but cannot block until it is fixed\n")
+                    self.when_invalid = True
         # A rule may match on attributes alone (no patterns). Such a rule fires
         # on every event of its types for which ``when`` holds. If its ``when``
         # failed to parse it has nothing left to match on, and firing on every
@@ -1109,6 +1135,8 @@ class PolicyEngine:
         # Which policy layer last set the egress config. "remote" means the org
         # signed it, which is what makes an enforce verdict authoritative.
         self._egress_source: str = "default"
+        # Which policy layer set settings.default_mode (see decision_layer).
+        self._default_mode_source: str = "default"
         # Set when the workspace's .prismor/policy.yaml could not be parsed. The
         # broken layer is skipped (built-in + org policy still apply) rather
         # than raised: an exception here used to crash hook-dispatch with exit 1,
@@ -1201,11 +1229,32 @@ class PolicyEngine:
             and self.explicit_selection
         )
         note = " (floor waived: settings.selection is explicit)" if floor_waived else ""
+        if rule.when_invalid:
+            return "observe", "when: does not parse — reports only until it is fixed"
         if self.device_mode:
             return self.device_mode, f"device mode override{note}"
         if rule.mode:
             return rule.mode, f"rule sets mode: {rule.mode}{note}"
+        if rule.warn_only:
+            # An admin who wrote "warn" meant report, not block: an enforcing
+            # default_mode must not turn their rule into a hard block. Setting
+            # mode: enforce on the rule itself still does.
+            return "observe", "action: warn — reports only (set mode: enforce on the rule to block)"
         return self.default_mode, f"policy default_mode: {self.default_mode}{note}"
+
+    def decision_layer(self, rule: "CompiledRule") -> str:
+        """Which policy layer decided ``rule``'s observe/enforce, following the
+        same branches as :meth:`explain_mode`: builtin (self-protection or the
+        safety floor), device (console device override), or the layer that set
+        the rule's own mode / the policy default_mode -- local (~/.prismor),
+        project, org (signed remote) or repo_exemption."""
+        mode, why = self.explain_mode(rule)
+        if why.startswith(("self-protection", "safety floor")):
+            return "builtin"
+        if why.startswith("device mode"):
+            return "device"
+        src = rule.mode_layer if rule.mode else self._default_mode_source
+        return _LAYER_NAMES.get(src, src)
 
     def _match_exemption(self, workspace: Optional[Path], settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Find an admin-granted, non-expired exemption matching this workspace's
@@ -1297,6 +1346,8 @@ class PolicyEngine:
                     if _adds:
                         merged["add_patterns"] = _adds
                     merged["_layer"] = source
+                    if "mode" in rule:
+                        merged["_mode_layer"] = source
                     rules_by_id[rule_id] = merged
                     continue
             # Field-level merge so a sparse overlay (e.g. just {id, mode: enforce})
@@ -1313,6 +1364,8 @@ class PolicyEngine:
                     if _u:
                         merged[_k] = _u
                 merged["_layer"] = source
+                if "mode" in rule:
+                    merged["_mode_layer"] = source
                 rules_by_id[rule["id"]] = merged
             else:
                 # No existing rule with this id. Treat it as a brand-new rule only
@@ -1330,6 +1383,8 @@ class PolicyEngine:
                     )
                     continue
                 rule["_layer"] = source
+                if "mode" in rule:
+                    rule["_mode_layer"] = source
                 rules_by_id[rule["id"]] = rule
         allowlist_raw.extend(override_raw.get("allowlists", []) or [])
         override_settings = dict(override_raw.get("settings", {}) or {})
@@ -1337,7 +1392,7 @@ class PolicyEngine:
         # local-only affordance for a developer's own machine. Arriving from the
         # signed org bundle (or a repo exemption overlay) it would mean an admin
         # had turned the floor off fleet-wide, which the floor exists to prevent.
-        if source not in ("project", "user") and "selection" in override_settings:
+        if source not in ("project", "user", "system") and "selection" in override_settings:
             sys.stderr.write(
                 f"[prismor] Ignoring settings.selection from the {source} policy layer "
                 f"(the safety floor stays on for managed workspaces)\n"
@@ -1352,6 +1407,14 @@ class PolicyEngine:
                 f"(only the signed org policy or eval-server flags may set it)\n"
             )
             override_settings.pop("identity", None)
+        # Same reasoning for Copilot Studio: its tenant / app allowlist decides
+        # whose Entra tokens the eval-server accepts. Console or env only.
+        if source != "remote" and "copilot_studio" in override_settings:
+            sys.stderr.write(
+                f"[prismor] Ignoring settings.copilot_studio from the {source} policy layer "
+                f"(only the signed org policy or PRISMOR_COPILOT_STUDIO_* env may set it)\n"
+            )
+            override_settings.pop("copilot_studio", None)
         if "block_categories" in override_settings:
             cats = set(override_settings.get("block_categories") or [])
             dropped = _CORE_BLOCK_CATEGORIES - cats
@@ -1369,6 +1432,8 @@ class PolicyEngine:
             self._egress_source = source
         if "data_boundary" in override_settings:
             self._data_boundary_source = source
+        if "default_mode" in override_settings or "mode" in override_settings:
+            self._default_mode_source = source
         # semantic_guard is a nested stanza with its own defaults (enabled,
         # thresholds, fields). A layer that only sets `provider`/`model` must
         # not replace the whole dict, or the guard silently turns off.
@@ -1393,6 +1458,9 @@ class PolicyEngine:
         rules_by_id: Dict[str, Dict[str, Any]] = {}
         for rule in default_raw.get("rules", []):
             rule["_layer"] = "default"
+            rule["_builtin"] = True
+            if "mode" in rule:
+                rule["_mode_layer"] = "default"
             rules_by_id[rule["id"]] = rule
 
         allowlist_raw: List[Dict[str, Any]] = list(default_raw.get("allowlists", []) or [])
@@ -1401,6 +1469,7 @@ class PolicyEngine:
         settings: Dict[str, Any] = dict(default_raw.get("settings", {}) or {})
 
         # Merge project-level override if present.
+        self.project_policy_ignored: Optional[str] = None
         override_path = policy_path
         if override_path is None and workspace is not None:
             candidate = workspace / ".prismor" / "policy.yaml"
@@ -1417,14 +1486,32 @@ class PolicyEngine:
         # caller names the policy file outright, and when it is the project
         # file (workspace == ~).
         user_path: Optional[Path] = None
+        user_source = "user"
         if policy_path is None:
-            from prismor.runtime.store import prismor_home
-            user_path = prismor_home() / "policy.yaml"
+            # On a system install root's /etc/prismor/policy.yaml replaces the
+            # per-user file, so a user can't weaken the machine's selection.
+            from prismor.runtime import system_install
+            user_path = system_install.policy_home() / "policy.yaml"
+            if system_install.is_system_managed():
+                user_source = "system"
+                # A repo's .prismor/policy.yaml is anyone's to write, so on a
+                # system install it applies only if the admin's policy says so.
+                # Otherwise `prismor allow` in a checkout, or a hand-written
+                # `selection: explicit` with nothing listed, would undo the
+                # machine's selection one repo at a time.
+                try:
+                    _sys_raw = _load_yaml(user_path) if user_path.exists() else None
+                except Exception:
+                    _sys_raw = None
+                _sys_settings = (_sys_raw or {}).get("settings") or {} if isinstance(_sys_raw, dict) else {}
+                if override_path is not None and _sys_settings.get("allow_project_policy") is not True:
+                    self.project_policy_ignored = str(override_path)
+                    override_path = None
             if not user_path.exists() or (override_path is not None
                                           and user_path.resolve() == override_path.resolve()):
                 user_path = None
 
-        for layer_path, source in ((user_path, "user"), (override_path, "project")):
+        for layer_path, source in ((user_path, user_source), (override_path, "project")):
             if layer_path is None or not layer_path.exists():
                 continue
             try:
@@ -1535,6 +1622,10 @@ class PolicyEngine:
         # see the layer filter in _apply_override and identity_token.py.
         _idc = settings.get("identity")
         self.identity: Dict[str, Any] = _idc if isinstance(_idc, dict) else {}
+        # Copilot Studio provider config (settings.copilot_studio): the Entra
+        # tenants and app ids an org registered in the console. Signed layer only.
+        _csc = settings.get("copilot_studio")
+        self.copilot_studio: Dict[str, Any] = _csc if isinstance(_csc, dict) else {}
         # Tool-combination governance config (settings.tool_tags):
         # customizable tags + forbidden combinations (generalized trifecta).
         _tt = settings.get("tool_tags")
@@ -1782,6 +1873,10 @@ class PolicyEngine:
                 check_fields = rule.fields
             elif matched_via_mcp_alias:
                 check_fields = _MCP_ALIAS_DEFAULT_FIELDS
+            elif event_type not in rule.declared_types:
+                # Reached via _UNTRUSTED_CONTENT_ALIASES: screen the content,
+                # not the alias type's own field (a command, path or URL).
+                check_fields = ["combined_text"]
             else:
                 check_fields = _DEFAULT_FIELDS.get(event_type, [])
             if _dry_run and "command" in check_fields:
@@ -2042,6 +2137,8 @@ class PolicyEngine:
                 "source": _event_source(event),
                 # Effective observe/enforce for this finding — see _resolve_mode.
                 "mode": self._resolve_mode(rule),
+                # Which policy layer decided that mode — see decision_layer.
+                "policyLayer": self.decision_layer(rule),
                 # True when the match sits in inert text rather than executable
                 # position. should_block() never blocks on such a finding.
                 "contextInert": context_inert,
@@ -2220,7 +2317,12 @@ class PolicyEngine:
             # way — avoids symlink mismatches like macOS /var → /private/var.
             _vault = os.path.normpath(os.path.expanduser(str(_secrets_dir())))
         except Exception:
-            _vault = ""
+            # Fail closed: an import or env error must not switch the guard
+            # off, so fall back to the default location.
+            try:
+                _vault = os.path.normpath(os.path.expanduser("~/.prismor/secrets"))
+            except Exception:
+                _vault = ""
         if _vault:
             _hit_vault = None
             if event_type in ("file_read", "file_write"):
@@ -2233,7 +2335,9 @@ class PolicyEngine:
                 _cmd = field_values.get("command", "")
                 # ".prismor/secrets" matches every expansion form of the default
                 # location (~/, $HOME/, absolute); _vault matches a custom dir.
-                if _cmd and (".prismor/secrets" in _cmd or _vault in _cmd):
+                # Mentions under another user's (nonexistent) home are test
+                # fixtures, not this vault (#592).
+                if _cmd and _shell_vault_mentions(_cmd, _vault):
                     _hit_vault = _cmd
             if _hit_vault is not None:
                 finding_id = f"prismor-vault-access-{index}"
@@ -2954,7 +3058,21 @@ class PolicyEngine:
         # surface that has a deadline of its own (`prismor proxy --judge-budget-ms`
         # in front of a voice agent that retries a turn after a few seconds).
         budget = float(cfg.get("budget_ms") or os.environ.get("PRISMOR_SEMANTIC_BUDGET_MS") or 0) / 1000
-        result = _analyze_within(guard, text, budget) if budget > 0 else guard.analyze(text)
+        if _is_pre_action_event(event):
+            result = _analyze_within(guard, text, budget) if budget > 0 else guard.analyze(text)
+        else:
+            # The tool already ran: this verdict reports and taints, it cannot
+            # block. A judge round trip on every tool result was ~0.6s p50 and
+            # 10s p99 of the agent's wall time (#716), so it gets a budget, and
+            # while enforcement is paused (nothing to taint for) the heuristic.
+            from prismor.runtime import pause as _pause
+            if _pause.is_paused():
+                from prismor.runtime.semantic_guard import _heuristic_analyze
+                result = _heuristic_analyze(text)
+            else:
+                post = float(cfg.get("post_tool_budget_ms")
+                             or os.environ.get("PRISMOR_SEMANTIC_POST_TOOL_BUDGET_MS") or 1500) / 1000
+                result = _analyze_within(guard, text, min(budget, post) if budget > 0 else post)
         # SemanticGuardV2 returns HybridRisk; v1 returns SemanticRisk directly.
         risk = getattr(result, "final", result)
         if str(getattr(risk, "reason", "")).startswith("[LLM fallback]"):
@@ -3163,6 +3281,7 @@ class PolicyEngine:
                     # floor -- so a root wipe hidden in a script is treated the
                     # same as one typed at the prompt.
                     "mode": "observe" if advisory else self._resolve_mode(rule),
+                    "policyLayer": self.decision_layer(rule),
                     # Advisory findings never block, by the same flag the
                     # inline contextual verifier uses.
                     "contextInert": advisory,
@@ -3598,9 +3717,9 @@ class PolicyEngine:
         for entry in self.allowlists:
             if entry.type != "allow" or not entry.applies_to(rule_id):
                 continue
-            # A `rule_ids: ["*"]` or substring entry blanks every floor and
-            # self-protection finding. Those rules stay pinned; an exact allow
-            # of one command for one named rule still applies.
+            # A `rule_ids: ["*"]` or match-anything entry blanks every floor and
+            # self-protection finding. Those rules stay pinned; a named allow
+            # for one rule still applies.
             if _floor_allowlist_rejected(rule_id, entry, rule):
                 continue
             if rule is None or not shell:
@@ -3839,6 +3958,130 @@ _ANSI_C_QUOTE_RE = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
 _SHELL_OPERATOR_CHARS = frozenset("();<>|&")
 
 
+# ── Vault-guard context (issue #592) ────────────────────────────────────────
+# The shell form of prismor-vault-access looks for the vault's directory name
+# anywhere in a command. Test fixtures and docs routinely spell a FAKE home,
+# e.g. `PRISMOR_SECRETS_DIR=/home/u/.prismor/secrets pytest`, which is not this
+# user's vault. Such a mention is exempt only when every one of these holds,
+# otherwise it still fires (fail closed):
+#   * the whole path word is a literal absolute path: no `~`, `$`, globs,
+#     braces, backslashes or backticks the shell could rewrite;
+#   * after lexical normalisation (so `/home/u/../ubuntu` collapses) it is
+#     `/home/<name>/.prismor/secrets[/...]` or `/Users/<name>/...`;
+#   * that home is not the current user's ($HOME or the passwd entry), even
+#     through a symlink, and its `.prismor` is not $PRISMOR_HOME;
+#   * the path is not the live vault, and nothing exists there on disk -- a
+#     real directory under another home is someone's actual vault.
+_VAULT_DIRNAME = ".prismor/secrets"
+# Characters that end a path word when scanning outwards from a mention.
+_VAULT_WORD_DELIMS = frozenset(" \t\r\n\"'`;|&<>()=")
+# Characters that let the shell turn the word into a different path.
+_VAULT_UNSAFE_CHARS = frozenset("~$*?[]{}\\!`")
+_FOREIGN_HOME_RE = re.compile(r"^/(?:home|Users)/[^/]+$")
+
+
+def _current_homes() -> Set[str]:
+    homes: Set[str] = set()
+    try:
+        homes.add(os.path.expanduser("~"))
+    except Exception:
+        pass
+    try:
+        import pwd
+        homes.add(pwd.getpwuid(os.getuid()).pw_dir)
+    except Exception:
+        pass
+    out: Set[str] = set()
+    for h in homes:
+        if h and h.startswith("/"):
+            out.add(os.path.normpath(h))
+            try:
+                out.add(os.path.realpath(h))
+            except Exception:
+                pass
+    return out
+
+
+def _vault_word_bounds(cmd: str, start: int, end: int) -> Tuple[int, int]:
+    """Expand ``cmd[start:end]`` outwards to the enclosing path word."""
+    lo = start
+    while lo > 0 and cmd[lo - 1] not in _VAULT_WORD_DELIMS:
+        lo -= 1
+    hi = end
+    while hi < len(cmd) and cmd[hi] not in _VAULT_WORD_DELIMS:
+        hi += 1
+    return lo, hi
+
+
+def _is_foreign_home_vault_mention(cmd: str, start: int, vault: str) -> bool:
+    """True when the ``.prismor/secrets`` at ``cmd[start:]`` is a literal path
+    under ANOTHER user's home that does not exist here. Anything uncertain
+    returns False so the guard fires."""
+    import posixpath
+
+    end = start + len(_VAULT_DIRNAME)
+    lo, hi = _vault_word_bounds(cmd, start, end)
+    word = cmd[lo:hi]
+    if not word.startswith("/") or any(c in _VAULT_UNSAFE_CHARS for c in word):
+        return False
+    # The home is whatever precedes the mention, normalised so `..`, `.` and
+    # doubled slashes cannot disguise the real home.
+    home = posixpath.normpath(cmd[lo:start] or "/")
+    if not _FOREIGN_HOME_RE.match(home):
+        return False
+    foreign_vault = home + "/" + _VAULT_DIRNAME
+    full = posixpath.normpath(word.rstrip("/") or "/")
+    # The rest of the word must stay inside that foreign vault.
+    if full != foreign_vault and not full.startswith(foreign_vault + "/"):
+        return False
+    try:
+        real_homes = _current_homes()
+        if home in real_homes or os.path.realpath(home) in real_homes:
+            return False
+        prismor_home = os.environ.get("PRISMOR_HOME")
+        if prismor_home and posixpath.normpath(
+                os.path.expanduser(prismor_home)) == home + "/.prismor":
+            return False
+        if vault:
+            for candidate in (foreign_vault, os.path.realpath(foreign_vault)):
+                if candidate == vault or candidate.startswith(vault + "/"):
+                    return False
+            real_vault = os.path.realpath(vault)
+            real_cand = os.path.realpath(foreign_vault)
+            if real_cand == real_vault or real_cand.startswith(real_vault + "/"):
+                return False
+        # Fixtures name homes that do not exist. A vault that really exists
+        # under another home is somebody's secrets: keep guarding it.
+        if os.path.lexists(foreign_vault) or os.path.lexists(home + "/.prismor"):
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _shell_vault_mentions(cmd: str, vault: str) -> List[Tuple[int, int]]:
+    """``(start, end)`` of every mention in ``cmd`` the vault guard acts on.
+
+    The default directory name matches every expansion form of the default
+    location (``~/``, ``$HOME/``, absolute, relative); ``vault`` matches a
+    custom ``PRISMOR_SECRETS_DIR``. A default-name mention that sits under
+    another user's home (a test fixture) is dropped, see
+    _is_foreign_home_vault_mention.
+    """
+    hits: List[Tuple[int, int]] = []
+    i = cmd.find(_VAULT_DIRNAME)
+    while i != -1:
+        if not _is_foreign_home_vault_mention(cmd, i, vault):
+            hits.append((i, i + len(_VAULT_DIRNAME)))
+        i = cmd.find(_VAULT_DIRNAME, i + 1)
+    if vault:
+        i = cmd.find(vault)
+        while i != -1:
+            hits.append((i, i + len(vault)))
+            i = cmd.find(vault, i + 1)
+    return hits
+
+
 def _dequote_shell(cmd: str) -> Optional[str]:
     """Re-spell a shell command the way the shell will see each word.
 
@@ -3894,7 +4137,65 @@ def _floor_allowlist_rejected(rule_id: str, entry: "AllowlistEntry", rule: Optio
         protected = True
     if not protected:
         return False
-    return "*" in entry.rule_ids or entry.match != "exact"
+    # Only the blanket forms: every rule, or a pattern that matches anything
+    # (it matches the empty string). A named search allow such as
+    # `patterns: [scratch]` on destructive-command still applies.
+    return "*" in entry.rule_ids or entry.patterns.search("") is not None
+
+
+def _expand_braces(cmd: str) -> str:
+    """One level of `{a,b}` so `/ {bin,etc}` is the same path list the rules see."""
+    def repl(match: "re.Match[str]") -> str:
+        parts = match.group(2).split(",")
+        return " ".join(match.group(1) + part + match.group(3) for part in parts)
+
+    return re.sub(
+        r"(\S*)\{([A-Za-z0-9_./+-]+(?:,[A-Za-z0-9_./+-]+)+)\}(\S*)",
+        repl,
+        cmd,
+    )
+
+
+def _equate_shell(cmd: str) -> str:
+    """Rewrite shell forms that are the same action as a pattern the floor already has.
+
+    Glued `$(echo m)`, brace lists, `|&`, `tee` in the middle of a pipe, and
+    `dd` operand order. Argument paths are left alone.
+    """
+    cmd = re.sub(
+        r"\$\(\s*(?:echo|printf(?:\s+%s)?)\s+([A-Za-z0-9_./+-]+)\s*\)",
+        r"\1",
+        cmd,
+    )
+    cmd = re.sub(
+        r"`\s*(?:echo|printf(?:\s+%s)?)\s+([A-Za-z0-9_./+-]+)\s*`",
+        r"\1",
+        cmd,
+    )
+    cmd = cmd.replace("|&", "|")
+    cmd = re.sub(r"\|\s*tee\s+\S+\s*\|", "|", cmd)
+    cmd = re.sub(r"\bchown\s+--recursive\b", "chown -R", cmd)
+    cmd = re.sub(r"\bchmod\s+--mode[= ]+", "chmod ", cmd)
+    cmd = re.sub(r"(\bchmod\s+)0+([0-7]{3,4}\b)", r"\1\2", cmd)
+    cmd = re.sub(r"(^|[\n;&|(`])\s*(?:command|exec)\s+", r"\1 ", cmd)
+    cmd = re.sub(r"\bsystemctl\s+poweroff\b", "shutdown", cmd)
+    cmd = re.sub(r"\bsource\s+<\(", "bash <(", cmd)
+    cmd = re.sub(r"\|\s*(?:python3?|perl|ruby|node)(?:\s+-)?\s*(?=$|[\n;&|)])", "| bash", cmd)
+    # sh -c "$(curl ...)" runs what curl prints. A plain `sh -c 'curl ...'` does not.
+    cmd = re.sub(
+        r"\b(?:bash|sh|zsh|dash|ksh)\s+-c\s+[\"']?\s*\$\(\s*((?:curl|wget)\b[^)]*)\)[\"']?",
+        r"\1 | bash",
+        cmd,
+    )
+    cmd = _expand_braces(cmd)
+    cmd = cmd.replace("./*", "*")
+    of_disk = re.search(
+        r"\bof=(/dev/(?!null\b|zero\b|stdout\b|stderr\b|tty\b|fd/)[^\s;&|]+)",
+        cmd,
+    )
+    if of_disk and re.search(r"\bdd\b", cmd) and not re.search(r"\bdd\s+if=", cmd):
+        cmd = "dd if=x of=" + of_disk.group(1) + " " + cmd
+    return cmd
 
 
 def _normalize_command(cmd: str) -> str:
@@ -3913,6 +4214,23 @@ def _normalize_command(cmd: str) -> str:
     ``$(rm) -rf /`` both expose ``rm`` as a plain word that existing
     patterns can match — the two forms are shell-equivalent.
     """
+    # $(echo prismor) is prismor. Collapse that before the generic unwrap,
+    # which would turn it into the words "echo prismor" and miss the anchor.
+    cmd = re.sub(
+        r'\$\(\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*\)',
+        r'\1',
+        cmd,
+    )
+    cmd = re.sub(
+        r'`\s*(?:echo|printf)\s+(?:%s\s+)?["\']?(prismor|immunity)["\']?\s*`',
+        r'\1',
+        cmd,
+    )
+    # Rewritten shell forms are matched next to the original, so a rewrite
+    # can add a match but never hide one.
+    equated = _equate_shell(cmd)
+    if equated != cmd:
+        cmd = cmd + "\n" + equated
     # $(...) → space-separated inner content
     cmd = re.sub(r'\$\(([^)]*)\)', r' \1 ', cmd)
     # `...` → space-separated inner content
@@ -3948,7 +4266,36 @@ def _normalize_command(cmd: str) -> str:
         i += 1
     if buf:
         out.append(" ".join(" ".join(buf).split()))
-    return "\n".join(line for line in out if line)
+    joined = "\n".join(line for line in out if line)
+    # Match both spellings. Rewriting in place hid a redirect target from the
+    # reverse-shell rule and the `/tmp/b` fetch-then-execute ties to its download.
+    based = _basename_command_words(joined)
+    return joined if based == joined else joined + "\n" + based
+
+
+# A path-qualified executable (`/bin/rm`, `"/usr/bin/curl"`) is the same command
+# as its basename. Only the word in command position is rewritten, so an
+# argument path (`rm /etc/passwd`) stays intact for the path rules.
+_LEAD_WRAPPER = (
+    r"(?:sudo|doas|env|command|busybox|exec|nohup|time|nice)(?:\s+-\S+)*\s+"
+)
+_ABS_COMMAND = re.compile(
+    r"(^|[\n;|(`]|(?<![<>])&)(\s*(?:" + _LEAD_WRAPPER + r")*)['\"]?(/[^\s;&|<>'\"`]+)['\"]?"
+)
+
+
+def _basename_command_words(cmd: str) -> str:
+    def sub(match: "re.Match[str]") -> str:
+        base = match.group(3).rsplit("/", 1)[-1]
+        if not base or base in {".", ".."}:
+            return match.group(0)
+        return f"{match.group(1)}{match.group(2)}{base}"
+
+    prev = None
+    while prev != cmd:
+        prev = cmd
+        cmd = _ABS_COMMAND.sub(sub, cmd)
+    return cmd
 
 
 # ── Script-content inspection (#27) ──────────────────────────────────────────
