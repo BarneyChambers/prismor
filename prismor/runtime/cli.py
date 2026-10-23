@@ -188,6 +188,12 @@ def _offer_post_enroll_install(workspace: Path) -> None:
     so we install with the safe local default (observe) and the org controls
     observe/enforce from the console — no further local change. Non-interactive
     contexts (scripts/CI) just get the next-step hint, never a prompt."""
+    from prismor.runtime import system_install as _sys
+    if _sys.is_system_managed():
+        # The machine-wide hooks already cover every user. And an MDM install
+        # runs here with no person attached: a prompt would wait forever.
+        print("\nThis machine's system install already screens every user's agents.")
+        return
     try:
         from prismor.runtime.setup_wizard import _detect_agents, run_non_interactive
     except Exception:
@@ -427,6 +433,20 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         return
 
+    # ── copilot-studio: setup values + in-process check ──────────────────
+    if args.command == "copilot-studio":
+        from pathlib import Path as _Path
+        from prismor.runtime import copilot_studio_cli as _csc
+        sub = getattr(args, "cs_command", None)
+        if sub == "setup":
+            sys.exit(_csc.cmd_setup(args.tenant, args.endpoint, args.app_id or "", bool(args.json)))
+        if sub == "test":
+            sys.exit(_csc.cmd_test(list(args.sample or []),
+                                   _Path(args.workspace) if args.workspace else None,
+                                   args.user_messages, bool(args.json)))
+        parser.parse_args(["copilot-studio", "--help"])
+        return
+
     # ── proxy: the LLM lane ──────────────────────────────────────────────
     if args.command == "proxy":
         from pathlib import Path as _Path
@@ -555,11 +575,21 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command == "enroll":
         from prismor.runtime.enterprise import identity as _identity
         token = getattr(args, "token", None) or getattr(args, "token_flag", None)
+        token_file = getattr(args, "token_file", None)
+        if not token and token_file:
+            try:
+                token = Path(token_file).read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                sys.stderr.write(f"error: cannot read --token-file: {exc}\n")
+                raise SystemExit(1)
+        # The env var keeps an org-wide fleet token out of argv and shell history.
+        token = token or os.environ.get("PRISMOR_ENROLL_TOKEN", "").strip()
         if not token:
             sys.stderr.write(
                 "error: enrollment token required\n"
                 "  Generate one in the Prismor dashboard (Admin → Devices → Enroll)\n"
                 "  then run:  prismor enroll <token>\n"
+                "  (or --token-file <path>, or set PRISMOR_ENROLL_TOKEN)\n"
             )
             raise SystemExit(1)
         try:
@@ -652,12 +682,45 @@ def main(argv: Optional[List[str]] = None) -> None:
             pass
         return
 
+    if args.command == "system-sync":
+        from prismor.runtime import system_install as _sys
+        if not _sys.is_admin():
+            sys.stderr.write("prismor system-sync runs as an administrator on a system install "
+                             "(sudo, an Administrator shell, or the scheduled task).\n")
+            raise SystemExit(1)
+        res = _sys.sync()
+        for err in res["errors"]:
+            sys.stderr.write(f"prismor system-sync: {err}\n")
+        if not getattr(args, "quiet", False):
+            print(f"policy pulled: {res['policy_pulled']}  homes: {res['homes']}  "
+                  f"telemetry pending: {res['pending_before']} -> {res['pending_after']}")
+        if res["errors"]:
+            raise SystemExit(1)
+        return
+
     if args.command == "enroll-status":
         from prismor.runtime.enterprise import identity as _identity
         ident = _identity.load_identity()
+        public = None if ident else _identity.keyless_identity()
+        if public and not _identity.revoked_info():
+            # System install, seen by a user: the key is the admin's, and the
+            # admin's `prismor system-sync` does all control-plane traffic.
+            print("Enrolled (system install — the device key is held by the administrator)")
+            print(f"  org:        {public.get('org_name') or public.get('org_id')}")
+            print(f"  device id:  {public.get('device_id')}")
+            print(f"  label:      {public.get('label')}")
+            try:
+                from prismor.runtime.enterprise import remote_policy as _remote
+                meta = json.loads(_remote._meta_path().read_text(encoding="utf-8"))
+                age = int(time.time() - float(meta.get("fetched_at") or 0))
+                print(f"  policy:     v{meta.get('version')} (pulled {age}s ago by system-sync)")
+            except Exception:
+                print("  policy:     not pulled yet (system-sync runs every minute)")
+            return
         if not ident:
             print("Not enrolled. Run `prismor enroll <token>` to link this machine to an org.")
-            return
+            # Non-zero so an MDM compliance / detection script can tell.
+            raise SystemExit(1)
         revoked = _identity.revoked_info()
         # An env key (PRISMOR_AGENT_KEY) carries no org/device/label, so the
         # local view alone prints "org: None" on a perfectly healthy deployed
@@ -733,8 +796,12 @@ def main(argv: Optional[List[str]] = None) -> None:
                 parts = []
                 unguarded = []
                 for agent, s in cov.items():
-                    if s["global"]:
+                    if s["global"] and not s.get("foreign"):
                         parts.append(f"{agent} (all projects)")
+                    elif s["global"] and s["project"]:
+                        parts.append(f"{agent} (this project only; the global hook is another Prismor install's)")
+                    elif s["global"]:
+                        parts.append(f"{agent} (all projects, via another Prismor install — not this enrollment)")
                     elif s["project"]:
                         parts.append(f"{agent} (this project only)")
                     else:
@@ -746,6 +813,10 @@ def main(argv: Optional[List[str]] = None) -> None:
                           f"prismor setup --scope global")
         except Exception:
             pass
+        # Unreachable is still enrolled (it spools and retries); revoked or a
+        # refused key is not, and a compliance check must see that.
+        if revoked or (not verified.get("ok") and "unreachable" not in str(verified.get("error", ""))):
+            raise SystemExit(1)
         return
 
     if args.command == "doctor":
@@ -939,11 +1010,13 @@ def main(argv: Optional[List[str]] = None) -> None:
             print("A reason is required: prismor exempt request --reason \"why this repo needs it\"")
             return
         import json as _json, urllib.request, urllib.error
+        from prismor.runtime import http_ua as _http_ua
         base = str(ident.get("api_base") or _identity.api_base()).rstrip("/")
         payload = _json.dumps({"repo": remote, "reason": reason}).encode("utf-8")
         req = urllib.request.Request(
             f"{base}/api/devices/exemptions", data=payload, method="POST",
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {ident.get('device_key')}"},
+            headers={"Content-Type": "application/json", "User-Agent": _http_ua.user_agent(),
+                     "Authorization": f"Bearer {ident.get('device_key')}"},
         )
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:  # fixed or operator-configured URL  # nosec B310
@@ -1495,6 +1568,15 @@ def main(argv: Optional[List[str]] = None) -> None:
         return _analyze_history(args, workspace=workspace, repo_root=repo_root)
 
     # ── sessions ───────────────────────────────────────────────────────
+    if args.command == "sessions" and getattr(args, "shared", False):
+        from prismor.runtime.enterprise import cli_login
+        try:
+            shares = cli_login.shared_with_me()
+        except RuntimeError as exc:
+            raise SystemExit(f"sessions: {exc}")
+        emit({"shares": shares}, as_json=args.json, formatter=format_shared_sessions)
+        return
+
     if args.command == "sessions":
         if getattr(args, "global_view", False):
             # One shared DB: a single machine-wide query, labelled per session.
@@ -1528,6 +1610,17 @@ def main(argv: Optional[List[str]] = None) -> None:
         session_id = args.session_id or getattr(args, "session_id_pos", None)
         if not session_id:
             raise SystemExit("session: --session-id or a positional session id is required")
+        if session_id == "share":
+            raise SystemExit(_session_share_cmd(args, workspace))
+        # A console link (or --remote) reads any session in the org, from any
+        # agent, as markdown an agent can take as context.
+        if getattr(args, "remote", False) or "://" in session_id:
+            from prismor.runtime.enterprise import cli_login
+            try:
+                print(cli_login.fetch_session(session_id, limit=getattr(args, "limit", None)))
+            except RuntimeError as exc:
+                raise SystemExit(f"session: {exc}")
+            return
         from prismor.runtime import devlog
         session_id = devlog.resolve_session_id(session_id)
         if getattr(args, "changes", False):
@@ -1599,12 +1692,25 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     # ── uninstall-hooks ────────────────────────────────────────────────
     if args.command == "uninstall-hooks":
+        if args.scope == "system":
+            from prismor.runtime import system_install as _sys
+            if (why := _sys.check_supported()):
+                sys.stderr.write(f"prismor uninstall-hooks --scope system: {why}\n")
+                raise SystemExit(1)
+        elif not sys.stdin.isatty():
+            sys.stderr.write(
+                "prismor uninstall-hooks needs a terminal. Run it yourself, not through an agent.\n"
+            )
+            raise SystemExit(2)
         results = uninstall_hooks(
             repo_root=repo_root,
             workspace=workspace,
             agent=args.agent,
             scope=args.scope,
         )
+        if args.scope == "system" and args.agent == "all":
+            from prismor.runtime import system_install as _sys
+            _sys.remove_sync_schedule()
         for item in results:
             if item["removed"]:
                 print(f"Removed {item['agent']} hooks from {item['configPath']}")
@@ -1658,6 +1764,20 @@ def main(argv: Optional[List[str]] = None) -> None:
             if isinstance(_cwd, str) and _cwd:
                 workspace = _git_root_or_self(Path(_cwd))
         register_workspace(workspace)
+
+        # The session is over: nothing to screen, and no later hook in it will
+        # run the heartbeat tick, so ship the outbox now. Clear the backoff an
+        # earlier cold-start timeout left behind: this is the last chance, and a
+        # failure sets it again. Never blocks the exit on an error.
+        if str(payload.get("hook_event_name") or "") == "SessionEnd":
+            try:
+                from prismor.runtime.enterprise import heartbeat as _heartbeat
+                from prismor.runtime.enterprise import telemetry_spool as _spool
+                _spool.clear_backoff()
+                _heartbeat.maybe_flush(force=True, timeout=6.0)
+            except Exception:
+                pass
+            return
 
         # A subagent finished: queue a line telling the person what Prismor did
         # inside it. Its blocks and warnings went to the subagent; a background
@@ -2146,10 +2266,14 @@ def main(argv: Optional[List[str]] = None) -> None:
                 _inline_ask = _v0 == "step_up" and not payload.get("agent_id") and (
                     args.agent in ("claude", "qwen", "copilot", "antigravity")
                     or (args.agent == "cursor" and _agent_event in _CURSOR_ASK_EVENTS))
+                from prismor.runtime import system_install as _si
+                # On a system install the machine's admin (or the org's
+                # approval queue) decides, not the user whose agent was blocked.
                 if (_v0 in ("block", "step_up") and not _inline_ask
                         and _hook_event in ("PreToolUse", "", None)
                         and str(blocking.get("ruleId") or "") not in _SP_IDS
-                        and not _ws_scope.is_managed(workspace)):
+                        and not _ws_scope.is_managed(workspace)
+                        and not _si.is_system_managed()):
                     from prismor.runtime import approvals_local as _appr
                     _afp = _appr.fingerprint(args.agent, workspace, payload, event)
                     _granted = _appr.consume(_afp)
@@ -2204,8 +2328,8 @@ def main(argv: Optional[List[str]] = None) -> None:
                 # — is keyed on. Without it here the human has to go hunting at
                 # exactly the moment they need it.
                 reason += f" (rule: {blocking['ruleId']})"
-            if blocking.get("evidence"):
-                reason += f"\n{blocking['evidence']}"
+            if _shown_evidence(blocking):
+                reason += f"\n{_shown_evidence(blocking)}"
             if blocking.get("remediation"):
                 reason += f"\nRecommended fix: {blocking['remediation']}"
 
@@ -2637,6 +2761,18 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.command == "setup":
         from prismor.runtime.setup_wizard import run_wizard, run_non_interactive
         target = Path(getattr(args, "target", None) or ".").resolve()
+        if getattr(args, "system", False):
+            from prismor.runtime.setup_wizard import run_system_install
+            agents_str = getattr(args, "agents", None)
+            rules_str = getattr(args, "enforce_rules", None)
+            run_system_install(
+                repo_root=repo_root,
+                mode=getattr(args, "mode", None) or os.environ.get("PRISMOR_MODE", "observe"),
+                agents=[a.strip() for a in agents_str.split(",")] if agents_str else None,
+                enforce_rules=[r.strip() for r in rules_str.split(",") if r.strip()] if rules_str else None,
+                recommended=bool(getattr(args, "recommended", False)),
+            )
+            return
         scope = getattr(args, "scope", None) or os.environ.get("PRISMOR_SCOPE", "project")
         if scope not in ("project", "global"):
             scope = "project"
@@ -3438,6 +3574,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             if sub == "apply":
                 mode = get_mode(args.mode_id)
                 observe = getattr(args, "observe", False)
+                if observe and not sys.stdin.isatty():
+                    sys.stderr.write(
+                        "prismor mode apply --observe needs a terminal. "
+                        "Run it yourself, not through an agent.\n"
+                    )
+                    raise SystemExit(2)
                 if getattr(args, "dry_run", False):
                     sys.stdout.write(compile_mode(mode, observe=observe))
                     return
@@ -3852,6 +3994,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show which enforcement surfaces (hooks, MCP mirror, gateway) are active",
     )
 
+    # ── copilot-studio: Microsoft Copilot Studio threat detection helpers ──
+    _cs = subparsers.add_parser(
+        "copilot-studio",
+        help="Microsoft Copilot Studio threat detection: print setup values (setup), screen sample requests (test)",
+        description=(
+            "Copilot Studio calls Prismor before every tool its agents run (served by `prismor eval-server`). "
+            "`setup` prints the Entra app, federated credential and Power Platform values; "
+            "`test` screens real-shaped sample requests against this workspace's policy."
+        ),
+    )
+    _cs_sub = _cs.add_subparsers(dest="cs_command")
+    _cs_setup = _cs_sub.add_parser("setup", help="Print the Entra + Power Platform values for an endpoint")
+    _cs_setup.add_argument("--tenant", required=True, help="Microsoft Entra tenant id (GUID)")
+    _cs_setup.add_argument("--endpoint", required=True, help="Public base URL, e.g. https://cs.example.com/copilot-studio")
+    _cs_setup.add_argument("--app-id", default=None, help="Entra app (client) id, once registered")
+    _cs_setup.add_argument("--json", action="store_true", help="Print the values as JSON")
+    _cs_test = _cs_sub.add_parser("test", help="Screen sample tool calls in-process and print ALLOW/BLOCK")
+    _cs_test.add_argument("--sample", action="append", choices=("clean", "external", "credential", "injection", "all"),
+                          help="Which sample(s) (default: all)")
+    _cs_test.add_argument("--workspace", default=None, help="Workspace whose policy applies (default: cwd)")
+    _cs_test.add_argument("--user-messages", choices=("user", "untrusted"), default=None,
+                          help="Screen the user's message as a trusted user (default) or as untrusted content")
+    _cs_test.add_argument("--json", action="store_true", help="One JSON verdict per line")
+
     # ── inference-hook: Claude Inference Hooks AI-security server ──────
     def _add_ih_serve_args(p: argparse.ArgumentParser) -> None:
         p.add_argument("--port", type=int, default=7072, help="Port to listen on (default: 7072)")
@@ -4196,6 +4362,8 @@ def build_parser() -> argparse.ArgumentParser:
     sessions_parser.add_argument("--json", action="store_true", help="Output raw JSON")
     sessions_parser.add_argument("--findings-only", action="store_true", help="Only show sessions with findings")
     sessions_parser.add_argument("--global", dest="global_view", action="store_true", help="Show sessions across all registered workspaces")
+    sessions_parser.add_argument("--shared", action="store_true",
+                                 help="Sessions teammates shared with you (needs `prismor login`)")
 
     # ── session ────────────────────────────────────────────────────────
     session_parser = subparsers.add_parser("session", help="Show a specific session")
@@ -4216,6 +4384,17 @@ def build_parser() -> argparse.ArgumentParser:
     for _p in (rca_parser, blame_parser, friction_parser):
         _p.add_argument("--workspace", help="Workspace path")
         _p.add_argument("--json", action="store_true", help="Output raw JSON")
+    session_parser.add_argument("share_target", nargs="?", metavar="SESSION",
+                                help="With `share`: the session to share (default: this workspace's latest)")
+    session_parser.add_argument("--remote", action="store_true",
+                                help="Read the session from your org's console (implied by a pasted link)")
+    session_parser.add_argument("--limit", type=int, help="With --remote: last N events (default 400)")
+    session_parser.add_argument("--org", action="store_true",
+                                help="With `share`: anyone in your org can open the link")
+    session_parser.add_argument("--with", dest="share_with", metavar="EMAILS",
+                                help="With `share`: comma-separated teammates to add")
+    session_parser.add_argument("--public", action="store_true",
+                                help="With `share`: anyone with the link, no sign-in. You run this, not your agent")
 
     # ── tokens ─────────────────────────────────────────────────────────
     tokens_parser = subparsers.add_parser(
@@ -4235,7 +4414,8 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser = subparsers.add_parser("install-hooks", help="Install IDE hooks for real-time monitoring")
     install_parser.add_argument("--workspace", help="Workspace path")
     install_parser.add_argument("--agent", choices=[*_SUPPORTED_AGENTS, "all"], required=True, help="Which agent/IDE")
-    install_parser.add_argument("--scope", choices=["project", "user", "global"], default="project", help="Hook scope (default: project)")
+    install_parser.add_argument("--scope", choices=["project", "user", "global", "system"], default="project",
+                                help="Hook scope (default: project). system = every user on this Linux machine (root)")
     install_parser.add_argument("--mode", choices=["observe", "enforce"], default="observe", help="observe=log only, enforce=block dangerous actions")
     install_parser.add_argument("--portable", action="store_true", help="Write a hook command with no machine-specific paths, for a config file committed to the repo and cloned onto a hosted agent's VM (needs sh)")
 
@@ -4250,7 +4430,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     uninstall_parser.add_argument("--workspace", help="Workspace path")
     uninstall_parser.add_argument("--agent", choices=[*_SUPPORTED_AGENTS, "all"], required=True, help="Which agent/IDE")
-    uninstall_parser.add_argument("--scope", choices=["project", "user", "global"], default="project", help="Hook scope")
+    uninstall_parser.add_argument("--scope", choices=["project", "user", "global", "system"], default="project", help="Hook scope")
 
     # ── mcp-gateway ────────────────────────────────────────────────────
     gw_parser = subparsers.add_parser(
@@ -4277,7 +4457,8 @@ def build_parser() -> argparse.ArgumentParser:
     gw_parser.add_argument("--server", action="append",
                            help="Inline upstream as name=<url|command> (repeatable)")
     gw_parser.add_argument("--mode", choices=["observe", "enforce"], default=None,
-                           help="observe=log only (default), enforce=block policy violations")
+                           help="observe=log only, enforce=block policy violations. Default: observe "
+                           "when serving; install writes enforce unless --mode observe is given")
     gw_parser.add_argument("--workspace", help="Workspace path for policy + session store")
     gw_parser.add_argument("--session-id", dest="session_id", default="",
                            help="Stable session id (default: fresh per process). Hosted deployments "
@@ -4587,10 +4768,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     enroll_parser.add_argument("token", nargs="?", help="One-time enrollment token from the Prismor dashboard")
     enroll_parser.add_argument("--token", dest="token_flag", help="Enrollment token (alternative to positional)")
+    enroll_parser.add_argument("--token-file", help="Read the enrollment token from a file (default: $PRISMOR_ENROLL_TOKEN)")
     enroll_parser.add_argument("--label", help="Human-readable device label (default: hostname)")
     enroll_parser.add_argument("--api-base", help="Control-plane base URL (default: $PRISMOR_API_BASE)")
 
     subparsers.add_parser("enroll-status", help="Show this machine's enrollment status")
+    sync_p = subparsers.add_parser(
+        "system-sync",
+        help="System install: pull org policy and upload every user's telemetry (admin; runs on a timer)")
+    sync_p.add_argument("--quiet", action="store_true", help="Print only errors (for the timer)")
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -4894,6 +5080,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="project = hooks in ./.claude only; global = ~/.claude, guards every workspace "
              "(recommended for an enrolled device — no unguarded directories)",
+    )
+    setup_parser.add_argument(
+        "--system",
+        action="store_true",
+        help="Machine-wide install for every user (Linux, run as root; for MDM / config "
+             "management). Hooks go where each agent reads admin policy, and policy, pause "
+             "and unlock become root-only. Takes --mode/--recommended/--enforce-rules/--agents",
     )
     setup_parser.add_argument(
         "--enforce-rules",
@@ -5435,6 +5628,18 @@ def _relative_time(ts: str) -> str:
 
 # ── New command implementations ─────────────────────────────────────────
 
+def _shown_evidence(finding: Dict[str, Any]) -> str:
+    """Evidence as Prismor prints it back. A project-memory finding's evidence is
+    the instruction-file text itself; printing it in `prismor status` or a deny
+    reason hands that text to the agent as tool output, where it was flagged
+    again (and again on the next status), so name the source instead."""
+    if not finding.get("evidence"):
+        return ""
+    if finding.get("source") == "project_memory":
+        return "(matched text from an agent instruction file; open the file to review it)"
+    return str(finding["evidence"])
+
+
 def _print_status(session: Dict[str, Any]) -> None:
     """Pretty-print the latest session status."""
     risk = session.get("riskScore", 0)
@@ -5452,8 +5657,8 @@ def _print_status(session: Dict[str, Any]) -> None:
         sev = finding.get("severity", "?")
         color = _RED if sev == "CRITICAL" else _YELLOW if sev == "HIGH" else _DIM
         print(f"  {_color(f'[{sev}]', color)} {finding['title']} ({finding['category']})")
-        if finding.get("evidence"):
-            print(f"         {finding['evidence']}")
+        if _shown_evidence(finding):
+            print(f"         {_shown_evidence(finding)}")
 
 
 def _run_query(args) -> None:
@@ -6338,8 +6543,17 @@ def _pause_refusal(command: str, workspace: Path) -> Optional[str]:
     unlock window already lets the agent edit policy, so it may pause too.
     """
     import getpass
+    from prismor.runtime import system_install as _sys
     from prismor.runtime import unlock as _unlock
 
+    # A system install's pause covers every user, so it is root's call alone,
+    # and root (an MDM script included) needs no terminal to make it.
+    if _sys.is_system_managed():
+        if _sys.is_admin():
+            return None
+        how = "an Administrator shell" if _sys.IS_WINDOWS else f"sudo prismor {command}"
+        return (f"This machine has a system-wide Prismor install; `prismor {command}` is "
+                f"admin-only here ({how}), or ask your org admin to pause it from the console.")
     try:
         if _unlock.remaining_seconds(workspace):
             return None
@@ -6353,6 +6567,62 @@ def _pause_refusal(command: str, workspace: Path) -> Optional[str]:
         if not ok:
             return msg
     return None
+
+
+def _confirm_public_share() -> str:
+    """A person, not an agent, must make a session public. Returns how they confirmed.
+
+    The prismor-self-edit rule already blocks an agent running `--public` through
+    its hooks; this is the second wall. It needs a terminal (an agent's shell has
+    none) and the Prismor password when one is set. Without a password it goes
+    ahead but says plainly that it could not tell who was typing.
+    """
+    import getpass
+    from prismor.runtime import unlock as _unlock
+
+    if not sys.stdin.isatty():
+        raise SystemExit("Public links need a person at the keyboard. Run it yourself in a terminal:\n"
+                         "  prismor session share --public")
+    if _unlock.is_configured():
+        ok, msg = _unlock.verify(getpass.getpass("Prismor password (to make this session public): "))
+        if not ok:
+            raise SystemExit(msg)
+        return "password"
+    print("! No Prismor password is set, so this can't confirm it's you and not an agent.")
+    print("  Set one so public links always ask:  prismor unlock --set-password")
+    return "no-password"
+
+
+def _session_share_cmd(args, workspace: Path) -> int:
+    """`prismor session share [SESSION] [--org] [--with a@x,b@y] [--public]`."""
+    from prismor.runtime.enterprise import cli_login
+
+    sid = getattr(args, "share_target", None)
+    if not sid:
+        latest = list_sessions(workspace, 1)
+        if not latest:
+            print("No session recorded in this workspace yet. Pass one: prismor session share <id>")
+            return 1
+        sid = latest[0]["sessionId"]
+    access = "public" if args.public else ("org" if args.org else None)
+    emails = [e.strip() for e in (args.share_with or "").split(",") if e.strip()]
+    confirmed = _confirm_public_share() if access == "public" else None
+    try:
+        res = cli_login.share_session(sid, access=access, emails=emails, confirmed=confirmed)
+    except RuntimeError as exc:
+        print(f"session share: {exc}")
+        return 1
+
+    who = {"public": "anyone with the link (no sign-in)", "org": "anyone in your organization",
+           "restricted": "you, org admins" + (" and " + ", ".join(res.get("people") or []) if res.get("people") else "")}
+    print(f"Session {sid}")
+    print(f"  Link:    {res['url']}")
+    print(f"  Access:  {who.get(res.get('access'), res.get('access'))}")
+    print(f"  Paste into any agent:  {res['command']}")
+    if res.get("access") == "public":
+        print("  This session's prompts and commands are now visible to anyone with the link.")
+        print("  Turn it off from the session's Share dialog in the console.")
+    return 0
 
 
 def _approvals_cmd(args: Any) -> int:
@@ -7504,6 +7774,16 @@ def _sessions_elsewhere_hint(workspace: Path) -> str:
         pass
     return ""
 
+def format_shared_sessions(payload: Dict[str, Any]) -> str:
+    shares = payload["shares"]
+    if not shares:
+        return "Nothing shared with you yet."
+    lines = [f"Shared with you ({len(shares)})", ""]
+    for s in shares:
+        meta = " · ".join(x for x in (s.get("agent"), s.get("project"), f"from {s.get('sharedBy') or s.get('owner')}", (s.get("sharedAt") or "")[:10]) if x)
+        lines += [f"  {s.get('title', '')[:90]}", f"    {meta}", f"    prismor session {s['url']}", ""]
+    return "\n".join(lines).rstrip()
+
 
 def format_sessions(payload: Dict[str, Any]) -> str:
     sessions = payload["sessions"]
@@ -7559,8 +7839,8 @@ def format_analysis(result: Dict[str, Any]) -> str:
     else:
         for finding in result["findings"]:
             lines.append(f"- [{finding['severity']}] {finding['title']} ({finding['category']})")
-            if finding.get("evidence"):
-                lines.append(f"  {finding['evidence']}")
+            if _shown_evidence(finding):
+                lines.append(f"  {_shown_evidence(finding)}")
 
     if result["feedMatches"]:
         lines.extend(["", "Relevant advisories", "------------------"])
@@ -7587,8 +7867,8 @@ def format_session(session: Dict[str, Any]) -> str:
     lines.extend(["", "Findings", "--------"])
     for finding in session["findings"]:
         lines.append(f"- [{finding['severity']}] {finding['title']} ({finding['category']})")
-        if finding.get("evidence"):
-            lines.append(f"  {finding['evidence']}")
+        if _shown_evidence(finding):
+            lines.append(f"  {_shown_evidence(finding)}")
     lines.extend(["", "Recent events", "-------------"])
     for event in session["events"][-10:]:
         parts = [event.get("ts"), event.get("type"), event.get("path"), event.get("command"), event.get("url")]

@@ -82,6 +82,7 @@ For the Skill, curl, and git-clone alternatives, plus PEP 668 systems and secret
 - 🧭 [Prompt Guardrails](docs/prompt-guardrails.md) add plain-language rules to the agent's context, such as "never push to main", set per agent in the console and tuned per session; a running session picks up an edit on its next prompt
 - 🛤️ [LLM Proxy](docs/llm-proxy.md) governs an agent Prismor cannot hook, through the one thing every agent has: its model traffic. Point it at `prismor proxy` with `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, or the Google Gen AI SDK's `HttpOptions(base_url=...)` and nothing else about the agent changes. Every tool call the model *proposes* — Anthropic `tool_use`, OpenAI `tool_calls`, Gemini `functionCall` — is reshaped into the same event a `Bash` hook produces and judged by the same rule, with streamed calls held until they can be judged
 - [Claude Inference Hooks](docs/inference-hook.md) makes Prismor the AI security server behind Claude Enterprise: Anthropic sends every governed prompt from claude.ai, Claude Code and Cowork to `prismor inference-hook serve`, which runs your policy on the transcript and answers allow/deny before the model runs — signed requests (Standard Webhooks), fail-closed, shadow mode, nothing to install on user devices. `prismor inference-hook test` sends signed sample frames to check the wiring
+- [Microsoft Copilot Studio](docs/copilot-studio.md) makes Prismor an external threat detection provider for Copilot Studio agents: before each tool a generative-orchestration agent runs, Copilot Studio sends the planned call and the outputs of earlier tools to the eval-server, which answers block or allow within the one-second window. Entra ID token auth, fail-closed on timeout
 - 🏷️ [Tool Tags](docs/tool-tags.md) classify tools by capability (read, write, network, exec) so a rule can say "nothing that reads private data may also reach the network" instead of naming every tool one by one — MCP tools self-declare via `_meta`, and `prismor tags` lists, tests, and lints the rule expressions
 - 🔐 [Sweep and Cloak](docs/sweep-and-cloak.md) covers secret prevention at tool boundaries, practical setup, best practices, threat model, and cleanup for leaked secrets
 - 🦞 [OpenClaw Integration](docs/openclaw.md) covers the OpenClaw plugin that screens every tool call, and project or global setup
@@ -436,16 +437,6 @@ There's no bulk-clear — each session is cleared by ID individually. If a sessi
 
 ---
 
-## Benchmarks<a name="benchmarks" />
-
-Measured overhead is 0.8 ms per tool call across 10,000 simulated agent sessions, below the 1 ms threshold for every task category tested.
-
-![Prismor Simulation Results](assets/prismor-simulation.png)
-
-See [benchmark.md](benchmark.md) for the full methodology, per-category breakdown, and latency analysis.
-
----
-
 ## Contributing<a name="contributing" />
 
 PRs are welcome. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before you start — it explains the one thing that matters most here: **reuse the mechanisms that already exist, and solve the problem in the fewest lines you can.** Smaller diffs get merged faster.
@@ -458,6 +449,8 @@ The short version:
 - Open an issue first if you're unsure where something fits
 
 By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
+
+Found a vulnerability? Report it privately as described in [SECURITY.md](./SECURITY.md), not in a public issue.
 
 ---
 

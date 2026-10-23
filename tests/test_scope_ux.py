@@ -204,7 +204,19 @@ def test_hook_dispatch_resolves_workspace_from_payload_cwd(home, tmp_path):
 def test_scope_flag_accepts_both_spellings(home, tmp_path):
     ws = tmp_path / "ws"; ws.mkdir()
     assert _cli("install-hooks", "--agent", "claude", "--scope", "global", cwd=ws).returncode == 0
-    assert _cli("uninstall-hooks", "--agent", "claude", "--scope", "global", cwd=ws).returncode == 0
+    # uninstall-hooks refuses a non-tty. This call is the human at a terminal.
+    import pty
+    _master, slave = pty.openpty()
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "prismor.runtime.immunity_cli",
+             "uninstall-hooks", "--agent", "claude", "--scope", "global"],
+            cwd=str(ws), env=_env(), stdin=slave, capture_output=True, text=True, timeout=120,
+        )
+    finally:
+        os.close(_master)
+        os.close(slave)
+    assert r.returncode == 0, r.stderr
     assert _cli("cloak", "status", "--scope", "global", cwd=ws).returncode == 0
 
 
