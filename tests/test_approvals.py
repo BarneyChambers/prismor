@@ -80,6 +80,29 @@ class ApprovalClient(unittest.TestCase):
         self.assertEqual(self._posts[0]["reason"], "Prod DB write requires approval")
         self.assertEqual(len(self._posts[0]["fingerprint"]), 32)
 
+    def test_request_says_how_long_the_agent_waits(self):
+        self._status_seq = ["approved"]
+        approvals.await_step_up(_decision(), session_id="s1")
+        self.assertEqual(self._posts[0]["wait_seconds"], 2)  # PRISMOR_APPROVAL_TIMEOUT in setUp
+
+    def test_request_names_the_guarded_tool_and_instance(self):
+        # SDK findings carry no toolName; the adapter's own labels must reach
+        # the approver instead of "tool" / the framework id.
+        d = _decision()
+        d.blocking.pop("toolName")
+        self._status_seq = ["approved"]
+        approvals.await_step_up(d, session_id="s1", agent="langchain", tool="deploy", agent_name="deploy-bot")
+        self.assertEqual(self._posts[0]["tool"], "deploy")
+        self.assertEqual(self._posts[0]["agent"], "deploy-bot")
+
+    def test_request_without_labels_keeps_old_fallbacks(self):
+        d = _decision()
+        d.blocking.pop("toolName")
+        self._status_seq = ["approved"]
+        approvals.await_step_up(d, session_id="s1", agent="langchain")
+        self.assertEqual(self._posts[0]["tool"], "tool")
+        self.assertEqual(self._posts[0]["agent"], "langchain")
+
     def test_denied(self):
         self._status_seq = ["pending", "denied"]
         self.assertFalse(approvals.await_step_up(_decision(), session_id="s1"))
@@ -124,6 +147,58 @@ class ApprovalClient(unittest.TestCase):
         self.assertTrue(outcome.approved)
         self.assertTrue(outcome.redacted)
         self.assertEqual(get.call_count, 2)
+
+    def test_redaction_survives_failure_queued_after_approval(self):
+        # #667 repro: a failing GET queued behind the redacted approval must
+        # never be consumed, so it cannot replace the mode with "full".
+        responses = [("approved", "redacted"), (None, "full")]
+        calls = []
+
+        def fake_status(ident, approval_id, timeout):
+            calls.append(approval_id)
+            return responses.pop(0)
+
+        with mock.patch.object(approvals, "_get_status_ex", fake_status), \
+                mock.patch.object(approvals.time, "sleep"):
+            outcome = approvals.await_step_up(_decision())
+
+        self.assertTrue(outcome.approved)
+        self.assertTrue(outcome.redacted)
+        self.assertEqual(len(calls), 1)
+
+    def _approve_with_body(self, body):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(body).encode()
+        with mock.patch.object(approvals, "_get_status_ex", _REAL_GET_STATUS_EX), \
+                mock.patch("urllib.request.urlopen", return_value=response), \
+                mock.patch.object(approvals, "_audit_outcome") as audit, \
+                mock.patch.object(approvals.time, "sleep"):
+            outcome = approvals.await_step_up(_decision())
+        return outcome, audit.call_args.kwargs["status"]
+
+    def test_approved_without_mode_fails_closed_to_redacted(self):
+        outcome, audited = self._approve_with_body({"status": "approved"})
+        self.assertTrue(outcome.approved)
+        self.assertTrue(outcome.redacted)
+        self.assertEqual(audited, "approved_redacted")
+
+    def test_approved_with_unknown_mode_fails_closed_to_redacted(self):
+        outcome, _ = self._approve_with_body({"status": "approved", "decision_mode": "partial"})
+        self.assertTrue(outcome.approved)
+        self.assertTrue(outcome.redacted)
+
+    def test_explicit_full_approval_is_unredacted(self):
+        outcome, audited = self._approve_with_body({"status": "approved", "decisionMode": "FULL"})
+        self.assertTrue(outcome.approved)
+        self.assertFalse(outcome.redacted)
+        self.assertEqual(audited, "approved")
+
+    def test_immediate_approval_without_mode_is_redacted(self):
+        self._patch(approvals, "_post_request",
+                    lambda ident, body, timeout: {"id": "a", "status": "approved"})
+        outcome = approvals.await_step_up(_decision())
+        self.assertTrue(outcome.approved)
+        self.assertTrue(outcome.redacted)
 
     def test_status_failure_until_timeout_fails_closed(self):
         with mock.patch.object(approvals, "_get_status_ex", return_value=(None, "full")), \
