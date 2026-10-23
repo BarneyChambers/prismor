@@ -84,8 +84,10 @@ def _fingerprint(session_id: str, tool: str, evidence_hash: str) -> str:
 
 
 def _headers(ident: Dict[str, Any]) -> Dict[str, str]:
+    from prismor.runtime.http_ua import user_agent
     return {
         "Content-Type": "application/json",
+        "User-Agent": user_agent(),
         "Authorization": f"Bearer {ident.get('device_key')}",
     }
 
@@ -107,16 +109,20 @@ def _post_request(ident: Dict[str, Any], body: Dict[str, Any], timeout: float) -
         return None
 
 
-def _get_status(ident: Dict[str, Any], approval_id: str, timeout: float) -> Optional[str]:
-    """Current status string, or None on any transport error."""
-    status, _mode = _get_status_ex(ident, approval_id, timeout)
-    return status
+def _decision_mode(data: Dict[str, Any]) -> str:
+    """``"full"`` only when the response says so explicitly; a missing or
+    unrecognised mode reads as ``"redacted"``. An approval never grants more
+    than the approver can be shown to have chosen (#667)."""
+    mode = str(data.get("decision_mode") or data.get("decisionMode") or "").strip().lower()
+    return "full" if mode == "full" else "redacted"
 
 
 def _get_status_ex(ident: Dict[str, Any], approval_id: str, timeout: float) -> Tuple[Optional[str], str]:
     """``(status, decision_mode)``. ``decision_mode`` is ``"redacted"`` when the
     approver chose "approve with sensitive values stripped" — the runtime then
-    redacts locally before the call runs (see :func:`redact_approved_payload`)."""
+    redacts locally before the call runs (see :func:`redact_approved_payload`).
+    Status and mode come from the same response; callers must not re-fetch one
+    without the other."""
     import urllib.request
     import urllib.error
 
@@ -128,10 +134,9 @@ def _get_status_ex(ident: Dict[str, Any], approval_id: str, timeout: float) -> T
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # fixed or operator-configured URL  # nosec B310
             data = json.loads(resp.read().decode("utf-8"))
         status = str(data.get("status") or "").lower() or None
-        mode = str(data.get("decision_mode") or data.get("decisionMode") or "full").lower()
-        return status, mode
-    except (urllib.error.URLError, OSError, ValueError):
-        return None, "full"
+        return status, _decision_mode(data)
+    except (urllib.error.URLError, OSError, ValueError, AttributeError):
+        return None, "redacted"
 
 
 def _audit_outcome(
@@ -199,6 +204,8 @@ def enqueue_step_up(
     agent: str = "",
     session_id: str = "",
     timeout: float = 2.0,
+    tool: str = "",
+    agent_name: str = "",
 ) -> Optional[str]:
     """Post an approval request and return immediately with its id (or None).
 
@@ -218,7 +225,7 @@ def enqueue_step_up(
     if not ident or _identity.revoked_backoff_active():
         return None  # no control plane to approve through → fail closed
 
-    tool = str(finding.get("toolName") or (event or {}).get("type") or "tool")
+    tool = str(tool or finding.get("toolName") or (event or {}).get("type") or "tool")
     body = {
         "fingerprint": _fingerprint(
             session_id, tool,
@@ -229,7 +236,7 @@ def enqueue_step_up(
         "rule_id": finding.get("ruleId"),
         "severity": finding.get("severity"),
         "session_id": session_id or None,
-        "agent": agent or None,
+        "agent": agent_name or agent or None,
     }
     created = _post_request(ident, body, timeout=timeout)
     approval_id = str(created.get("id")) if created and created.get("id") else None
@@ -252,8 +259,14 @@ def await_step_up(
     event: Optional[Dict[str, Any]] = None,
     agent: str = "",
     session_id: str = "",
+    tool: str = "",
+    agent_name: str = "",
 ) -> "ApprovalOutcome":
     """Post an approval request for a STEP_UP finding and block until decided.
+
+    ``tool`` and ``agent_name`` label the request for the approver: SDK
+    findings carry no ``toolName``, so without them every request read
+    tool "tool" and agent "<framework>" instead of the guarded instance.
 
     Returns an :class:`ApprovalOutcome` that is truthy only on an explicit
     ``approved`` (so existing ``if await_step_up(...)`` callers keep working).
@@ -272,7 +285,7 @@ def await_step_up(
     if not ident or _identity.revoked_backoff_active():
         return ApprovalOutcome(False)  # no control plane to approve through → fail closed
 
-    tool = str(finding.get("toolName") or (event or {}).get("type") or "tool")
+    tool = str(tool or finding.get("toolName") or (event or {}).get("type") or "tool")
     body = {
         "fingerprint": _fingerprint(session_id, tool, str(finding.get("evidence_hash") or finding.get("evidenceHash") or "")),
         "tool": tool,
@@ -281,7 +294,7 @@ def await_step_up(
         "category": finding.get("category"),
         "severity": finding.get("severity"),
         "session_id": session_id or None,
-        "agent": agent or None,
+        "agent": agent_name or agent or None,
     }
     # Data-boundary context so the approver sees WHAT is being sent, WHERE,
     # and which doc induced it — labels only (classes/tier/kind), the masked
@@ -296,6 +309,10 @@ def await_step_up(
             "provenance": finding.get("provenance"),
         }
 
+    # How long this agent will poll before failing closed, so the console stops
+    # offering an approve that can no longer change anything.
+    body["wait_seconds"] = round(_timeout())
+
     def _record(status: str, approval_id: Optional[str] = None) -> None:
         _audit_outcome(
             body, status=status, approval_id=approval_id,
@@ -309,7 +326,7 @@ def await_step_up(
         return ApprovalOutcome(False, status="request_failed")
     approval_id = str(created["id"])
     if str(created.get("status") or "").lower() == _APPROVED:
-        _mode = str(created.get("decision_mode") or created.get("decisionMode") or "full").lower()
+        _mode = _decision_mode(created)
         _record("approved" if _mode != "redacted" else "approved_redacted", approval_id)
         return ApprovalOutcome(True, redacted=_mode == "redacted", approval_id=approval_id, status="approved")
 
@@ -335,6 +352,8 @@ async def await_step_up_async(
     event: Optional[Dict[str, Any]] = None,
     agent: str = "",
     session_id: str = "",
+    tool: str = "",
+    agent_name: str = "",
 ) -> "ApprovalOutcome":
     """Event-loop-safe :func:`await_step_up`.
 
@@ -350,7 +369,8 @@ async def await_step_up_async(
     import asyncio
 
     return await asyncio.to_thread(
-        await_step_up, decision, event=event, agent=agent, session_id=session_id
+        await_step_up, decision, event=event, agent=agent, session_id=session_id,
+        tool=tool, agent_name=agent_name,
     )
 
 
