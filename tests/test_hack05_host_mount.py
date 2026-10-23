@@ -33,3 +33,11 @@ class TestHostMount(unittest.TestCase):
         self.assertFalse(_blocks(command))
         self.assertFalse(_blocks('docker run img sh -c "prismor pause"'))
         self.assertFalse(_blocks('docker run -v /tmp:/tmp alpine sh -c "prismor pause"'))
+
+    def test_everyday_home_mounts_stay_quiet(self):
+        for command in (
+            "docker run --rm -v ~/project:/app node:20 npm test",
+            "docker run --rm -v $HOME/.aws:/root/.aws:ro amazon/aws-cli s3 ls",
+            'docker run --rm -v "$PWD":/app -w /app node:20 npm ci',
+        ):
+            self.assertFalse(_blocks(command), command)
