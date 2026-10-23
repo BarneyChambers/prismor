@@ -139,7 +139,7 @@ event type can arrive pre-action on one surface and post-action on another.
 1. **Dev requests** (in the repo): `prismor exempt request --reason "deploy.sh uses curl|sh"`.
    Posts `{device key, repo remote, reason}` → a **pending** `PolicyExemption`.
    The dev can only *ask* — they cannot relax anything locally.
-2. **Admin reviews** in the console (Admin → Policy → Exemptions): edits the
+2. **Admin reviews** in the console (Admin → Policies → Exemptions, `/admin/policies?section=exemptions`): edits the
    exact relaxation overlay, sets an expiry, approves → status `granted`.
 3. The granted exemption is **served in the signed policy bundle**; the device
    verifies the signature and applies it (through the floor-enforcing merge).
@@ -166,6 +166,10 @@ event type can arrive pre-action on one surface and post-action on another.
   `repo_exemption:<id>`) + `repo`.
 - `telemetry.build_record` — carries `repo` + `policy_scope` on every record (not
   sensitive: only managed/company repos report, so the repo id is org context).
+- `PolicyEngine.decision_layer` — which layer decided a rule finding's
+  observe/enforce (the layer that set the rule's `mode`, or `default_mode`, or
+  the built-in floor / device override). Shipped as `policy_layer` on every
+  rule finding, redacted mode included.
 - Tests: `tests/test_exemptions.py` (5) + `tests/test_workspace_scope.py` (9) —
   relax-non-core, floor-survives, non-match, expired, telemetry-tag. 499 total green.
 
@@ -186,9 +190,9 @@ Endpoints:
 - `/api/telemetry/ingest` — store `repo` + `policyScope`.
 
 UI:
-- Admin → Policy → **Exemptions**: pending requests + active exemptions (repo,
+- Admin → Policies → **Exemptions**: pending requests + active exemptions (repo,
   what's relaxed, requester, expiry, revoke).
-- Observability: a "repos under exemption" surface + per-event repo/scope tags.
+- Activity: a "repos under exemption" surface + per-event repo/scope tags.
 
 Project-level policy is expressed by **expanding a Project's repos into repo
 patterns server-side**, so the runtime only ever deals with repo patterns +

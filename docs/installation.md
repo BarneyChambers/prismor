@@ -16,6 +16,8 @@ curl -sSL https://prismor.dev/install | sh
 
 Detects your environment and uses the right install method automatically.
 
+After a successful install the script sends one anonymous request with your OS, CPU architecture, installer (pipx/pip) and Prismor version, so we can count installs. No identifiers are sent. Opt out with `PRISMOR_NO_TELEMETRY=1` or `DO_NOT_TRACK=1`.
+
 ## Skill (zero-interrupt setup)
 
 Point your agent at [`SKILL.md`](../SKILL.md). It is a standing instruction file: the agent reads it at session start, checks whether Prismor is installed, and follows the decision tree throughout the session without pausing your workflow.
@@ -86,6 +88,11 @@ Prefer the interactive wizard? Drop the env vars:
 ```bash
 bash ~/.prismor/scripts/init.sh .
 ```
+
+## Fleet rollout (MDM / config management)
+
+One admin install that screens every user on a Linux or Windows machine, for
+Intune, SCCM, Ansible, Chef and the like: [System install](system-install.md).
 
 ## Windows
 

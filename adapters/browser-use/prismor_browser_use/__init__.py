@@ -87,8 +87,11 @@ def _extract_event_fields(action_name: str, params: Any) -> tuple[str, str, str]
 
     if action_name in _NETWORK_ACTIONS:
         # go_to_url → params.url; search_google → params.query
-        url = dump.get("url") or dump.get("query") or str(dump)
-        return "network", "url", str(url)
+        url = dump.get("url") or dump.get("query") or ""
+        new_tab = dump.get("new_tab") or ""
+        if new_tab:
+            url = (str(url) + "\n" + str(new_tab)).strip()
+        return "network", "url", str(url or dump)
 
     if action_name in _FILE_ACTIONS:
         path = dump.get("path") or dump.get("file_path") or dump.get("filename") or str(dump)
@@ -111,7 +114,7 @@ def _build_event(
     subject: Optional[Subject],
 ) -> dict:
     event_type, field, value = _extract_event_fields(action_name, params)
-    return {
+    event = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "session_id": session_id,
         "agent": agent,
@@ -124,6 +127,9 @@ def _build_event(
             "subject": subject.as_dict() if subject else None,
         },
     }
+    if event_type == "file_write" and isinstance(params, dict):
+        event["content"] = str(params.get("content") or params.get("text") or "")
+    return event
 
 
 def guard_controller(
@@ -199,7 +205,9 @@ def guard_controller(
                     # async variant: the poll must not park the event loop that
                     # is also driving the CDP socket, or the browser times out
                     # before the human decides.
-                    outcome = await _approvals.await_step_up_async(decision, agent=agent, session_id=sid)
+                    outcome = await _approvals.await_step_up_async(
+                        decision, agent=agent, session_id=sid, tool=action_name, agent_name=_agent_name
+                    )
                     if outcome:
                         if getattr(outcome, "redacted", False):
                             # "Approve redacted": strip flagged values on-device first.
